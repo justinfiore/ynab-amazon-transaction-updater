@@ -1,0 +1,31 @@
+plugins {
+    id 'groovy'
+    id 'application'
+}
+
+group = 'com.ynab.amazon'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.codehaus.groovy:groovy-all:3.0.19'
+    implementation 'org.yaml:snakeyaml:2.0'
+    implementation 'org.apache.httpcomponents:httpclient:4.5.14'
+    implementation 'org.apache.httpcomponents:httpcore:4.4.16'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
+    implementation 'org.slf4j:slf4j-simple:2.0.7'
+    
+    testImplementation 'org.spockframework:spock-core:2.3-groovy-3.0'
+}
+
+application {
+    mainClass = 'com.ynab.amazon.YNABAmazonTransactionUpdater'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+} 

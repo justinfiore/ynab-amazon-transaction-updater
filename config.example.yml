@@ -1,0 +1,37 @@
+# Example configuration file for YNAB Amazon Transaction Updater
+# Copy this file to config.yml and update with your actual values
+
+# YNAB Configuration
+ynab:
+  api_key: "your_actual_ynab_api_key_here"  # Get from https://app.youneedabudget.com/settings/developer
+  account_id: "your_actual_ynab_account_id_here"  # Found in YNAB URL when viewing account
+  base_url: "https://api.ynab.com/v1"
+
+# Amazon Configuration
+amazon:
+  # Note: Amazon doesn't provide a public API for order history
+  # This configuration is for potential future use or alternative approaches
+  email: "your_amazon_email@example.com"
+  # For now, we'll use a CSV file approach as an alternative
+  csv_file_path: "amazon_orders.csv"  # Your exported Amazon order history CSV file
+
+# Application Configuration
+app:
+  processed_transactions_file: "processed_transactions.json"  # Tracks which transactions have been processed
+  log_level: "INFO"  # Options: DEBUG, INFO, WARN, ERROR
+  dry_run: true  # Set to false when ready to make actual changes to YNAB
+
+# Example of what your actual config.yml should look like:
+# ynab:
+#   api_key: "sk_prod_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+#   account_id: "12345678-1234-1234-1234-123456789012"
+#   base_url: "https://api.ynab.com/v1"
+# 
+# amazon:
+#   email: "your.email@example.com"
+#   csv_file_path: "my_amazon_orders.csv"
+# 
+# app:
+#   processed_transactions_file: "processed_transactions.json"
+#   log_level: "INFO"
+#   dry_run: false 
