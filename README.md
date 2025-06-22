@@ -37,12 +37,33 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 
 ### 3. Export Amazon Order History
 
+**Note: Amazon's "Download order reports" feature is very difficult to find and may not be available in all accounts. Use one of the alternatives below.**
+
+**Option A: Try to Find Amazon's Export (Rarely Available)**
 1. Go to [Amazon.com](https://www.amazon.com)
 2. Sign in to your account
 3. Go to "Your Account" → "Your Orders"
-4. Click "Download order reports"
-5. Select the date range and download as CSV
+4. Look for "Download order reports" or "Order history reports" (usually hidden or not available)
+5. If found, select the date range and download as CSV
 6. Save the CSV file in your project directory
+
+**Option B: Use the Helper Script (Recommended)**
+1. Run `groovy create_amazon_csv.groovy` to interactively create your CSV file
+2. Follow the prompts to enter your Amazon order details
+3. The script will create `amazon_orders.csv` for you
+
+**Option C: Manual CSV Creation**
+1. Go to Amazon.com → Your Account → Your Orders
+2. Manually copy order details into a CSV file with these columns:
+   ```
+   Order ID,Order Date,Title,Price,Quantity
+   123-4567890-1234567,2024-01-15,Wireless Bluetooth Headphones,29.99,1
+   ```
+3. Save as `amazon_orders.csv` in your project directory
+
+**Option D: Use the Sample File (For Testing)**
+1. The project includes `sample_amazon_orders.csv` for testing
+2. Copy it to `amazon_orders.csv` to test the application
 
 ### 4. Configure the Application
 
@@ -155,12 +176,17 @@ Confidence thresholds:
    - Check that the CSV file path in `config.yml` is correct
    - Ensure the file exists in the specified location
 
-4. **No matches found**
+4. **"Can't find Amazon order export"**
+   - Amazon's interface changes frequently
+   - Try the manual CSV creation option in the setup instructions
+   - Use the provided `sample_amazon_orders.csv` for testing
+
+5. **No matches found**
    - Verify your CSV file has the correct format
    - Check that the dates and amounts are in the expected format
    - Try running in dry-run mode to see what transactions are being considered
 
-5. **API Rate Limits**
+6. **API Rate Limits**
    - YNAB has rate limits; the application includes delays between requests
    - If you get rate limit errors, wait a few minutes and try again
 

@@ -19,9 +19,31 @@
 3. Copy your YNAB Account ID from the URL when viewing your account
 
 ### 3. Export Amazon Orders
+**Note: Amazon's "Download order reports" feature is very difficult to find and may not be available in all accounts. Use one of the alternatives below.**
+
+**Option A: Try to Find Amazon's Export (Rarely Available)**
+1. Go to Amazon.com and sign in
+2. Navigate to "Your Account" → "Your Orders"
+3. Look for "Download order reports" or "Order history reports" (usually hidden or not available)
+4. If found, select your desired date range and download as CSV
+
+**Option B: Use the Helper Script (Recommended)**
+1. Run `groovy create_amazon_csv.groovy` to interactively create your CSV file
+2. Follow the prompts to enter your Amazon order details
+3. The script will create `amazon_orders.csv` for you
+
+**Option C: Manual CSV Creation**
 1. Go to Amazon.com → Your Account → Your Orders
-2. Click "Download order reports"
-3. Save the CSV file in this project directory
+2. Manually copy order details into a CSV file with these columns:
+   ```
+   Order ID,Order Date,Title,Price,Quantity
+   123-4567890-1234567,2024-01-15,Wireless Bluetooth Headphones,29.99,1
+   ```
+3. Save as `amazon_orders.csv` in this project directory
+
+**Option D: Use the Sample File (For Testing)**
+1. The project includes `sample_amazon_orders.csv` for testing
+2. Copy it to `amazon_orders.csv` to test the application
 
 ### 4. Configure the Application
 1. Copy `config.example.yml` to `config.yml`
@@ -79,6 +101,7 @@ YNAB Amazon Transaction Updater completed successfully
 - **"Config error"**: Check your `config.yml` format
 - **"No matches"**: Verify your CSV file format and dates
 - **"API errors"**: Check your YNAB API key and account ID
+- **"Can't find Amazon export"**: Try the manual CSV creation option above
 
 ## Need Help?
 
