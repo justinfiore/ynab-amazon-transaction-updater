@@ -9,6 +9,10 @@ import org.slf4j.LoggerFactory
 import javax.mail.*
 import javax.mail.internet.MimeMultipart
 import javax.mail.internet.InternetAddress
+import javax.mail.search.AndTerm
+import javax.mail.search.FromTerm
+import javax.mail.search.ReceivedDateTerm
+import javax.mail.search.ComparisonTerm
 import java.text.SimpleDateFormat
 import java.util.regex.Pattern
 import java.util.regex.Matcher
@@ -31,10 +35,10 @@ class AmazonOrderFetcher {
     ]
     
     // Regex patterns for extracting order information from emails
-    private static final Pattern ORDER_ID_PATTERN = Pattern.compile("Order #([A-Z0-9-]+)", Pattern.CASE_INSENSITIVE)
-    private static final Pattern ORDER_DATE_PATTERN = Pattern.compile("Ordered on ([A-Za-z]+ \\d{1,2}, \\d{4})", Pattern.CASE_INSENSITIVE)
-    private static final Pattern ITEM_PATTERN = Pattern.compile("([^\\n]+?)\\s*\\$([0-9]+\\.[0-9]{2})", Pattern.CASE_INSENSITIVE)
-    private static final Pattern TOTAL_PATTERN = Pattern.compile("Total:\\s*\\$([0-9]+\\.[0-9]{2})", Pattern.CASE_INSENSITIVE)
+    private static final Pattern ORDER_ID_PATTERN = /(?i)Order #([A-Z0-9-]+)/
+    private static final Pattern ORDER_DATE_PATTERN = /(?i)Ordered on ([A-Za-z]+ \d{1,2}, \d{4})/
+    private static final Pattern ITEM_PATTERN = /(?i)([^\r\n]+?)\s*\$([0-9]+\.[0-9]{2})/
+    private static final Pattern TOTAL_PATTERN = /(?i)Total:\s*\$([0-9]+\.[0-9]{2})/
     
     AmazonOrderFetcher(Configuration config) {
         this.config = config

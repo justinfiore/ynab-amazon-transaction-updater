@@ -14,6 +14,7 @@ class Configuration {
     String ynabAccountId
     String ynabBaseUrl
     String amazonEmail
+    String amazonEmailPassword
     String amazonCsvFilePath
     String processedTransactionsFile
     String logLevel
@@ -42,6 +43,7 @@ class Configuration {
             
             // Amazon Configuration
             this.amazonEmail = config.amazon.email
+            this.amazonEmailPassword = config.amazon.email_password
             this.amazonCsvFilePath = config.amazon.csv_file_path
             
             // Application Configuration
@@ -67,8 +69,12 @@ class Configuration {
             return false
         }
         
-        if (!amazonCsvFilePath) {
-            logger.error("Amazon CSV file path not configured")
+        // Check if either email credentials or CSV file path is configured
+        boolean hasEmailConfig = amazonEmail && amazonEmailPassword
+        boolean hasCsvConfig = amazonCsvFilePath
+        
+        if (!hasEmailConfig && !hasCsvConfig) {
+            logger.error("Neither Amazon email credentials nor CSV file path are configured")
             return false
         }
         

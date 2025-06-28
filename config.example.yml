@@ -9,10 +9,10 @@ ynab:
 
 # Amazon Configuration
 amazon:
-  # Note: Amazon doesn't provide a public API for order history
-  # This configuration is for potential future use or alternative approaches
-  email: "your_amazon_email@example.com"
-  # For now, we'll use a CSV file approach as an alternative
+  # Email-based order fetching (recommended if you want automatic import):
+  email: "your_amazon_email@example.com"  # Your Amazon email address (IMAP, e.g. Gmail)
+  email_password: "your_amazon_email_app_password"  # App password for your Amazon email (use an app password, not your main password)
+  # CSV fallback (if email fetching is not used or fails):
   csv_file_path: "amazon_orders.csv"  # Your exported Amazon order history CSV file
 
 # Application Configuration
@@ -20,6 +20,12 @@ app:
   processed_transactions_file: "processed_transactions.json"  # Tracks which transactions have been processed
   log_level: "INFO"  # Options: DEBUG, INFO, WARN, ERROR
   dry_run: true  # Set to false when ready to make actual changes to YNAB
+
+# ---
+# Property documentation:
+# amazon.email: Email address to fetch Amazon order confirmations from (IMAP required)
+# amazon.email_password: App password for the above email (never use your main password)
+# amazon.csv_file_path: Path to your Amazon order CSV file (used as fallback)
 
 # Example of what your actual config.yml should look like:
 # ynab:

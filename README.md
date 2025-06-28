@@ -76,10 +76,14 @@ ynab:
   base_url: "https://api.ynab.com/v1"
 
 amazon:
-  csv_file_path: "your_amazon_orders.csv"
+  email: "your_amazon_email@example.com"  # IMAP email for Amazon order confirmations
+  email_password: "your_amazon_email_app_password"  # App password for your email
+  csv_file_path: "your_amazon_orders.csv"  # Fallback if email fetching is not used
 
 app:
-  dry_run: true  # Set to false when ready to make actual changes
+  processed_transactions_file: "processed_transactions.json"
+  log_level: "INFO"
+  dry_run: true
 ```
 
 ## Building and Running
@@ -134,12 +138,38 @@ If your CSV has different column names or order, you may need to modify the `Ama
 - `base_url`: YNAB API base URL (usually doesn't need to change)
 
 ### Amazon Settings
-- `csv_file_path`: Path to your Amazon orders CSV file
+- `email`: Your Amazon email address (IMAP, e.g. Gmail) for automatic order fetching
+- `email_password`: App password for your Amazon email (never use your main password; see your email provider's documentation for how to generate an app password)
+- `csv_file_path`: Path to your Amazon orders CSV file (used as fallback if email fetching is not configured or fails)
 
 ### Application Settings
 - `processed_transactions_file`: File to track processed transactions
 - `log_level`: Logging level (INFO, DEBUG, WARN, ERROR)
 - `dry_run`: Set to `true` to see what would be updated without making changes
+
+---
+
+### Example `config.yml`
+
+```yaml
+ynab:
+  api_key: "YOUR_ACTUAL_YNAB_API_KEY"
+  account_id: "YOUR_ACTUAL_YNAB_ACCOUNT_ID"
+  base_url: "https://api.ynab.com/v1"
+
+amazon:
+  email: "your_amazon_email@example.com"  # IMAP email for Amazon order confirmations
+  email_password: "your_amazon_email_app_password"  # App password for your email
+  csv_file_path: "your_amazon_orders.csv"  # Fallback if email fetching is not used
+
+app:
+  processed_transactions_file: "processed_transactions.json"
+  log_level: "INFO"
+  dry_run: true
+```
+
+> **Note:** The application will first attempt to fetch Amazon orders from your email (if `email` and `email_password` are provided). If that fails or is not configured, it will use the CSV file as a fallback.
+> For Gmail, you must use an [App Password](https://support.google.com/accounts/answer/185833) (not your main password) and enable IMAP access in your account settings.
 
 ## Matching Algorithm
 

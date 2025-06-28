@@ -8,16 +8,59 @@ import org.slf4j.LoggerFactory
 
 /**
  * Service class for handling Amazon order data
- * Note: Amazon doesn't provide a public API for order history, so this service
- * reads from a CSV file that you can export from your Amazon account
+ * Supports multiple data sources: email fetching (via AmazonOrderFetcher) and CSV file
  */
 class AmazonService {
     private static final Logger logger = LoggerFactory.getLogger(AmazonService.class)
     
     private final Configuration config
+    private final AmazonOrderFetcher orderFetcher
     
     AmazonService(Configuration config) {
         this.config = config
+        this.orderFetcher = new AmazonOrderFetcher(config)
+    }
+    
+    /**
+     * Get Amazon orders from the configured data source
+     * Priority: Email fetching (if configured) -> CSV file (if configured) -> Exception
+     */
+    List<AmazonOrder> getOrders() {
+        // Check if email credentials are configured
+        boolean hasEmailConfig = config.amazonEmail && config.amazonEmailPassword
+        
+        // Check if CSV file path is configured
+        boolean hasCsvConfig = config.amazonCsvFilePath
+        
+        if (!hasEmailConfig && !hasCsvConfig) {
+            throw new IllegalStateException(
+                "Neither email credentials nor CSV file path are configured. " +
+                "Please specify either amazon.email and amazon.email_password " +
+                "or amazon.csv_file_path in your config.yml file."
+            )
+        }
+        
+        // Try email fetching first if configured
+        if (hasEmailConfig) {
+            logger.info("Attempting to fetch Amazon orders from email...")
+            List<AmazonOrder> emailOrders = orderFetcher.fetchOrders()
+            
+            if (emailOrders) {
+                logger.info("Successfully fetched ${emailOrders.size()} orders from email")
+                return emailOrders
+            } else {
+                logger.warn("No orders found via email fetching")
+            }
+        }
+        
+        // Fall back to CSV file if email failed or not configured
+        if (hasCsvConfig) {
+            logger.info("Falling back to CSV file: ${config.amazonCsvFilePath}")
+            return getOrdersFromCsv()
+        }
+        
+        // This should not happen due to the validation above, but just in case
+        throw new IllegalStateException("No valid data source found for Amazon orders")
     }
     
     /**
@@ -25,7 +68,7 @@ class AmazonService {
      * You can export your Amazon order history as CSV from:
      * Amazon.com -> Your Account -> Your Orders -> Download order reports
      */
-    List<AmazonOrder> getOrders() {
+    private List<AmazonOrder> getOrdersFromCsv() {
         try {
             File csvFile = new File(config.amazonCsvFilePath)
             if (!csvFile.exists()) {
@@ -94,7 +137,7 @@ class AmazonService {
             return orders
             
         } catch (Exception e) {
-            logger.error("Error loading Amazon orders", e)
+            logger.error("Error loading Amazon orders from CSV", e)
             return []
         }
     }

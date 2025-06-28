@@ -18,6 +18,10 @@ dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
     implementation 'org.slf4j:slf4j-simple:2.0.7'
     
+    // JavaMail dependencies for email functionality
+    implementation 'javax.mail:javax.mail-api:1.6.2'
+    implementation 'com.sun.mail:javax.mail:1.6.2'
+    
     testImplementation 'org.spockframework:spock-core:2.3-groovy-3.0'
 }
 
