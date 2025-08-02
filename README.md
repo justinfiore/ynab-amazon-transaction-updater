@@ -17,6 +17,7 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 - Java 11 or higher
 - Gradle (for building)
 - YNAB API key
+- YNAB Budget ID
 - YNAB Account ID
 - Amazon order history CSV export
 
@@ -29,11 +30,13 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 3. Give it a name (e.g., "Amazon Transaction Updater")
 4. Copy the generated API key
 
-### 2. Get Your YNAB Account ID
+### 2. Get Your YNAB Budget ID and Account ID
 
-1. Go to your YNAB budget
-2. Navigate to the account you want to process
-3. The account ID is in the URL: `https://app.youneedabudget.com/.../accounts/{ACCOUNT_ID}`
+#### Budget ID:
+1. Go to your YNAB budget in a web browser
+2. The budget ID is in the URL: `https://app.youneedabudget.com/{BUDGET_ID}/...`
+   - It will be a long string of letters and numbers
+   - Example: `https://app.youneedabudget.com/abcdef12-3456-7890-abcd-ef1234567890/...`
 
 ### 3. Export Amazon Order History
 
@@ -72,6 +75,7 @@ Edit `config.yml` and update the following values:
 ```yaml
 ynab:
   api_key: "YOUR_ACTUAL_YNAB_API_KEY"
+  budget_id: "YOUR_ACTUAL_YNAB_BUDGET_ID"
   account_id: "YOUR_ACTUAL_YNAB_ACCOUNT_ID"
   base_url: "https://api.ynab.com/v1"
 
@@ -134,7 +138,8 @@ If your CSV has different column names or order, you may need to modify the `Ama
 
 ### YNAB Settings
 - `api_key`: Your YNAB API key
-- `account_id`: The YNAB account ID to process
+- `budget_id`: Your YNAB budget ID (found in the URL when viewing your budget in YNAB)
+- `account_id`: Your YNAB account ID (found in the URL when viewing an account in YNAB)
 - `base_url`: YNAB API base URL (usually doesn't need to change)
 
 ### Amazon Settings

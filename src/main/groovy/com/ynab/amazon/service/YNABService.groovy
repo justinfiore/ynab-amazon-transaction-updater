@@ -12,6 +12,7 @@ import org.apache.http.impl.client.HttpClients
 import org.apache.http.util.EntityUtils
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.time.LocalDate
 
 /**
  * Service class for interacting with the YNAB API
@@ -34,7 +35,9 @@ class YNABService {
      */
     List<YNABTransaction> getTransactions() {
         try {
-            String url = "${config.ynabBaseUrl}/budgets/last-used/accounts/${config.ynabAccountId}/transactions"
+            def oneMonthAgo = LocalDate.now().minusMonths(1)
+            String sinceDate = oneMonthAgo.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+            String url = "${config.ynabBaseUrl}/budgets/${config.ynabBudgetId}/transactions?since_date=${sinceDate}"
             
             HttpGet request = new HttpGet(url)
             request.setHeader("Authorization", "Bearer ${config.ynabApiKey}")
@@ -50,7 +53,7 @@ class YNABService {
                 logger.error("Failed to fetch YNAB transactions. Status: ${response.getStatusLine().getStatusCode()}, Response: ${responseBody}")
                 return []
             }
-            
+            logger.trace("YNAB Response Body: ${responseBody}")
             def jsonResponse = objectMapper.readTree(responseBody)
             def transactionsData = jsonResponse.get("data").get("transactions")
             
@@ -59,7 +62,7 @@ class YNABService {
                 YNABTransaction transaction = new YNABTransaction()
                 transaction.id = transactionJson.get("id")?.asText()
                 transaction.date = transactionJson.get("date")?.asText()
-                transaction.amount = transactionJson.get("amount")?.asBigDecimal()
+                transaction.amount = transactionJson.get("amount")?.asLong()
                 transaction.memo = transactionJson.get("memo")?.asText()
                 transaction.payee_name = transactionJson.get("payee_name")?.asText()
                 transaction.category_name = transactionJson.get("category_name")?.asText()
@@ -89,7 +92,7 @@ class YNABService {
      */
     boolean updateTransactionMemo(String transactionId, String newMemo) {
         try {
-            String url = "${config.ynabBaseUrl}/budgets/last-used/transactions/${transactionId}"
+            String url = "${config.ynabBaseUrl}/budgets/${config.ynabBudgetId}/transactions/${transactionId}"
             
             HttpPatch request = new HttpPatch(url)
             request.setHeader("Authorization", "Bearer ${config.ynabApiKey}")

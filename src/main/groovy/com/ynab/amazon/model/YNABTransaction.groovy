@@ -9,7 +9,7 @@ import groovy.transform.CompileStatic
 class YNABTransaction {
     String id
     String date
-    BigDecimal amount
+    Long amount
     String memo
     String payee_name
     String category_name
@@ -39,8 +39,22 @@ class YNABTransaction {
         return transfer_account_id != null
     }
     
+    /**
+     * Returns the transaction amount in dollars as a formatted string (e.g., "12.34")
+     * YNAB stores amounts as milliunits (1/1000 of a unit), so we divide by 1000
+     */
     String getDisplayAmount() {
-        return amount ? amount.toString() : "0"
+        if (amount == null) return "0.00"
+        return String.format("%.2f", amount / 1000.0)
+    }
+    
+    /**
+     * Returns the transaction amount as a float value
+     * @return the amount in dollars (e.g., 12.34)
+     */
+    float getAmountInDollars() {
+        if (amount == null) return 0.0f
+        return amount / 1000.0f
     }
     
     String getDisplayDate() {

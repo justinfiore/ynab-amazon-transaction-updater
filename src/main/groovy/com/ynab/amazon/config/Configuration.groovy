@@ -12,6 +12,7 @@ class Configuration {
     
     String ynabApiKey
     String ynabAccountId
+    String ynabBudgetId
     String ynabBaseUrl
     String amazonEmail
     String amazonEmailPassword
@@ -36,9 +37,17 @@ class Configuration {
             
             def config = yaml.load(configFile.text)
             
+            if (!config.ynab?.api_key) {
+                throw new IllegalStateException("Missing required configuration: ynab.api_key")
+            }
+            
+            if (!config.ynab?.budget_id) {
+                throw new IllegalStateException("Missing required configuration: ynab.budget_id")
+            }
+            
             // YNAB Configuration
             this.ynabApiKey = config.ynab.api_key
-            this.ynabAccountId = config.ynab.account_id
+            this.ynabBudgetId = config.ynab.budget_id
             this.ynabBaseUrl = config.ynab.base_url ?: "https://api.ynab.com/v1"
             
             // Amazon Configuration
@@ -82,8 +91,8 @@ class Configuration {
             return false
         }
         
-        if (!ynabAccountId || ynabAccountId == "YOUR_YNAB_ACCOUNT_ID_HERE") {
-            logger.error("YNAB Account ID not configured")
+        if (!ynabBudgetId || ynabBudgetId == "YOUR_YNAB_BUDGET_ID_HERE") {
+            logger.error("YNAB Budget ID not configured")
             return false
         }
         

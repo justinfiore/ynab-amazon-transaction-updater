@@ -4,7 +4,7 @@
 # YNAB Configuration
 ynab:
   api_key: "your_actual_ynab_api_key_here"  # Get from https://app.youneedabudget.com/settings/developer
-  account_id: "your_actual_ynab_account_id_here"  # Found in YNAB URL when viewing account
+  budget_id: "your_actual_ynab_budget_id_here"    # Found in YNAB URL when viewing budget or using the API
   base_url: "https://api.ynab.com/v1"
 
 # Amazon Configuration

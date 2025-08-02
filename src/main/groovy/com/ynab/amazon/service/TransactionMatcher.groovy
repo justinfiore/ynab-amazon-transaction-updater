@@ -107,16 +107,16 @@ class TransactionMatcher {
         double score = 0.0
         
         // Amount matching (40% weight)
-        if (transaction.amount && order.totalAmount) {
-            double amountDiff = Math.abs(transaction.amount - order.totalAmount)
-            double amountScore = 1.0 - (amountDiff / Math.max(Math.abs(transaction.amount), Math.abs(order.totalAmount)))
+        if (transaction.getAmountInDollars() && order.totalAmount) {
+            double amountDiff = Math.abs(transaction.getAmountInDollars() - order.totalAmount)
+            double amountScore = 1.0 - (amountDiff / Math.max(Math.abs(transaction.getAmountInDollars()), Math.abs(order.totalAmount)))
             score += amountScore * 0.4
         }
         
         // Date matching (30% weight)
         if (transaction.date && order.orderDate) {
             int daysDiff = calculateDaysDifference(transaction.date, order.orderDate)
-            double dateScore = Math.max(0, 1.0 - (daysDiff / 7.0))  // Within 7 days
+            double dateScore = Math.max(0.0, 1.0 - (daysDiff / 7.0))  // Within 7 days
             score += dateScore * 0.3
         }
         
