@@ -5,17 +5,20 @@ import com.ynab.amazon.model.AmazonOrder
 import com.ynab.amazon.model.AmazonOrderItem
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
+import java.util.regex.Pattern
 import javax.mail.*
 import javax.mail.internet.MimeMultipart
 import javax.mail.internet.InternetAddress
 import javax.mail.search.AndTerm
+import javax.mail.search.OrTerm
 import javax.mail.search.FromTerm
 import javax.mail.search.ReceivedDateTerm
 import javax.mail.search.ComparisonTerm
 import java.text.SimpleDateFormat
 import java.util.regex.Pattern
 import java.util.regex.Matcher
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 /**
  * Service class for automatically fetching Amazon orders
@@ -35,10 +38,10 @@ class AmazonOrderFetcher {
     ]
     
     // Regex patterns for extracting order information from emails
-    private static final Pattern ORDER_ID_PATTERN = /(?i)Order #([A-Z0-9-]+)/
-    private static final Pattern ORDER_DATE_PATTERN = /(?i)Ordered on ([A-Za-z]+ \d{1,2}, \d{4})/
-    private static final Pattern ITEM_PATTERN = /(?i)([^\r\n]+?)\s*\$([0-9]+\.[0-9]{2})/
-    private static final Pattern TOTAL_PATTERN = /(?i)Total:\s*\$([0-9]+\.[0-9]{2})/
+    private static final Pattern ORDER_ID_PATTERN = ~/(?i)Order\s*#\s*([A-Z0-9-]+)/
+    private static final Pattern ORDER_DATE_PATTERN = ~/(?i)Ordered on ([A-Za-z]+ \d{1,2}, \d{4})/
+    private static final Pattern ITEM_PATTERN = ~/(?i)([^\r\n]+?)\s*\$([0-9]+\.[0-9]{2})/
+    private static final Pattern TOTAL_PATTERN = Pattern.compile('(?i)(?:Total|Total\\s+Amount):?\\s*\\$?\\s*([0-9]+\\.[0-9]{2})\\s*(?:USD)?', Pattern.DOTALL)
     
     AmazonOrderFetcher(Configuration config) {
         this.config = config
@@ -108,11 +111,19 @@ class AmazonOrderFetcher {
             
             Message[] messages = inbox.search(
                 new AndTerm(
-                    new FromTerm(new InternetAddress("order-confirmation@amazon.com")),
+                    new OrTerm(
+                        new FromTerm(new InternetAddress("order-confirmation@amazon.com")),
+                        new FromTerm(new InternetAddress("auto-confirm@amazon.com"))
+                    ),
                     new ReceivedDateTerm(ComparisonTerm.GT, fromDate)
                 )
             )
-            
+            logger.info("Num Amazon Messages: ${messages.length}")
+            if(messages != null) {
+                logger.info("Found ${messages.length} Amazon order emails")
+            } else {
+                logger.info("No Amazon order emails found")
+            }
             messages.each { message ->
                 try {
                     AmazonOrder order = parseOrderFromEmail(message)
@@ -138,7 +149,7 @@ class AmazonOrderFetcher {
             return orders
             
         } catch (Exception e) {
-            logger.error("Error fetching orders from email: ${e.message}")
+            logger.error("Error fetching orders from email: ${e.message}", e)
             return []
         }
     }
@@ -150,45 +161,49 @@ class AmazonOrderFetcher {
         try {
             String subject = message.getSubject()
             String content = getEmailContent(message)
+            logger.debug("Parsing email: ${subject} ...")
             
             // Extract order ID
             Matcher orderIdMatcher = ORDER_ID_PATTERN.matcher(content)
             if (!orderIdMatcher.find()) {
+                logger.debug("No order ID found in email: ${subject}")
+                logger.trace("Email content: ${content}")
                 return null
             }
             String orderId = orderIdMatcher.group(1)
             
             // Extract order date
             Matcher dateMatcher = ORDER_DATE_PATTERN.matcher(content)
-            String orderDate = "Unknown"
-            if (dateMatcher.find()) {
-                orderDate = parseEmailDate(dateMatcher.group(1))
+            LocalDate orderDate = dateMatcher.find() ? 
+                LocalDate.parse(dateMatcher.group(1), DateTimeFormatter.ofPattern("MMMM d, yyyy")) : 
+                LocalDate.now()
+            
+            // Extract total amount
+            Matcher totalMatcher = TOTAL_PATTERN.matcher(content)
+            if (!totalMatcher.find()) {
+                logger.warn("No total amount found in order ${orderId}")
+                return null
             }
+            BigDecimal total = new BigDecimal(totalMatcher.group(1))
             
-            AmazonOrder order = new AmazonOrder()
-            order.orderId = orderId
-            order.orderDate = orderDate
-            order.totalAmount = 0
-            
-            // Extract items
+            // Extract items (for reference, but we'll use the total from above)
+            List<AmazonOrderItem> items = []
             Matcher itemMatcher = ITEM_PATTERN.matcher(content)
             while (itemMatcher.find()) {
                 String title = itemMatcher.group(1).trim()
                 BigDecimal price = new BigDecimal(itemMatcher.group(2))
-                
-                AmazonOrderItem item = new AmazonOrderItem()
-                item.title = title
-                item.price = price
-                item.quantity = 1
-                
-                order.addItem(item)
-                order.totalAmount += price
+                items.add(new AmazonOrderItem(title: title, price: price))
             }
             
-            return order
+            return new AmazonOrder(
+                orderId: orderId,
+                orderDate: orderDate,
+                totalAmount: total,
+                items: items
+            )
             
         } catch (Exception e) {
-            logger.warn("Error parsing email content: ${e.message}")
+            logger.error("Error parsing order from email: ${e.message}", e)
             return null
         }
     }
@@ -218,21 +233,6 @@ class AmazonOrderFetcher {
             logger.warn("Error extracting email content: ${e.message}")
         }
         return ""
-    }
-    
-    /**
-     * Parse date from email format to YYYY-MM-DD
-     */
-    private String parseEmailDate(String dateStr) {
-        try {
-            SimpleDateFormat inputFormat = new SimpleDateFormat("MMMM d, yyyy")
-            Date date = inputFormat.parse(dateStr)
-            SimpleDateFormat outputFormat = new SimpleDateFormat("yyyy-MM-dd")
-            return outputFormat.format(date)
-        } catch (Exception e) {
-            logger.warn("Could not parse date: ${dateStr}")
-            return "Unknown"
-        }
     }
     
     /**

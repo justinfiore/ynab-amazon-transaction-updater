@@ -48,13 +48,31 @@ class Configuration {
             
             // Application Configuration
             this.processedTransactionsFile = config.app.processed_transactions_file
-            this.logLevel = config.app.log_level ?: "INFO"
+            this.logLevel = config.app.log_level ? config.app.log_level.toUpperCase() : "INFO"
             this.dryRun = config.app.dry_run ?: false
             
-            logger.info("Configuration loaded successfully")
+            // Configure SimpleLogger - must be set before any logger instances are created
+            System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", this.logLevel)
+            System.setProperty("org.slf4j.simpleLogger.showDateTime", "true")
+            System.setProperty("org.slf4j.simpleLogger.dateTimeFormat", "yyyy-MM-dd HH:mm:ss.SSS")
+            System.setProperty("org.slf4j.simpleLogger.showThreadName", "false")
+            System.setProperty("org.slf4j.simpleLogger.showLogName", "false")
+            System.setProperty("org.slf4j.simpleLogger.levelInBrackets", "true")
+            
+            // Re-initialize the logger to pick up the new settings
+            def loggerContext = org.slf4j.LoggerFactory.getILoggerFactory()
+            if (loggerContext instanceof ch.qos.logback.classic.LoggerContext) {
+                // If using Logback
+                def context = (ch.qos.logback.classic.LoggerContext) loggerContext 
+                context.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).setLevel(ch.qos.logback.classic.Level.toLevel(this.logLevel))
+                System.out.println("Set log level to ${context.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).getLevel()}")
+            }
+            
+            logger.info("Configuration loaded successfully with log level: ${this.logLevel}")
             
         } catch (Exception e) {
-            logger.error("Error loading configuration", e)
+            System.err.println("Error loading configuration: ${e.message}")
+            e.printStackTrace()
         }
     }
     
@@ -84,4 +102,4 @@ class Configuration {
     boolean isDryRun() {
         return dryRun
     }
-} 
+}

@@ -58,9 +58,11 @@ class AmazonService {
             logger.info("Falling back to CSV file: ${config.amazonCsvFilePath}")
             return getOrdersFromCsv()
         }
+
+        return new ArrayList<AmazonOrder>();
         
         // This should not happen due to the validation above, but just in case
-        throw new IllegalStateException("No valid data source found for Amazon orders")
+        //throw new IllegalStateException("No valid data source found for Amazon orders")
     }
     
     /**
