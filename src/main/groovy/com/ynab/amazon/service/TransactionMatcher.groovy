@@ -184,14 +184,14 @@ class TransactionMatcher {
         String summary = ""
         if (order.items.size() == 1) {
             summary = order.items[0].title.split(",")[0]
+        } else {
+            // For multiple items, create a summary
+            summary = "${order.items.size()} items: "
+            summary += order.items.take(3).collect { it.title.split(",")[0] }.join(", ")
+            
+            if (order.items.size() > 3) {
+                summary += " ..."
         }
-        
-        // For multiple items, create a summary
-        summary = "${order.items.size()} items: "
-        summary += order.items.take(3).collect { it.title.split(",")[0] }.join(", ")
-        
-        if (order.items.size() > 3) {
-            summary += " ..."
         }
         String proposedMemo = summary
         if(transaction.memo != null && !transaction.memo.isEmpty() && !transaction.memo.equals("null")) {
