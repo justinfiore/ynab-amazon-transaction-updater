@@ -59,8 +59,7 @@ class TransactionMatcher {
         
         // Check if memo contains product information (indicating it was already processed)
         return transaction.memo.contains("items:") || 
-               transaction.memo.contains("Amazon Order") ||
-               transaction.memo.length() > 50  // Long memos likely already processed
+               transaction.memo.length() > 100  // Long memos likely already processed
     }
     
     /**
