@@ -172,7 +172,10 @@ class TransactionMatcher {
     }
     
     /**
-     * Generate a proposed memo for the transaction
+     * Generate a sanitized and truncated memo for the transaction
+     * @return A memo string that is:
+     * - Limited to 500 characters
+     * - Contains only a-zA-Z0-9, spaces, hyphens, underscores, and plus signs
      */
     private String generateProposedMemo(YNABTransaction transaction, AmazonOrder order) {
         if (!order.items || order.items.isEmpty()) {
@@ -181,6 +184,8 @@ class TransactionMatcher {
             }
             return "Amazon Order (Couldn't identify items)"
         }
+        
+        // Generate the base summary
         String summary = ""
         if (order.items.size() == 1) {
             summary = order.items[0].title.split(",")[0]
@@ -191,13 +196,22 @@ class TransactionMatcher {
             
             if (order.items.size() > 3) {
                 summary += " ..."
+            }
         }
-        }
+        
+        // Combine with existing memo if it exists
         String proposedMemo = summary
         if(transaction.memo != null && !transaction.memo.isEmpty() && !transaction.memo.equals("null")) {
             proposedMemo = "${transaction.memo} | ${summary}"
         }
-        return proposedMemo
+        
+        // Sanitize the memo to only allow certain characters
+        // Note: + needs to be escaped in the character class
+        proposedMemo = proposedMemo.replaceAll(/[^a-zA-Z0-9 _\-\+:']/, " ")
+        
+        // Remove any extra whitespace and truncate to 500 characters
+        proposedMemo = proposedMemo.replaceAll("\\s+", " ").trim()
+        return proposedMemo.length() > 500 ? proposedMemo.substring(0, 500) : proposedMemo
     }
     
     /**
