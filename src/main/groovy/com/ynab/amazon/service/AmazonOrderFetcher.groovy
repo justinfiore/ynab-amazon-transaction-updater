@@ -178,7 +178,6 @@ class AmazonOrderFetcher {
             String orderId = orderIdMatcher.group(1)
             Boolean isReturn = false
             String orderDate = sdf.format(message.getSentDate())
-            logger.debug("From: ${message.getFrom().toString()}")
             if(message.getFrom().toString().contains("return@amazon.com")) {
                 isReturn = true
                 orderId = "RETURN-" + orderId

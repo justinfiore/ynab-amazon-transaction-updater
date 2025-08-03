@@ -92,6 +92,8 @@ class TransactionProcessor {
                         } else {
                             logger.error("Failed to update transaction ${ynabTxn.id}")
                         }
+                    } else {
+                        updatedCount++
                     }
                 } else {
                     logTransactionDetails(match, "Skipping low confidence match")

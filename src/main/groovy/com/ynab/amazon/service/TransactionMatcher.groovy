@@ -110,23 +110,23 @@ class TransactionMatcher {
     private double calculateMatchScore(YNABTransaction transaction, AmazonOrder order) {
         double score = 0.0
         
-        // Amount matching (40% weight)
+        // Amount matching (70% weight)
         if (transaction.getAmountInDollars() && order.totalAmount) {
             double amountDiff = Math.abs(transaction.getAmountInDollars() - order.totalAmount)
             double amountScore = 1.0 - (amountDiff / Math.max(Math.abs(transaction.getAmountInDollars()), Math.abs(order.totalAmount)))
-            score += amountScore * 0.4
+            score += amountScore * 0.7
         }
         
-        // Date matching (40% weight)
+        // Date matching (25% weight)
         if (transaction.date && order.orderDate) {
             int daysDiff = calculateDaysDifference(transaction.date, order.orderDate)
             double dateScore = Math.max(0.0, 1.0 - (daysDiff / 7.0))  // Within 7 days
-            score += dateScore * 0.4
+            score += dateScore * 0.25
         }
         
-        // Payee name matching (20% weight)
+        // Payee name matching (5% weight)
         if (transaction.payee_name && isAmazonPayee(transaction.payee_name)) {
-            score += 0.2
+            score += 0.05
         }
         
         return Math.min(1.0, score)
@@ -176,15 +176,18 @@ class TransactionMatcher {
      */
     private String generateProposedMemo(YNABTransaction transaction, AmazonOrder order) {
         if (!order.items || order.items.isEmpty()) {
-            return "Amazon Order"
+            if(order.isReturn) {
+                return "Amazon Return (Couldn't identify items)"
+            }
+            return "Amazon Order (Couldn't identify items)"
         }
-        
+        String summary = ""
         if (order.items.size() == 1) {
-            return order.items[0].title.split(",")[0]
+            summary = order.items[0].title.split(",")[0]
         }
         
         // For multiple items, create a summary
-        String summary = "${order.items.size()} items: "
+        summary = "${order.items.size()} items: "
         summary += order.items.take(3).collect { it.title.split(",")[0] }.join(", ")
         
         if (order.items.size() > 3) {
