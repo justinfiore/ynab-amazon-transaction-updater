@@ -195,7 +195,7 @@ class TransactionMatcher {
         }
         String proposedMemo = summary
         if(transaction.memo != null && !transaction.memo.isEmpty() && !transaction.memo.equals("null")) {
-            proposedMemo = "${transaction.memo}| ${summary}"
+            proposedMemo = "${transaction.memo} | ${summary}"
         }
         return proposedMemo
     }
