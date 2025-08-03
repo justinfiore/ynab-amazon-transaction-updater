@@ -40,8 +40,8 @@ class AmazonOrderFetcher {
     // Regex patterns for extracting order information from emails
     private static final Pattern ORDER_ID_PATTERN = ~/(?i)Order\s*#\s*([A-Z0-9-]+)/
     private static final Pattern ORDER_DATE_PATTERN = ~/(?i)Ordered on ([A-Za-z]+ \d{1,2}, \d{4})/
-    private static final Pattern ITEM_PATTERN = ~/(?i)([^\r\n]+?)\s*\$([0-9]+\.[0-9]{2})/
-    private static final Pattern TOTAL_PATTERN = Pattern.compile('(?i)(?:Total|Total\\s+Amount):?\\s*\\$?\\s*([0-9]+\\.[0-9]{2})\\s*(?:USD)?', Pattern.DOTALL)
+    private static final Pattern ITEM_PATTERN = ~/\*\s*([^\r\n]+?)\s*Quantity: \d+\s*([\d.]+)\s*USD/
+    private static final Pattern TOTAL_PATTERN = Pattern.compile('(?i)(?:Total|Total\\s+Amount|Total.+refund):?\\s*\\$?\\s*([0-9]+\\.?[0-9]{0,2})\\s*(?:USD)?', Pattern.DOTALL)
     
     AmazonOrderFetcher(Configuration config) {
         this.config = config
@@ -62,25 +62,9 @@ class AmazonOrderFetcher {
                 return orders
             }
         }
-        
-        // Try web scraping as fallback
-        logger.info("Attempting to fetch orders via web scraping...")
-        orders = fetchOrdersFromWeb()
-        if (orders) {
-            logger.info("Successfully fetched ${orders.size()} orders from web")
-            return orders
-        }
-        
-        // Try API alternatives
-        logger.info("Attempting to fetch orders via API alternatives...")
-        orders = fetchOrdersFromAPI()
-        if (orders) {
-            logger.info("Successfully fetched ${orders.size()} orders from API")
-            return orders
-        }
-        
-        logger.warn("Could not fetch orders automatically. Falling back to CSV file.")
-        return []
+        List<AmazonOrder> ordersWithDatesAndTotals = orders.findAll{ it.orderDate != null && it.totalAmount != null }
+        logger.info("Found ${ordersWithDatesAndTotals.size()} orders with dates and totals")
+        return orders
     }
     
     /**
@@ -109,11 +93,13 @@ class AmazonOrderFetcher {
             cal.add(Calendar.DAY_OF_MONTH, -30)
             Date fromDate = cal.getTime()
             
+            // Search for messages first
             Message[] messages = inbox.search(
                 new AndTerm(
                     new OrTerm(
                         new FromTerm(new InternetAddress("order-confirmation@amazon.com")),
-                        new FromTerm(new InternetAddress("auto-confirm@amazon.com"))
+                        new FromTerm(new InternetAddress("auto-confirm@amazon.com")),
+                        new FromTerm(new InternetAddress("return@amazon.com"))
                     ),
                     new ReceivedDateTerm(ComparisonTerm.GT, fromDate)
                 )
@@ -124,6 +110,17 @@ class AmazonOrderFetcher {
             } else {
                 logger.info("No Amazon order emails found")
             }
+            
+            // Sort messages by date (oldest first)
+            messages = messages.sort { a, b ->
+                try {
+                    return a.sentDate <=> b.sentDate
+                } catch (Exception e) {
+                    return 0
+                }
+            }
+            
+            logger.info("Found ${messages.length} Amazon order emails (sorted oldest first)")
             messages.each { message ->
                 try {
                     AmazonOrder order = parseOrderFromEmail(message)
@@ -131,8 +128,15 @@ class AmazonOrderFetcher {
                         // Merge with existing order if same order ID
                         AmazonOrder existingOrder = orderMap.get(order.orderId)
                         if (existingOrder) {
-                            existingOrder.items.addAll(order.items)
-                            existingOrder.totalAmount += order.totalAmount
+                            if(existingOrder.items == null && existingItems.size() == 0 && order.items != null && order.items.size() > 0) {
+                                existingOrder.items = order.items
+                            }
+                            if(existingOrder.totalAmount == null) {
+                                existingOrder.totalAmount = order.totalAmount
+                            }
+                            if(existingOrder.orderDate == null) {
+                                existingOrder.orderDate = order.orderDate
+                            }
                         } else {
                             orderMap[order.orderId] = order
                             orders.add(order)
@@ -158,6 +162,7 @@ class AmazonOrderFetcher {
      * Parse order information from an email message
      */
     private AmazonOrder parseOrderFromEmail(Message message) {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd")
         try {
             String subject = message.getSubject()
             String content = getEmailContent(message)
@@ -171,17 +176,18 @@ class AmazonOrderFetcher {
                 return null
             }
             String orderId = orderIdMatcher.group(1)
-            
-            // Extract order date
-            Matcher dateMatcher = ORDER_DATE_PATTERN.matcher(content)
-            LocalDate orderDate = dateMatcher.find() ? 
-                LocalDate.parse(dateMatcher.group(1), DateTimeFormatter.ofPattern("MMMM d, yyyy")) : 
-                LocalDate.now()
-            
+            Boolean isReturn = false
+            String orderDate = sdf.format(message.getSentDate())
+            logger.debug("From: ${message.getFrom().toString()}")
+            if(message.getFrom().toString().contains("return@amazon.com")) {
+                isReturn = true
+                orderId = "RETURN-" + orderId
+            }
             // Extract total amount
             Matcher totalMatcher = TOTAL_PATTERN.matcher(content)
             if (!totalMatcher.find()) {
                 logger.warn("No total amount found in order ${orderId}")
+                logger.debug("Body Content: ${content}")
                 return null
             }
             BigDecimal total = new BigDecimal(totalMatcher.group(1))
@@ -194,13 +200,18 @@ class AmazonOrderFetcher {
                 BigDecimal price = new BigDecimal(itemMatcher.group(2))
                 items.add(new AmazonOrderItem(title: title, price: price))
             }
-            
-            return new AmazonOrder(
+            if(!isReturn && total != null) {
+                total = total * -1.0
+            }
+            AmazonOrder order = new AmazonOrder(
                 orderId: orderId,
                 orderDate: orderDate,
                 totalAmount: total,
-                items: items
+                items: items,
+                isReturn: isReturn
             )
+            logger.debug("Parsed Order: ${order}")
+            return order
             
         } catch (Exception e) {
             logger.error("Error parsing order from email: ${e.message}", e)
@@ -233,28 +244,6 @@ class AmazonOrderFetcher {
             logger.warn("Error extracting email content: ${e.message}")
         }
         return ""
-    }
-    
-    /**
-     * Fetch orders via web scraping (fallback method)
-     */
-    private List<AmazonOrder> fetchOrdersFromWeb() {
-        // This would require implementing web scraping with Selenium or similar
-        // For now, return empty list as this is complex and may violate ToS
-        logger.info("Web scraping not implemented (may violate Amazon ToS)")
-        return []
-    }
-    
-    /**
-     * Fetch orders via API alternatives (third-party services)
-     */
-    private List<AmazonOrder> fetchOrdersFromAPI() {
-        // This could integrate with services like:
-        // - Plaid (for bank transaction data)
-        // - Yodlee
-        // - Other financial data aggregators
-        logger.info("API alternatives not implemented")
-        return []
     }
     
     /**

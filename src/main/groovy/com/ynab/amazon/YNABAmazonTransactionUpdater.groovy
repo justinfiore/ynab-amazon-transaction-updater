@@ -64,15 +64,13 @@ class YNABAmazonTransactionUpdater {
         def matches = matcher.findMatches(unprocessedTransactions, amazonOrders)
         logger.info("Found ${matches.size()} potential matches")
         
+        // Process the matches (either update or dry run)
+        def stats = processor.updateTransactions(matches, ynabService, config.isDryRun())
+        
         if (config.isDryRun()) {
-            logger.info("DRY RUN MODE - No changes will be made")
-            matches.each { match ->
-                logger.info("Would update transaction: ${match.ynabTransaction.id} with memo: ${match.proposedMemo}")
-            }
+            logger.info("Dry run complete. Would update ${stats.updated} transactions (${stats.high_confidence} high, ${stats.medium_confidence} medium confidence)")
         } else {
-            logger.info("Updating YNAB transactions...")
-            def updatedCount = processor.updateTransactions(matches, ynabService)
-            logger.info("Successfully updated ${updatedCount} transactions")
+            logger.info("Successfully updated ${stats.updated} transactions (${stats.high_confidence} high, ${stats.medium_confidence} medium confidence)")
         }
     }
 } 

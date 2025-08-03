@@ -14,6 +14,7 @@ class AmazonOrder {
     List<AmazonOrderItem> items
     String status
     String shippingAddress
+    Boolean isReturn = false
     
     AmazonOrder() {
         this.items = []
@@ -48,7 +49,7 @@ class AmazonOrder {
     
     @Override
     String toString() {
-        return "AmazonOrder{orderId='${orderId}', date='${orderDate}', amount=${totalAmount}, items=${items?.size() ?: 0}}"
+        return "AmazonOrder{orderId='${orderId}', date='${orderDate}', amount=${totalAmount}, items=${items?.size() ?: 0}, isReturn=${isReturn}}"
     }
 }
 

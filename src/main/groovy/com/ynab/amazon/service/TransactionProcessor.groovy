@@ -52,41 +52,98 @@ class TransactionProcessor {
     }
     
     /**
-     * Update YNAB transactions with new memos
+     * Update YNAB transactions with new memos or perform a dry run
+     * @param matches List of transaction matches to process
+     * @param ynabService YNAB service for making API calls
+     * @param dryRun If true, only log what would be done without making changes
+     * @return Map containing update statistics
      */
-    int updateTransactions(List<TransactionMatch> matches, YNABService ynabService) {
+    Map<String, Object> updateTransactions(List<TransactionMatch> matches, YNABService ynabService, boolean dryRun = false) {
         int updatedCount = 0
-        
+        int highConfidenceCount = matches.count { it.isHighConfidence() }
+        int mediumConfidenceCount = matches.count { it.isMediumConfidence() }
+        int lowConfidenceCount = matches.count { it.isLowConfidence() }
+
+        if (dryRun) {
+            logger.info("DRY RUN MODE - No changes will be made")
+            logger.info("Found ${highConfidenceCount} high confidence and ${mediumConfidenceCount} medium confidence matches")
+        } else {
+            logger.info("Updating YNAB transactions...")
+        }
+
         matches.each { match ->
             try {
+                def ynabTxn = match.ynabTransaction
+                def order = match.amazonOrder
+                
                 if (match.isHighConfidence() || match.isMediumConfidence()) {
-                    logger.info("Updating transaction ${match.ynabTransaction.id} with memo: ${match.proposedMemo}")
+                    logTransactionDetails(match, dryRun ? "Would update" : "Updating")
                     
-                    boolean success = ynabService.updateTransactionMemo(
-                        match.ynabTransaction.id, 
-                        match.proposedMemo
-                    )
-                    
-                    if (success) {
-                        markAsProcessed(match.ynabTransaction.id)
-                        updatedCount++
-                        logger.info("Successfully updated transaction ${match.ynabTransaction.id}")
-                    } else {
-                        logger.error("Failed to update transaction ${match.ynabTransaction.id}")
+                    if (!dryRun) {
+                        boolean success = ynabService.updateTransactionMemo(
+                            ynabTxn.id, 
+                            match.proposedMemo
+                        )
+                        
+                        if (success) {
+                            markAsProcessed(ynabTxn.id)
+                            updatedCount++
+                            logger.info("Successfully updated transaction ${ynabTxn.id}")
+                        } else {
+                            logger.error("Failed to update transaction ${ynabTxn.id}")
+                        }
                     }
                 } else {
-                    logger.warn("Skipping low confidence match for transaction ${match.ynabTransaction.id} (score: ${match.confidenceScore})")
+                    logTransactionDetails(match, "Skipping low confidence match")
                 }
                 
             } catch (Exception e) {
-                logger.error("Error updating transaction ${match.ynabTransaction.id}", e)
+                logger.error("Error processing transaction ${match.ynabTransaction.id}", e)
             }
         }
         
-        // Save processed transactions
-        saveProcessedTransactions()
+        if (!dryRun) {
+            saveProcessedTransactions()
+        }
         
-        return updatedCount
+        return [
+            updated: updatedCount,
+            high_confidence: highConfidenceCount,
+            medium_confidence: mediumConfidenceCount,
+            low_confidence: lowConfidenceCount
+        ]
+    }
+    
+    /**
+     * Log transaction details with consistent formatting
+     * @param match The transaction match to log
+     * @param action The action being performed (e.g., "Updating", "Would update", "Skipping")
+     */
+    private void logTransactionDetails(TransactionMatch match, String action) {
+        def ynabTxn = match.ynabTransaction
+        def order = match.amazonOrder
+        
+        if (logger.isDebugEnabled()) {
+            String confidence = match.isHighConfidence() ? "High" : 
+                              match.isMediumConfidence() ? "Medium" : "Low"
+            
+            logger.debug("""
+                |${action} Transaction:
+                |  YNAB ID: ${ynabTxn.id}
+                |  Payee: ${ynabTxn.payee_name}
+                |  Current Memo: ${ynabTxn.memo}
+                |  YNAB Amount: ${ynabTxn.getDisplayAmount()}
+                |  Order Total: ${order?.totalAmount ?: 'N/A'}
+                |  YNAB Date: ${ynabTxn.date}
+                |  Order Date: ${order?.orderDate ?: 'N/A'}
+                |  New Memo: ${match.proposedMemo}
+                |  Confidence: ${String.format('%.2f', match.confidenceScore * 100)}% (${confidence})
+                |  Match Reason: ${match.matchReason}
+                |  Order ID: ${order?.orderId ?: 'N/A'}""".stripMargin())
+        } else if (!action.toLowerCase().contains("skip")) {
+            // Only log non-skipped transactions in info mode
+            logger.info("${action} transaction: ${ynabTxn.id} - ${ynabTxn.payee_name} (${ynabTxn.getDisplayAmount()}) - ${match.proposedMemo}")
+        }
     }
     
     /**
