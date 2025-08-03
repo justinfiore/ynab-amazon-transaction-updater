@@ -35,8 +35,9 @@ class YNABService {
      */
     List<YNABTransaction> getTransactions() {
         try {
-            def oneMonthAgo = LocalDate.now().minusMonths(1)
-            String sinceDate = oneMonthAgo.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+            def lookBackDate = LocalDate.now().minusDays(config.lookBackDays)
+            String sinceDate = lookBackDate.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+            logger.info("Looking back ${config.lookBackDays} days for YNAB transactions (since ${sinceDate})")
             String url = "${config.ynabBaseUrl}/budgets/${config.ynabBudgetId}/transactions?since_date=${sinceDate}"
             
             HttpGet request = new HttpGet(url)
