@@ -110,7 +110,6 @@ class TransactionMatcher {
         double score = 0.0
         
         // Amount matching (70% weight)
-        // Amount matching (70% weight)
         if (transaction.getAmountInDollars() && order.totalAmount) {
             double amountDiff = Math.abs(transaction.getAmountInDollars() - order.totalAmount)
             double amountScore = 1.0 - (amountDiff / Math.max(Math.abs(transaction.getAmountInDollars()), Math.abs(order.totalAmount)))
