@@ -110,23 +110,23 @@ class TransactionMatcher {
     private double calculateMatchScore(YNABTransaction transaction, AmazonOrder order) {
         double score = 0.0
         
-        // Amount matching (40% weight)
+        // Amount matching (70% weight)
         if (transaction.getAmountInDollars() && order.totalAmount) {
             double amountDiff = Math.abs(transaction.getAmountInDollars() - order.totalAmount)
             double amountScore = 1.0 - (amountDiff / Math.max(Math.abs(transaction.getAmountInDollars()), Math.abs(order.totalAmount)))
-            score += amountScore * 0.4
+            score += amountScore * 0.7
         }
         
-        // Date matching (40% weight)
+        // Date matching (20% weight)
         if (transaction.date && order.orderDate) {
             int daysDiff = calculateDaysDifference(transaction.date, order.orderDate)
             double dateScore = Math.max(0.0, 1.0 - (daysDiff / 7.0))  // Within 7 days
-            score += dateScore * 0.4
+            score += dateScore * 0.2
         }
         
-        // Payee name matching (20% weight)
+        // Payee name matching (10% weight)
         if (transaction.payee_name && isAmazonPayee(transaction.payee_name)) {
-            score += 0.2
+            score += 0.1
         }
         
         return Math.min(1.0, score)
