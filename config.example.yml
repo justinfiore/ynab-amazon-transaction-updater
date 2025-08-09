@@ -17,6 +17,7 @@ amazon:
 
 # Application Configuration
 app:
+  look_back_days: 30  # Number of days to look back for transactions
   processed_transactions_file: "processed_transactions.json"  # Tracks which transactions have been processed
   log_level: "INFO"  # Options: DEBUG, INFO, WARN, ERROR
   dry_run: true  # Set to false when ready to make actual changes to YNAB

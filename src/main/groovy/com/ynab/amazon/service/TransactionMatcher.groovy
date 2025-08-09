@@ -59,8 +59,7 @@ class TransactionMatcher {
         
         // Check if memo contains product information (indicating it was already processed)
         return transaction.memo.contains("items:") || 
-               transaction.memo.contains("Amazon Order") ||
-               transaction.memo.length() > 50  // Long memos likely already processed
+               transaction.memo.length() > 100  // Long memos likely already processed
     }
     
     /**
@@ -110,6 +109,7 @@ class TransactionMatcher {
     private double calculateMatchScore(YNABTransaction transaction, AmazonOrder order) {
         double score = 0.0
         
+        // Amount matching (70% weight)
         // Amount matching (70% weight)
         if (transaction.getAmountInDollars() && order.totalAmount) {
             double amountDiff = Math.abs(transaction.getAmountInDollars() - order.totalAmount)
@@ -172,29 +172,46 @@ class TransactionMatcher {
     }
     
     /**
-     * Generate a proposed memo for the transaction
+     * Generate a sanitized and truncated memo for the transaction
+     * @return A memo string that is:
+     * - Limited to 500 characters
+     * - Contains only a-zA-Z0-9, spaces, hyphens, underscores, and plus signs
      */
     private String generateProposedMemo(YNABTransaction transaction, AmazonOrder order) {
         if (!order.items || order.items.isEmpty()) {
-            return "Amazon Order"
+            if(order.isReturn) {
+                return "Amazon Return (Couldn't identify items)"
+            }
+            return "Amazon Order (Couldn't identify items)"
         }
         
+        // Generate the base summary
+        String summary = ""
         if (order.items.size() == 1) {
-            return order.items[0].title.split(",")[0]
+            summary = order.items[0].title.split(",")[0]
+        } else {
+            // For multiple items, create a summary
+            summary = "${order.items.size()} items: "
+            summary += order.items.take(3).collect { it.title.split(",")[0] }.join(", ")
+            
+            if (order.items.size() > 3) {
+                summary += " ..."
+            }
         }
         
-        // For multiple items, create a summary
-        String summary = "${order.items.size()} items: "
-        summary += order.items.take(3).collect { it.title.split(",")[0] }.join(", ")
-        
-        if (order.items.size() > 3) {
-            summary += " ..."
-        }
+        // Combine with existing memo if it exists
         String proposedMemo = summary
         if(transaction.memo != null && !transaction.memo.isEmpty() && !transaction.memo.equals("null")) {
-            proposedMemo = "${transaction.memo}| ${summary}"
+            proposedMemo = "${transaction.memo} | ${summary}"
         }
-        return proposedMemo
+        
+        // Sanitize the memo to only allow certain characters
+        // Note: + needs to be escaped in the character class
+        proposedMemo = proposedMemo.replaceAll(/[^a-zA-Z0-9 _\-\+:']/, " ")
+        
+        // Remove any extra whitespace and truncate to 500 characters
+        proposedMemo = proposedMemo.replaceAll("\\s+", " ").trim()
+        return proposedMemo.length() > 500 ? proposedMemo.substring(0, 500) : proposedMemo
     }
     
     /**

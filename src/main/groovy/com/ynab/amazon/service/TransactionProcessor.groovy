@@ -92,6 +92,8 @@ class TransactionProcessor {
                         } else {
                             logger.error("Failed to update transaction ${ynabTxn.id}")
                         }
+                    } else {
+                        updatedCount++
                     }
                 } else {
                     logTransactionDetails(match, "Skipping low or medium confidence match")
@@ -186,8 +188,13 @@ class TransactionProcessor {
                 last_updated: new Date().toString()
             ]
             
-            String json = objectMapper.writeValueAsString(data)
-            new File(config.processedTransactionsFile).text = json
+            // Configure pretty printer for JSON output
+            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(data)
+            
+            // Ensure parent directory exists
+            File outputFile = new File(config.processedTransactionsFile)
+            outputFile.parentFile?.mkdirs()
+            outputFile.text = json
             
             logger.info("Saved ${processedTransactionIds.size()} processed transaction IDs")
             

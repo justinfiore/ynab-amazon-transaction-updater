@@ -88,10 +88,11 @@ class AmazonOrderFetcher {
             List<AmazonOrder> orders = []
             Map<String, AmazonOrder> orderMap = [:]
             
-            // Search for Amazon order emails from the last 30 days
+            // Search for Amazon order emails from the configured look-back period + 2 days
             Calendar cal = Calendar.getInstance()
-            cal.add(Calendar.DAY_OF_MONTH, -30)
+            cal.add(Calendar.DAY_OF_MONTH, -(config.lookBackDays + 2))
             Date fromDate = cal.getTime()
+            logger.info("Looking back ${config.lookBackDays + 2} days (${config.lookBackDays} configured + 2 buffer) for Amazon orders")
             
             // Search for messages first
             Message[] messages = inbox.search(
@@ -178,7 +179,6 @@ class AmazonOrderFetcher {
             String orderId = orderIdMatcher.group(1)
             Boolean isReturn = false
             String orderDate = sdf.format(message.getSentDate())
-            logger.debug("From: ${message.getFrom().toString()}")
             if(message.getFrom().toString().contains("return@amazon.com")) {
                 isReturn = true
                 orderId = "RETURN-" + orderId

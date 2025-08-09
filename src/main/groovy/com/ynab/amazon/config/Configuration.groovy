@@ -20,6 +20,7 @@ class Configuration {
     String processedTransactionsFile
     String logLevel
     boolean dryRun
+    int lookBackDays
     
     Configuration() {
         loadConfiguration()
@@ -59,6 +60,7 @@ class Configuration {
             this.processedTransactionsFile = config.app.processed_transactions_file
             this.logLevel = config.app.log_level ? config.app.log_level.toUpperCase() : "INFO"
             this.dryRun = config.app.dry_run ?: false
+            this.lookBackDays = config.app.look_back_days ?: 30
             
             // Configure SimpleLogger - must be set before any logger instances are created
             System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", this.logLevel)
