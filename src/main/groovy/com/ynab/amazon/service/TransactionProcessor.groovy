@@ -66,7 +66,7 @@ class TransactionProcessor {
 
         if (dryRun) {
             logger.info("DRY RUN MODE - No changes will be made")
-            logger.info("Found ${highConfidenceCount} high confidence and ${mediumConfidenceCount} medium confidence matches")
+            logger.info("Found ${highConfidenceCount} high confidence matches")
         } else {
             logger.info("Updating YNAB transactions...")
         }
@@ -76,7 +76,7 @@ class TransactionProcessor {
                 def ynabTxn = match.ynabTransaction
                 def order = match.amazonOrder
                 
-                if (match.isHighConfidence() || match.isMediumConfidence()) {
+                if (match.isHighConfidence()) {
                     logTransactionDetails(match, dryRun ? "Would update" : "Updating")
                     
                     if (!dryRun) {
@@ -96,7 +96,7 @@ class TransactionProcessor {
                         updatedCount++
                     }
                 } else {
-                    logTransactionDetails(match, "Skipping low confidence match")
+                    logTransactionDetails(match, "Skipping low or medium confidence match")
                 }
                 
             } catch (Exception e) {

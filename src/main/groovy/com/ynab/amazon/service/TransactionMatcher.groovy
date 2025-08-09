@@ -116,16 +116,16 @@ class TransactionMatcher {
             score += amountScore * 0.7
         }
         
-        // Date matching (25% weight)
+        // Date matching (20% weight)
         if (transaction.date && order.orderDate) {
             int daysDiff = calculateDaysDifference(transaction.date, order.orderDate)
             double dateScore = Math.max(0.0, 1.0 - (daysDiff / 7.0))  // Within 7 days
-            score += dateScore * 0.25
+            score += dateScore * 0.2
         }
         
-        // Payee name matching (5% weight)
+        // Payee name matching (10% weight)
         if (transaction.payee_name && isAmazonPayee(transaction.payee_name)) {
-            score += 0.05
+            score += 0.1
         }
         
         return Math.min(1.0, score)
