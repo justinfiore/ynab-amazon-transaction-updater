@@ -38,6 +38,15 @@ class TransactionProcessor {
     private boolean isProcessed(YNABTransaction transaction) {
         // Check if transaction ID is in our processed list
         if (processedTransactionIds.contains(transaction.id)) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("""
+                    |Skipping transaction - Found in processed transactions file
+                    |  ID: ${transaction.id}
+                    |  Date: ${transaction.date}
+                    |  Payee: ${transaction.payee_name}
+                    |  Amount: ${transaction.getDisplayAmount()}
+                    |  Memo: ${transaction.memo}""".stripMargin())
+            }
             return true
         }
         
@@ -45,6 +54,15 @@ class TransactionProcessor {
         if (transaction.memo && (transaction.memo.contains("items:") || 
                                 transaction.memo.contains("Amazon Order") ||
                                 transaction.memo.length() > 50)) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("""
+                    |Skipping transaction - Already processed (memo contains product info)
+                    |  ID: ${transaction.id}
+                    |  Date: ${transaction.date}
+                    |  Payee: ${transaction.payee_name}
+                    |  Amount: ${transaction.getDisplayAmount()}
+                    |  Memo: ${transaction.memo}""".stripMargin())
+            }
             return true
         }
         

@@ -58,8 +58,14 @@ class TransactionMatcher {
         }
         
         // Check if memo contains product information (indicating it was already processed)
-        return transaction.memo.contains("items:") || 
-               transaction.memo.length() > 100  // Long memos likely already processed
+        boolean isProcessed = transaction.memo.contains("items:") || 
+                           transaction.memo.length() > 100  // Long memos likely already processed
+        
+        if (isProcessed && logger.isDebugEnabled()) {
+            logger.debug("Skipping already processed transaction: {}", transaction.toString())
+        }
+        
+        return isProcessed
     }
     
     /**
@@ -111,7 +117,7 @@ class TransactionMatcher {
         
         // Amount must match exactly for high confidence
         if (transaction.getAmountInDollars() && order.totalAmount) {
-            if (transaction.getAmountInDollars() != order.totalAmount) {
+            if (Math.abs(transaction.getAmountInDollars() - order.totalAmount) > 0.01) {
                 return 0.0  // No match if amounts don't match exactly
             }
             score += 0.7  // Full points for amount match
