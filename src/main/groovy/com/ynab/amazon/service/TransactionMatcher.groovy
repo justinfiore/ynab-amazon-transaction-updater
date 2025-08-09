@@ -58,8 +58,14 @@ class TransactionMatcher {
         }
         
         // Check if memo contains product information (indicating it was already processed)
-        return transaction.memo.contains("items:") || 
-               transaction.memo.length() > 100  // Long memos likely already processed
+        boolean isProcessed = transaction.memo.contains("items:") || 
+                           transaction.memo.length() > 100  // Long memos likely already processed
+        
+        if (isProcessed && logger.isDebugEnabled()) {
+            logger.debug("Skipping already processed transaction: {}", transaction.toString())
+        }
+        
+        return isProcessed
     }
     
     /**
@@ -109,11 +115,14 @@ class TransactionMatcher {
     private double calculateMatchScore(YNABTransaction transaction, AmazonOrder order) {
         double score = 0.0
         
-        // Amount matching (70% weight)
+        // Amount must match exactly for high confidence
         if (transaction.getAmountInDollars() && order.totalAmount) {
-            double amountDiff = Math.abs(transaction.getAmountInDollars() - order.totalAmount)
-            double amountScore = 1.0 - (amountDiff / Math.max(Math.abs(transaction.getAmountInDollars()), Math.abs(order.totalAmount)))
-            score += amountScore * 0.7
+            if (Math.abs(transaction.getAmountInDollars() - order.totalAmount) > 0.01) {
+                return 0.0  // No match if amounts don't match exactly
+            }
+            score += 0.7  // Full points for amount match
+        } else {
+            return 0.0  // No match if amount is missing
         }
         
         // Date matching (20% weight)
