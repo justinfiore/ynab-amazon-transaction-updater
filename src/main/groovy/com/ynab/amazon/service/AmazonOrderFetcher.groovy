@@ -58,6 +58,13 @@ class AmazonOrderFetcher {
     private static final Pattern SUBSCRIPTION_TOTAL_PATTERN = Pattern.compile('(?i)(?:subscription total|amount charged|total cost):?\\s*\\$?\\s*([0-9]+\\.?[0-9]{0,2})\\s*(?:USD)?', Pattern.DOTALL)
     private static final Pattern SUBSCRIPTION_PRICE_PATTERN = ~/\*\$([0-9]+\.?[0-9]{0,2})\*/
     
+    // Regex patterns for refund emails
+    private static final Pattern REFUND_SUBJECT_PATTERN = ~/Your refund for (.+?)\.{3,}$/
+    private static final Pattern REFUND_TOTAL_PATTERN = ~/Total refund\s+\$?([0-9]+\.?[0-9]{0,2})/
+    private static final Pattern REFUND_SUBTOTAL_PATTERN = ~/Refund subtotal\s+\$?([0-9]+\.?[0-9]{0,2})/
+    private static final Pattern REFUND_ITEM_TITLE_PATTERN = ~/\[([^\]]+)\]\(https:\/\/www\.amazon\.com\/gp\/product/
+    private static final Pattern REFUND_ORDER_ID_PATTERN = ~/orderId=([0-9]{3}-[0-9]{7}-[0-9]{7})/
+    
     AmazonOrderFetcher(Configuration config) {
         this.config = config
     }
@@ -307,6 +314,15 @@ class AmazonOrderFetcher {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd")
         try {
             String subject = message.getSubject()
+            String fromAddress = message.getFrom()[0].toString().toLowerCase()
+            
+            // Early detection: Check if this is a refund email from return@amazon.com
+            if (fromAddress.contains("return@amazon.com")) {
+                logger.debug("Detected refund email from return@amazon.com, delegating to parseRefundFromEmail")
+                return parseRefundFromEmail(message)
+            }
+            
+            // Continue with existing order parsing logic for non-refund emails
             String content = getEmailContent(message)
             logger.debug("Parsing email: ${subject} ...")
             
@@ -320,10 +336,7 @@ class AmazonOrderFetcher {
             String orderId = orderIdMatcher.group(1)
             Boolean isReturn = false
             String orderDate = sdf.format(message.getSentDate())
-            if(message.getFrom().toString().contains("return@amazon.com")) {
-                isReturn = true
-                orderId = "RETURN-" + orderId
-            }
+            
             // Extract total amount
             Matcher totalMatcher = TOTAL_PATTERN.matcher(content)
             if (!totalMatcher.find()) {
@@ -409,6 +422,158 @@ class AmazonOrderFetcher {
             
         } catch (Exception e) {
             logger.error("Error saving orders to CSV: ${e.message}")
+        }
+    }
+    
+    /**
+     * Parse refund information from an email message
+     * @param message Email message containing refund notification
+     * @return AmazonOrder object with refund details, or null if parsing fails
+     */
+    private AmazonOrder parseRefundFromEmail(Message message) {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd")
+        
+        try {
+            String subject = message.getSubject()
+            String content = getEmailContent(message)
+            logger.debug("Parsing refund email: ${subject}")
+            
+            // Extract refund amount (critical field)
+            BigDecimal refundAmount = extractRefundAmount(content)
+            if (refundAmount == null) {
+                logger.warn("Cannot parse refund email - missing refund amount. Subject: ${subject}")
+                return null
+            }
+            
+            // Extract original order ID (critical field)
+            String originalOrderId = extractRefundOrderId(content)
+            if (originalOrderId == null) {
+                logger.warn("Cannot parse refund email - missing order ID. Subject: ${subject}")
+                return null
+            }
+            
+            // Create refund order ID with "RETURN-" prefix
+            String refundOrderId = "RETURN-" + originalOrderId
+            
+            // Extract product title (non-critical, has fallback)
+            String productTitle = extractRefundProductTitle(subject, content)
+            
+            // Set order date to email sent date
+            String orderDate = sdf.format(message.getSentDate())
+            
+            // Create AmazonOrder object with isReturn: true and positive amount
+            AmazonOrder refundOrder = new AmazonOrder(
+                orderId: refundOrderId,
+                orderDate: orderDate,
+                totalAmount: refundAmount, // Positive value for refunds
+                items: [new AmazonOrderItem(title: productTitle, price: refundAmount, quantity: 1)],
+                isReturn: true
+            )
+            
+            logger.info("Successfully parsed refund: ${refundOrderId}, amount: \$${refundAmount}, product: ${productTitle}")
+            return refundOrder
+            
+        } catch (Exception e) {
+            logger.error("Error parsing refund from email: ${e.message}", e)
+            return null
+        }
+    }
+    
+    /**
+     * Extract refund amount from email content
+     * Attempts to extract "Total refund" first, falls back to "Refund subtotal"
+     * @param content Email body content
+     * @return Refund amount as BigDecimal, or null if not found
+     */
+    private BigDecimal extractRefundAmount(String content) {
+        try {
+            // Try to find "Total refund" first
+            Matcher totalMatcher = REFUND_TOTAL_PATTERN.matcher(content)
+            if (totalMatcher.find()) {
+                String amountStr = totalMatcher.group(1)
+                logger.debug("Found total refund amount: ${amountStr}")
+                return new BigDecimal(amountStr)
+            }
+            
+            // Fall back to "Refund subtotal"
+            Matcher subtotalMatcher = REFUND_SUBTOTAL_PATTERN.matcher(content)
+            if (subtotalMatcher.find()) {
+                String amountStr = subtotalMatcher.group(1)
+                logger.debug("Found refund subtotal amount: ${amountStr}")
+                return new BigDecimal(amountStr)
+            }
+            
+            logger.debug("No refund amount found in email content")
+            return null
+            
+        } catch (Exception e) {
+            logger.warn("Error extracting refund amount: ${e.message}")
+            return null
+        }
+    }
+    
+    /**
+     * Extract product title from refund email subject and body
+     * Prefers full title from body over truncated subject title
+     * @param subject Email subject line
+     * @param content Email body content
+     * @return Product title, or "Amazon Refund" as fallback
+     */
+    private String extractRefundProductTitle(String subject, String content) {
+        try {
+            String titleFromBody = null
+            String titleFromSubject = null
+            
+            // Try to extract full title from email body first
+            Matcher bodyMatcher = REFUND_ITEM_TITLE_PATTERN.matcher(content)
+            if (bodyMatcher.find()) {
+                titleFromBody = bodyMatcher.group(1).trim()
+                logger.debug("Found product title from body: ${titleFromBody}")
+            }
+            
+            // Extract title from subject line as fallback
+            Matcher subjectMatcher = REFUND_SUBJECT_PATTERN.matcher(subject)
+            if (subjectMatcher.find()) {
+                titleFromSubject = subjectMatcher.group(1).trim()
+                logger.debug("Found product title from subject: ${titleFromSubject}")
+            }
+            
+            // Prefer body title over subject title (body has full title, subject may be truncated)
+            if (titleFromBody) {
+                return titleFromBody
+            } else if (titleFromSubject) {
+                return titleFromSubject
+            } else {
+                logger.debug("No product title found, using default")
+                return "Amazon Refund"
+            }
+            
+        } catch (Exception e) {
+            logger.warn("Error extracting product title: ${e.message}")
+            return "Amazon Refund"
+        }
+    }
+    
+    /**
+     * Extract original order ID from refund email body
+     * @param content Email body content
+     * @return Order ID string, or null if not found
+     */
+    private String extractRefundOrderId(String content) {
+        try {
+            Matcher orderIdMatcher = REFUND_ORDER_ID_PATTERN.matcher(content)
+            if (orderIdMatcher.find()) {
+                String orderId = orderIdMatcher.group(1)
+                logger.debug("Found order ID: ${orderId}")
+                return orderId
+            }
+            
+            logger.debug("No order ID found in refund email content")
+            return null
+            
+        } catch (Exception e) {
+            logger.warn("Error extracting order ID: ${e.message}")
+            return null
         }
     }
 } 

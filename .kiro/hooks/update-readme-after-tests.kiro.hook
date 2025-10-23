@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "name": "Update README After Tests Pass",
+  "description": "Monitors test result files and source code changes. When significant changes are completed and all tests are passing, updates the README with necessary information about how to run the application, available options, and configuration details.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "test-results/unitTest/index.html",
+      "test-results/integrationTest/index.html",
+      "src/main/groovy/com/ynab/amazon/YNABAmazonTransactionUpdater.groovy",
+      "config.example.yml",
+      "build.gradle"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Analyze the test results to confirm all tests are passing. If tests are passing, review the current state of the application including:\n1. The main entry point (YNABAmazonTransactionUpdater.groovy) to understand how to run it\n2. The configuration example (config.example.yml) to document available options\n3. The build.gradle to understand build commands and dependencies\n4. Any run scripts (run.sh, run.bat) for execution instructions\n\nThen update the README.md file with:\n- Clear instructions on how to run the application\n- All available configuration options and what they do\n- Any prerequisites or setup requirements\n- Example usage scenarios\n- Do NOT include internal implementation details or code architecture\n\nFocus on user-facing documentation that helps someone use the application effectively."
+  }
+}
