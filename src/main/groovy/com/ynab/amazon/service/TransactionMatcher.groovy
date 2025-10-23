@@ -193,9 +193,15 @@ class TransactionMatcher {
      * - Contains only a-zA-Z0-9, spaces, hyphens, underscores, and plus signs
      */
     private String generateProposedMemo(YNABTransaction transaction, AmazonOrder order) {
+        // Check if this is a Subscribe and Save order
+        boolean isSubscribeAndSave = order.orderId?.startsWith("SUB-")
+        
         if (!order.items || order.items.isEmpty()) {
             if(order.isReturn) {
                 return "Amazon Return (Couldn't identify items)"
+            }
+            if (isSubscribeAndSave) {
+                return "S&S: Amazon Order (Couldn't identify items)"
             }
             return "Amazon Order (Couldn't identify items)"
         }
@@ -203,15 +209,31 @@ class TransactionMatcher {
         // Generate the base summary
         String summary = ""
         if (order.items.size() == 1) {
-            summary = order.items[0].title.split(",")[0]
+            // For Subscribe and Save, remove the "(Subscribe & Save)" suffix if present
+            String itemTitle = order.items[0].title
+            if (isSubscribeAndSave && itemTitle.endsWith("(Subscribe & Save)")) {
+                itemTitle = itemTitle.replace(" (Subscribe & Save)", "").trim()
+            }
+            summary = itemTitle.split(",")[0]
         } else {
             // For multiple items, create a summary
             summary = "${order.items.size()} items: "
-            summary += order.items.take(3).collect { it.title.split(",")[0] }.join(", ")
+            summary += order.items.take(3).collect { item ->
+                String itemTitle = item.title
+                if (isSubscribeAndSave && itemTitle.endsWith("(Subscribe & Save)")) {
+                    itemTitle = itemTitle.replace(" (Subscribe & Save)", "").trim()
+                }
+                itemTitle.split(",")[0]
+            }.join(", ")
             
             if (order.items.size() > 3) {
                 summary += " ..."
             }
+        }
+        
+        // Add S&S prefix for Subscribe and Save orders
+        if (isSubscribeAndSave) {
+            summary = "S&S: ${summary}"
         }
         
         // Combine with existing memo if it exists
@@ -223,7 +245,7 @@ class TransactionMatcher {
         // Sanitize the memo to only allow certain characters
         // Allow comma, pipe, and period to preserve expected formatting
         // Note: + needs to be escaped in the character class
-        proposedMemo = proposedMemo.replaceAll(/[^a-zA-Z0-9 _\-\+:'\|\.,]/, " ")
+        proposedMemo = proposedMemo.replaceAll(/[^a-zA-Z0-9 _\-\+:'\|\.,&]/, " ")
         
         // Collapse 3+ spaces to exactly 2 spaces to match expected formatting
         proposedMemo = proposedMemo.replaceAll(/ {3,}/, "  ")

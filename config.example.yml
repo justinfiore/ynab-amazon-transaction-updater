@@ -10,6 +10,7 @@ ynab:
 # Amazon Configuration
 amazon:
   # Email-based order fetching (recommended if you want automatic import):
+  # Note: Email fetching now automatically includes Subscribe & Save delivery notifications
   email: "your_amazon_email@example.com"  # Your Amazon email address (IMAP, e.g. Gmail)
   email_password: "your_amazon_email_app_password"  # App password for your Amazon email (use an app password, not your main password)
   # CSV fallback (if email fetching is not used or fails):
@@ -25,6 +26,7 @@ app:
 # ---
 # Property documentation:
 # amazon.email: Email address to fetch Amazon order confirmations from (IMAP required)
+#               Automatically includes Subscribe & Save delivery notifications
 # amazon.email_password: App password for the above email (never use your main password)
 # amazon.csv_file_path: Path to your Amazon order CSV file (used as fallback)
 
