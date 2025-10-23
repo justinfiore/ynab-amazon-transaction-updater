@@ -8,10 +8,12 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 - Reads Amazon order data from multiple sources:
   - Email parsing (automatic order confirmation emails)
   - Amazon Subscribe & Save delivery notifications
+  - Amazon refund notifications
   - CSV export files
 - Intelligently matches YNAB transactions with Amazon orders
 - Updates transaction memos with product summaries
 - Special handling for Subscribe & Save orders with "S&S:" prefix
+- Automatic refund detection and processing with positive amounts
 - Tracks processed transactions to avoid duplicates
 - Supports dry-run mode for testing
 - Configurable matching confidence thresholds
@@ -51,7 +53,7 @@ You have two options for providing Amazon order data:
 The application can automatically fetch Amazon orders from your email, including:
 - Regular order confirmations
 - Subscribe & Save delivery notifications
-- Return confirmations
+- Refund notifications (automatically detected and processed)
 
 Requirements:
 - Gmail or other IMAP-enabled email account
@@ -142,6 +144,7 @@ java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
 5. **Memo Updates**: Updates matched transactions with product summaries:
    - Regular orders: "Product Name" or "3 items: Product A, Product B, Product C"
    - Subscribe & Save: "S&S: Product Name" or "S&S: 3 items: Product A, Product B, Product C"
+   - Refunds: "REFUND: Product Name" with positive amounts for easy identification
 6. **Tracking**: Maintains a list of processed transactions to avoid duplicates
 
 ## Amazon Subscribe & Save Support
@@ -154,6 +157,18 @@ The application automatically detects and processes Amazon Subscribe & Save orde
 - Generate unique order IDs with "SUB-" prefix
 
 For more details, see [SUBSCRIBE_AND_SAVE.md](SUBSCRIBE_AND_SAVE.md).
+
+## Amazon Refund Support
+
+The application automatically detects and processes Amazon refund notifications from email. Refunds are:
+
+- Identified by emails from `return@amazon.com` with "Your refund for" in the subject
+- Processed with positive amounts (opposite of regular orders) for accurate YNAB tracking
+- Prefixed with "REFUND:" in transaction memos for easy identification
+- Assigned order IDs with "RETURN-" prefix to distinguish from regular orders
+- Matched to YNAB transactions using the same intelligent matching algorithm
+
+This ensures refunds are properly tracked in your budget without manual intervention.
 
 ## CSV Format
 
@@ -266,12 +281,17 @@ Confidence thresholds:
    - Check that your email contains "review your upcoming delivery" messages from Amazon
    - Verify the lookback period covers your subscription deliveries
 
-6. **No matches found**
+6. **Refunds not being detected**
+   - Refunds are only available via email parsing
+   - Check that your email contains "Your refund for" messages from `return@amazon.com`
+   - Verify the lookback period covers your refund dates
+
+7. **No matches found**
    - Verify your data source (email or CSV) has orders in the lookback period
    - Check that the dates and amounts match your YNAB transactions
    - Try running in dry-run mode with DEBUG logging to see matching details
 
-7. **API Rate Limits**
+8. **API Rate Limits**
    - YNAB has rate limits; the application includes delays between requests
    - If you get rate limit errors, wait a few minutes and try again
 
