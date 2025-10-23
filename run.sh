@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "Building YNAB Amazon Transaction Updater..."
-./gradlew build
+./gradlew install
 
 if [ $? -ne 0 ]; then
     echo "Build failed!"
@@ -11,7 +11,7 @@ fi
 echo ""
 echo "Running YNAB Amazon Transaction Updater..."
 echo ""
-java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
+./build/install/YNABAmazonTransactionUpdater/bin/YNABAmazonTransactionUpdater $*
 
 echo ""
 echo "Application finished." 

@@ -1,0 +1,1517 @@
+Delivered-To: jasonfiosky@gmail.com
+Received: by 2002:a05:6a10:e947:b0:670:fd91:b4f0 with SMTP id gu7csp3713002pxb;
+        Thu, 23 Oct 2025 08:18:02 -0700 (PDT)
+X-Received: by 2002:ac8:7d8c:0:b0:4e8:a359:b7a3 with SMTP id d75a77b69052e-4e8a359bd97mr252824851cf.65.1761232680769;
+        Thu, 23 Oct 2025 08:18:00 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1761232680; cv=none;
+        d=google.com; s=arc-20240605;
+        b=AM0qJzoD712+5GRX6tTcRBy0n4glHU5Gwi2VUfUeYt4ud8u4Xf1UwAtstiPXa9T7XV
+         DFE3di9zhyXuvxN91kV6Uh65w5pkEpfO9SOitw41jbTVKR7GbbCooc/KDB9Rp9uUReya
+         gPBT50ZqxL+IeIerI/07lKo7S4ae7IiLDjU1NQvqiU9bJzvcUPrOoIKhjuh/fydqrpk0
+         UM64sXb7+/rbYA87mMtH6fgmPt1bzk3O21LfuPk+SuBNIkcH8M6s1w0EfL/SvLbnzipp
+         ZPOztSKryt8xKaO2Qi93R9obSz99hAAVjqpZtFl50jFfYR3H4raY/MRmLC/n+PIUj6ts
+         cfdw==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;
+        h=to:subject:message-id:date:from:in-reply-to:references:mime-version
+         :dkim-signature;
+        bh=s0OQkJcgrSi85YjIzIfciUT2jnjvZdOc5tyJRWehRjE=;
+        fh=1XlLn2xfU15t+GgZFqHJPYWVJjYR8PLeEeM9VkWe644=;
+        b=WLenSJ4K+fcKSCAk3W3QDOjOKbEdN0P569HLK/HDiTVHorXpc2KWTybQuUptYDlWSB
+         dxsu3SRqMHhHj60E3BFhT6aibSNf/IkKWp4pkH3L4kwkUlwfsQ81aOZMiIJLwe6oM/a+
+         6WcAFMb/fgZLy4EPPAVdBoTY8AAoGQMhWclQKXrLFNl/7nMlWwa4m0iEm9QVSjLhaiSO
+         JDV31jQVqzOzLhME8IEHdkm0+CIdyg82xPs6VicQyNPX9EQyY0T58WVXub/LEnutKK5L
+         DcVGRhfPX4VkA/5XFd/rCTeKGsy9ycL+ErM83If9WcfsFkjYWwUpKNTyCefMpOaQZmd7
+         lbcQ==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20230601 header.b=PKNynIxo;
+       spf=pass (google.com: domain of fiore.jamie@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=fiore.jamie@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com;
+       dara=pass header.i=@gmail.com
+Return-Path: <fiore.jamie@gmail.com>
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
+        by mx.google.com with SMTPS id d75a77b69052e-4eb806bb88esor15184021cf.5.2025.10.23.08.18.00
+        for <jasonfiosky@gmail.com>
+        (Google Transport Security);
+        Thu, 23 Oct 2025 08:18:00 -0700 (PDT)
+Received-SPF: pass (google.com: domain of fiore.jamie@gmail.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20230601 header.b=PKNynIxo;
+       spf=pass (google.com: domain of fiore.jamie@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=fiore.jamie@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com;
+       dara=pass header.i=@gmail.com
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20230601; t=1761232678; x=1761837478; dara=google.com;
+        h=to:subject:message-id:date:from:in-reply-to:references:mime-version
+         :from:to:cc:subject:date:message-id:reply-to;
+        bh=s0OQkJcgrSi85YjIzIfciUT2jnjvZdOc5tyJRWehRjE=;
+        b=PKNynIxodiNiNMv96hSyRrt4nN7iiueJF9CIoytKuDDmrg8zlmo34qmGMXoZk8w5uD
+         vm2oimj4ColQC27ENECSK6k8lmWtfHn2nyHwAJ4fJKf3sWO7ncr6okK26vo8E+Cv9kYA
+         w1JtdFptlbXL9/3lNOTl27rCEXQo8+Wi67PV8FMPtFvm+F2rVqE+QPyWTy36AMUyPdAj
+         fcrIzOY0GedahyjRcSvkzp/ozyEH9oLbVaMNBeQTelu/3BMYsmSpt0ztgt4OwIqKobkp
+         5IbcShfI5amX20wRVvFq6qQL7tytZYM+Y1HkEx31e3QndH/xNxlmMk4MZvkeYhVtoLB+
+         uDPw==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=1e100.net; s=20230601; t=1761232678; x=1761837478;
+        h=to:subject:message-id:date:from:in-reply-to:references:mime-version
+         :x-gm-message-state:from:to:cc:subject:date:message-id:reply-to;
+        bh=s0OQkJcgrSi85YjIzIfciUT2jnjvZdOc5tyJRWehRjE=;
+        b=vjdVbBW/99q4pfNPesHovVy4Db4j5bZVviNpl7OKFjr5zCoRSBB0Ms0N9uOfXGXtSN
+         EvbiGcVZvsIjWXg30O1yQPzBExY/FvAU9OjjoCqUWYJG0ksDaLqlDr8z2bRExXIpgo5x
+         0e315f1L//6sWOq+9gadfyUgHpoY5PfvjnBHTHUulZBjluzwEexnkCT6GHV5J/RPNnNS
+         zrMFMOsREhlmier/KpX4P6VAEKUaZfMzaYmpgylge53BO7Rns4aV+7Eq1GdVviWaHGrT
+         56eciM/9GfS6yKKM2QVEdrwNUYhxSPrdqjxMGE2t+8v1a6RdkFAjfX5Lg+WDpmDRGdIu
+         EeDQ==
+X-Gm-Message-State: AOJu0Yw+Gv+zVqvbrcJ8Gfgufn6CmV3ttH5ly8wCPzs9DbyAjJkrWdTQ
+	LjuQP2DGB7PlQl67lwTTQVUBmmjmoEb8gGnK7oUw4s8b/y/UJo8umUqP5jIEDhq3+DnaHoj/8Hj
+	tBbX13OvUNnpRp/w4+B7BlNX99dprEsweEg==
+X-Gm-Gg: ASbGncsEecXppI65257WGtL+czqadQ+Dk3fwVNTfr6F+vxe4GUxNBd065vpI1OsKDXZ
+	AEduIF5ZhlZZNbyE3hTrj18gmqwiRPpnILS+ToKxLGtyV/olTprm3FN1CL7Mq0E5rEc9RTzBAoK
+	Xf3fMfCxjHhPR3kQL4DAlIoZ9LxdXGQEmjzoeRYUnD6x+Y4SKL551hb47xXTzUyajLNA+Ypg3N0
+	LxZ4+z6PPkzeLivUU2Eh1gUyPXsAMuvnQpNWKTsntS7JI/xEZR/zLfyTbA=
+X-Google-Smtp-Source: AGHT+IE6m8lEkvxk+rvmmp02thsm9f/ggF59SxW6YyQkaDtAX+eu+AePVXDT1TmxXewMtUj3Qo/otcUACyNBtpdKyE4=
+X-Received: by 2002:ac8:57c5:0:b0:4e8:a3aa:7a89 with SMTP id
+ d75a77b69052e-4e8a3aa7fd9mr238204551cf.45.1761232678048; Thu, 23 Oct 2025
+ 08:17:58 -0700 (PDT)
+MIME-Version: 1.0
+References: <01000199984f0ac2-6a43ca7f-8813-4c3a-a078-bed89a103ef9-000000@email.amazonses.com>
+In-Reply-To: <01000199984f0ac2-6a43ca7f-8813-4c3a-a078-bed89a103ef9-000000@email.amazonses.com>
+From: Jamie Fiore <fiore.jamie@gmail.com>
+Date: Thu, 23 Oct 2025 11:17:39 -0400
+X-Gm-Features: AS18NWBna5pm-cxDGPxgCfi_dCkMes15QFhAZojxxN8dnuPmKWwl7Fe7CCwWnYA
+Message-ID: <CA+SrDceQwAwk_oBgVMpDAF10Z_hxS+EPKo8bNZAafYrjWZ2=Kw@mail.gmail.com>
+Subject: Fwd: Price changes: review your upcoming delivery
+To: jasonfiosky@gmail.com
+Content-Type: multipart/alternative; boundary="0000000000002456af0641d4f051"
+
+--0000000000002456af0641d4f051
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+---------- Forwarded message ---------
+From: Amazon Subscribe & Save <no-reply@amazon.com>
+Date: Mon, Sep 29, 2025 at 9:49=E2=80=AFPM
+Subject: Price changes: review your upcoming delivery
+To: <fiore.jamie@gmail.com>
+
+
+[image: Amazon] [image: Amazon]
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D3TXE5PD21I13X=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%3Fref_%3Dpe_122043850_1028231000_LG=
+0000IMG_LG99&H=3DA2IN2PMOLXSB79G24SMGTAHZOLUA&ref_=3Dpe_122043850_102823100=
+0_LG0000IMG_LG99>
+Hi Jamie Fiore,
+
+Your next Subscribe & Save auto-delivery is coming up. Review your
+subscriptions.
+Order details
+
+
+
+
+*Arriving by Saturday, Oct 11 *
+
+Last day to manage delivery: Sunday, Oct 05
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D1P4J83VXHBX5H=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fgp%2Fsubscribe-and-save%2Fmanage%=
+3FshipId%3Dkhrpkxoutjp%26ref_%3Dpe_122043850_1028231000__em_rd&H=3DXDVQZ6R0=
+ATQIVZ6ZEQJAGMAPJIYA&ref_=3Dpe_122043850_1028231000__em_rd>
+
+
+
+
+*Delivering to Jamie Fiore*
+
+9232 MARSHALL RD
+
+
+16 items in this delivery
+
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D1ROO8KKD6MQQQ=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB000C4AZ8Q%2Fref%3Dpe_122043=
+850_1028231000_OD0600IMG_OD99__em_rd&H=3DZFG9VPG4SUC2S5RUYFGZAAWBWOIA&ref_=
+=3Dpe_122043850_1028231000_OD0600IMG_OD99__em_rd>
+Price increase
+
+Seventh Generation Dishwasher Detergent Gel Liquid...
+
+QUANTITY: 1
+
+Last price: *$22.92*
+New price: *$35.04*
+Saving: 15%
+
+
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D1P7YQB7STHYKA=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB07Q3SWL3X%2Fref%3Dpe_122043=
+850_1028231000_OD0601IMG_OD99__em_rd&H=3DDVXAAWZE3WWKWGX0ODCUKURNF5IA&ref_=
+=3Dpe_122043850_1028231000_OD0601IMG_OD99__em_rd>
+Price increase
+
+Nature Made Super C with Vitamin D3 and Zinc,...
+
+1 unit every 2 months
+
+Last price: *$6.79*
+New price: *$9.17*
+Saving: 15%
+
+
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D2DVUPZ9A7EB68=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB00WAJAJ0K%2Fref%3Dpe_122043=
+850_1028231000_OD0602IMG_OD99__em_rd&H=3DEZP34J3IXALSNVOJEBIX9SEBHRGA&ref_=
+=3Dpe_122043850_1028231000_OD0602IMG_OD99__em_rd>
+Price increase
+
+e.l.f. Instant Lift Brow Pencil, Dual-Sided,...
+
+1 unit every 3 months
+
+Last price: *$2.55*
+New price: *$3.40*
+Saving: 15%
+
+
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3DH6DFKRRDFZVC&=
+T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB08JTDJ7BV%2Fref%3Dpe_1220438=
+50_1028231000_OD0603IMG_OD99__em_rd&H=3DIACRKGADSEKUI9ZJUQJFMCDAZUWA&ref_=
+=3Dpe_122043850_1028231000_OD0603IMG_OD99__em_rd>
+Price decrease
+
+Aurite Saffron Supplement | Stress Management,...
+
+1 unit every 2 months
+
+Last price: *$24.88*
+New price: *$19.91*
+Saving: 10%
+
+
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D21RSZ1VZ9GEY7=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB012T97SDQ%2Fref%3Dpe_122043=
+850_1028231000_OD0604IMG_OD99__em_rd&H=3DEKLCGRVQFP1QRJPMMEVKEXNHKAWA&ref_=
+=3Dpe_122043850_1028231000_OD0604IMG_OD99__em_rd>
+
+Solgar Magnesium Citrate, 120 Tablets - Promotes...
+
+1 unit every 4 months
+
+*$11.81*
+Saving: 15%
+
+
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D37GV5VBOHIDKM=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB0BZB68QPM%2Fref%3Dpe_122043=
+850_1028231000_OD0605IMG_OD99__em_rd&H=3DGHIFTDCM2UPDICZ0DZLYIAKSWAGA&ref_=
+=3Dpe_122043850_1028231000_OD0605IMG_OD99__em_rd>
+
+Goldfish Cheddar Cheese Crackers, Baked with Whole...
+
+1 unit every 1 month
+
+Last price: *$7.22*
+New price: *$6.78*
+Saving: 15%
+
+
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3DB4VD84ACTHVQ&=
+T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB0891XC8GY%2Fref%3Dpe_1220438=
+50_1028231000_OD0606IMG_OD99__em_rd&H=3D55AGDWJPYBQSTFL4YDASGCLEGHCA&ref_=
+=3Dpe_122043850_1028231000_OD0606IMG_OD99__em_rd>
+
+Del Monte FRUIT CUP Snacks, Family Pack, No Sugar...
+
+1 unit every 2 months
+
+*$6.92*
+Saving: 15%
+
+
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D3F4DRK18Y0USA=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB0774242NN%2Fref%3Dpe_122043=
+850_1028231000_OD0607IMG_OD99__em_rd&H=3DSDTDSY2AKDOKUAW9T6AI9RQNWIMA&ref_=
+=3Dpe_122043850_1028231000_OD0607IMG_OD99__em_rd>
+
+NATURELO Teen Multivitamin - Whole Food Multivitamin...
+
+1 unit every 1 month
+
+*$21.21*
+Saving: 15%
+
+
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D2BZ4IVHR29C3C=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB07B8BSGPL%2Fref%3Dpe_122043=
+850_1028231000_OD0608IMG_OD99__em_rd&H=3DOQ8QYAR5LPWBAHGB9WGB8UB7JTCA&ref_=
+=3Dpe_122043850_1028231000_OD0608IMG_OD99__em_rd>
+
+Physician's CHOICE Probiotics for Women - PH...
+
+1 unit every 1 month
+
+*$20.37*
+Saving: 15%
+
+
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D2J6197CUTKDQK=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB0DJDQCJX2%2Fref%3Dpe_122043=
+850_1028231000_OD0609IMG_OD99__em_rd&H=3DGY5L30WZK29QVULCTXTVQFSQJ1SA&ref_=
+=3Dpe_122043850_1028231000_OD0609IMG_OD99__em_rd>
+
+Creatine for Women | Creatine Monohydrate + BCAA...
+
+1 unit every 1 month
+
+*$28.01*
+Saving: 15%
+
++ 6 more item
+
+Manage your delivery
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D197V2DR0V18PJ=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fgp%2Fsubscribe-and-save%2Fmanage%=
+3FshipId%3Dkhrpkxoutjp%26ref_%3Dpe_122043850_1028231000_OD0601BT_OD99__em_r=
+d&H=3DN8LOLKYAWDVQYIFVGQ8MVKOFHTMA&ref_=3Dpe_122043850_1028231000_OD0601BT_=
+OD99__em_rd>
+Upgrade your next delivery for the same price
+
+No risk trial, switches back automatically
+
+Current subscription
+
+[image: Seventh Generation Dish Liquid Soap Free & Clear liquid soap Pack
+of 6 Dishwashing Soap Dish Soap for sensitive skin 19 oz]
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D2LO0B2L2CK6M2=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB08MVQJFPY%2F%3Fref_%3Dpe_12=
+2043850_1028231000_AS0700IMG_AS99_2p_0_lm&H=3DPDYABECIY8HA6LEHEAGVHA1NR5QA&=
+ref_=3Dpe_122043850_1028231000_AS0700IMG_AS99_2p_0_lm>
+
+Seventh Generation Dish Liquid Soap Free &...
+
+View subscription
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D2W455QK056C6D=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fgp%2Fsubscribe-and-save%2Fmanage%=
+3FshipId%3Dkhrpkxoutjp%26ref_%3Dpe_122043850_1028231000_AS0701BT_AS99__em_r=
+d&H=3DGQME5WCBW0A5VWA77EOTZZEA2ACA&ref_=3Dpe_122043850_1028231000_AS0701BT_=
+AS99__em_rd>
+Plant-based formula
+
+[image: Seventh Generation Hand Dish Wash Refill, Lavender Floral & Mint,
+3pk 50z]
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3DY2WZKD62SNR6&=
+T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB0BMJS2LSZ%2F%3Fref_%3Dpe_122=
+043850_1028231000_AS0700IMG_AS99_2p_0_lm&H=3D9OVTRMVO5JHK6I9NTJL1ODFYWPEA&r=
+ef_=3Dpe_122043850_1028231000_AS0700IMG_AS99_2p_0_lm>
+
+Seventh Generation Hand Dish Wash Refill,...
+
+Try it
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D8JE6DUSJ1BES&=
+T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fauto-deliveries%2Fupgrade%3Fsubscr=
+iptionId%3DSNSD0_Z93WSE9J54PG1TMYFK1C%26deliveryDate%3D1760166000000%26prod=
+uctRec%3DB0BMJS2LSZ%26ref_%3Dpe_122043850_1028231000_AS0702BT_AS99_Progshop=
+_tradeup_trial_rd_&H=3DEJL09FK8VAGHAZLXNTHIQ7PQ0BEA&ref_=3Dpe_122043850_102=
+8231000_AS0702BT_AS99_Progshop_tradeup_trial_rd_>
+Receive additional savings on your order when you add more subscriptions to
+this delivery
+
+[image: everydrop by Whirlpool Ice and Water Refrigerator Filter 1,
+EDR1RXD1, Single-Pack , Purple]
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D9M0RS49KY8M6&=
+T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB00UXG4WR8%2Fref%3Dpe_1220438=
+50_1028231000_CR0800IMG_CR99__sns_ryd_rec&H=3DYMKXDFNYOZ98QVIRNS7BG3GAIHIA&=
+ref_=3Dpe_122043850_1028231000_CR0800IMG_CR99__sns_ryd_rec>
+
+everydrop by Whirlpool Ice...
+
+[image: Amazon Basics AAA Alkaline High-Performance Batteries, 1.5 Volt,
+10-Year Shelf Life, 36 Count (Pack of 1)]
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3DR0KUSWOK7GJX&=
+T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB00LH3DMUO%2Fref%3Dpe_1220438=
+50_1028231000_CR0801IMG_CR99__sns_ryd_rec&H=3D7FEQM6QIX4AFR8QNFBHTBWRUGCOA&=
+ref_=3Dpe_122043850_1028231000_CR0801IMG_CR99__sns_ryd_rec>
+
+Amazon Basics AAA Alkaline...
+
+[image: Amazon Brand - Presto! Flex-a-Size Paper Towels, 158 Sheet Huge
+Roll, 12 Rolls (2 Packs of 6), Equivalent to 38 Regular Rolls, White]
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D3CX3Y5MMGGULE=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB074CR89QG%2Fref%3Dpe_122043=
+850_1028231000_CR0802IMG_CR99__sns_ryd_rec&H=3DJKLZTIG7DI6OGHRO0UGLSXUBEN4A=
+&ref_=3Dpe_122043850_1028231000_CR0802IMG_CR99__sns_ryd_rec>
+
+Amazon Brand - Presto!...
+
+Shop recommended products
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D3QFJLBPU78RAW=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2FSubscribe%2Fb%3Fref_%3Dpe_1220438=
+50_1028231000_CR0801BT_CR99__em_rd_st%26node%3D5856181011&H=3DYR9ZP3JIBTU0S=
+AU2JNUQMUKJGDSA&ref_=3Dpe_122043850_1028231000_CR0801BT_CR99__em_rd_st>
+Additional information
+
+Your Subscribe & Save discount might have changed due to this update.
+Prices go-up or down over time, but you=E2=80=99ll always get your Subscrib=
+e & Save
+savings on top of current price. Ingredients, nutrition, or drug facts may
+be different from the product to which you were originally subscribed.
+
+Learn more
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3DJ47M35O8FRA8&=
+T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fb%3Fnode%3D15283820011%26%2Fref%3D=
+pe_122043850_1028231000_HC1002BT_HC99_sns_myd_learn_more&H=3DSQUIYKCPGOTSPO=
+CA4NDHLA0OFGKA&ref_=3Dpe_122043850_1028231000_HC1002BT_HC99_sns_myd_learn_m=
+ore>
+=C2=A92025 Amazon.com, Inc. or its affiliates. Amazon and all related marks=
+ are
+trademarks of Amazon.com, Inc. or its affiliates, Amazon.com, Inc. 410
+Terry Avenue N., Seattle, WA 98109.
+Automatic Renewal Notice: Your Subscribe & Save subscriptions will
+automatically renew until you cancel. We'll email you before your upcoming
+delivery and provide an opportunity to manage your subscription. You can
+cancel your subscriptions by clicking on the subscription product in
+the =E2=80=9CManage
+My Subscriptions
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D3C3S20RCTED8F=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fauto-deliveries%3Fref_%3Dpe_12204=
+3850_1028231000__em_rd_vs&H=3DBJARHUBMXKOCUASL6A0MR1IOMAIA&ref_=3Dpe_122043=
+850_1028231000__em_rd_vs>=E2=80=9D
+page. If you have questions regarding your subscription, please contact Ama=
+zon
+Customer Service
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3DJFY304DL69EX&=
+T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fhz%2Fcontact-us%2Fforesight%2Fhubg=
+ateway%3Fref_%3Dpe_122043850_1028231000&H=3DACO17KK13CH9Z8WECRAEODVDU9UA&re=
+f_=3Dpe_122043850_1028231000>
+.
+
+Please do not reply to this message. It was sent from a notification-only
+address that cannot accept incoming email. Subject to Subscribe & Save term=
+s
+and conditions
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3D3L7LQ16YTGXEW=
+&T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fgp%2Fhelp%2Fcustomer%2Fdisplay.ht=
+ml%3FnodeId%3D201889920%26ref_%3Dpe_122043850_1028231000&H=3DTS5NFIYA1HYBEB=
+AOKUQ2CODOTMEA&ref_=3Dpe_122043850_1028231000>
+[image: Amazon.com] [image: Amazon.com]
+<https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&K=3D24050BDJ7XINT&M=3Du=
+rn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&R=3DP9FK68ASWX3Q&=
+T=3DC&U=3Dhttps%3A%2F%2Fwww.amazon.com%3Fref_%3Dpe_122043850_1028231000_LF1=
+104LNK_LF99&H=3DQXDHPJZQWOF03F3MGZ7AI1QCDTWA&ref_=3Dpe_122043850_1028231000=
+_LF1104LNK_LF99>
+
+--0000000000002456af0641d4f051
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+<div dir=3D"ltr"><br><br><div class=3D"gmail_quote gmail_quote_container"><=
+div dir=3D"ltr" class=3D"gmail_attr">---------- Forwarded message ---------=
+<br>From: <strong class=3D"gmail_sendername" dir=3D"auto">Amazon Subscribe =
+&amp; Save</strong> <span dir=3D"auto">&lt;<a href=3D"mailto:no-reply@amazo=
+n.com">no-reply@amazon.com</a>&gt;</span><br>Date: Mon, Sep 29, 2025 at 9:4=
+9=E2=80=AFPM<br>Subject: Price changes: review your upcoming delivery<br>To=
+:  &lt;<a href=3D"mailto:fiore.jamie@gmail.com">fiore.jamie@gmail.com</a>&g=
+t;<br></div><br><br><div class=3D"msg-8107948058918861364"><u></u><div clas=
+s=3D"m_-7291836101014079248body" style=3D"word-spacing:normal"><img width=
+=3D"1" height=3D"1" src=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNR=
+RE&amp;K=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34=
+bc191966ab30p0na&amp;R=3D1XJF46EROBM5O&amp;T=3DO&amp;U=3Dhttps%3A%2F%2Fimag=
+es-na.ssl-images-amazon.com%2Fimages%2FG%2F01%2Fnav%2Ftransp.gif&amp;H=3DS4=
+JXUBGNJLTCFS7H7ZNDXZ06GPCA&amp;ref_=3Dpe_122043850_1028231000_opens" alt=3D=
+""><div class=3D"m_-7291836101014079248body" lang=3D"en" dir=3D"auto"><div =
+style=3D"background:#f2f2f2;background-color:#f2f2f2;margin:0px auto;max-wi=
+dth:600px"><table align=3D"center" border=3D"0" cellpadding=3D"0" cellspaci=
+ng=3D"0" role=3D"presentation" style=3D"background:#f2f2f2;background-color=
+:#f2f2f2;width:100%"><tbody><tr><td style=3D"direction:ltr;font-size:0px;pa=
+dding:0px 0px 4px 0px;text-align:left">                             <table =
+class=3D"m_-7291836101014079248amazon-logo" cellpadding=3D"0" cellspacing=
+=3D"0" border=3D"0" role=3D"presentation" width=3D"100%" style=3D"width:100=
+%" bgcolor=3D"white"><tbody><tr><td class=3D"m_-7291836101014079248full">  =
+  <a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=3D240=
+50BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0=
+na&amp;R=3D3TXE5PD21I13X&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.com%3Fr=
+ef_%3Dpe_122043850_1028231000_LG0000IMG_LG99&amp;H=3DA2IN2PMOLXSB79G24SMGTA=
+HZOLUA&amp;ref_=3Dpe_122043850_1028231000_LG0000IMG_LG99" target=3D"_blank"=
+><img src=3D"https://m.media-amazon.com/images/G/01/outbound/OutboundTempla=
+tes/Amazon_logo_US._BG255,255,255_.png" height=3D"58" style=3D"height:58px;=
+border:0;display:block;max-height:58px;background-color:#ffffff" class=3D"m=
+_-7291836101014079248light-img" alt=3D"Amazon"> <img src=3D"https://m.media=
+-amazon.com/images/G/01/outbound/OutboundTemplates/Amazon_logo_whiterev_US.=
+png" height=3D"58" style=3D"height:58px;display:none;border:0;max-height:58=
+px" alt=3D"Amazon"> </a> </td></tr></tbody></table> </td></tr></tbody></tab=
+le></div><div style=3D"background:#f2f2f2;background-color:#f2f2f2;margin:0=
+px auto;max-width:600px"><table align=3D"center" border=3D"0" cellpadding=
+=3D"0" cellspacing=3D"0" role=3D"presentation" style=3D"background:#f2f2f2;=
+background-color:#f2f2f2;width:100%"><tbody><tr><td style=3D"direction:ltr;=
+font-size:0px;padding:4px 8px 4px 8px;text-align:left"> <div class=3D"m_-72=
+91836101014079248rio-card-text" style=3D"background:#ffffff;background-colo=
+r:#ffffff;margin:0px auto;border-radius:4px;max-width:584px"><table align=
+=3D"center" border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presen=
+tation" style=3D"background:#ffffff;background-color:#ffffff;width:100%;bor=
+der-radius:4px"><tbody><tr><td style=3D"direction:ltr;font-size:0px;padding=
+:4px 8px 4px 8px;text-align:left"><div style=3D"margin:0px auto;max-width:5=
+68px"><table align=3D"center" border=3D"0" cellpadding=3D"0" cellspacing=3D=
+"0" role=3D"presentation" style=3D"width:100%"><tbody><tr><td style=3D"dire=
+ction:ltr;font-size:0px;padding:0;text-align:left"><div style=3D"font-size:=
+0;line-height:0;text-align:left;display:inline-block;width:100%;direction:l=
+tr"><div style=3D"font-size:0px;text-align:left;direction:ltr;display:inlin=
+e-block;vertical-align:top;width:100%"><table border=3D"0" cellpadding=3D"0=
+" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody><tr><td sty=
+le=3D"vertical-align:top;padding:0"><table border=3D"0" cellpadding=3D"0" c=
+ellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody><tr><td align=
+=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><div styl=
+e=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15=
+px;line-height:1;text-align:left;color:#000000"><h2 style=3D"margin:0;paddi=
+ng:0;font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-weight:=
+700;font-size:22px;line-height:28px;color:#0f1111" class=3D"m_-729183610101=
+4079248rio-header">Hi Jamie Fiore,</h2></div></td></tr><tr><td align=3D"lef=
+t" style=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=
+=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><t=
+d align=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><d=
+iv style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-=
+size:15px;font-weight:400;line-height:20px;text-align:left;color:#0f1111"><=
+span class=3D"m_-7291836101014079248rio-text">Your next Subscribe &amp; Sav=
+e auto-delivery is coming up. Review your subscriptions.</span></div></td><=
+/tr></tbody></table></td></tr></tbody></table></div></div></td></tr></tbody=
+></table></div><div style=3D"margin:0px auto;max-width:568px"><table align=
+=3D"center" border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presen=
+tation" style=3D"width:100%"><tbody><tr><td style=3D"direction:ltr;font-siz=
+e:0px;padding:0;text-align:left"><div style=3D"font-size:0;line-height:0;te=
+xt-align:left;display:inline-block;width:100%;direction:ltr"><div style=3D"=
+font-size:0px;text-align:left;direction:ltr;display:inline-block;vertical-a=
+lign:top;width:100%"><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0=
+" role=3D"presentation" width=3D"100%"><tbody><tr><td style=3D"vertical-ali=
+gn:top;padding:0"><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" r=
+ole=3D"presentation" width=3D"100%"><tbody>  </tbody></table></td></tr></tb=
+ody></table></div></div></td></tr></tbody></table></div></td></tr></tbody><=
+/table></div> </td></tr></tbody></table></div> <div style=3D"background:#f2=
+f2f2;background-color:#f2f2f2;margin:0px auto;max-width:600px"><table align=
+=3D"center" border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presen=
+tation" style=3D"background:#f2f2f2;background-color:#f2f2f2;width:100%"><t=
+body><tr><td style=3D"direction:ltr;font-size:0px;padding:4px 8px 4px 8px;t=
+ext-align:left"> <div style=3D"background:#ffffff;background-color:#ffffff;=
+margin:0px auto;border-radius:4px;max-width:584px"><table align=3D"center" =
+border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" styl=
+e=3D"background:#ffffff;background-color:#ffffff;width:100%;border-radius:4=
+px"><tbody><tr><td style=3D"direction:ltr;font-size:0px;padding:4px 8px 4px=
+ 8px;text-align:left"> <div style=3D"font-family:Ember,&#39;Amazon Ember&#3=
+9;,Arial,sans-serif;font-size:15px;line-height:1;text-align:left;color:#000=
+000"><h2 style=3D"margin:0;padding:0;font-family:Ember,&#39;Amazon Ember&#3=
+9;,Arial,sans-serif;font-weight:700;font-size:18px;line-height:22px;color:#=
+0f1111" class=3D"m_-7291836101014079248rio-header">Order details</h2></div>=
+   <div aria-hidden=3D"true" style=3D"height:16px;line-height:16px">=C2=A0<=
+/div>  <table cellpadding=3D"0" cellspacing=3D"0" width=3D"100%" border=3D"=
+0" style=3D"color:#000000;font-family:Ember,&#39;Amazon Ember&#39;,Arial,sa=
+ns-serif;font-size:15px;line-height:22px;table-layout:auto;width:100%;borde=
+r:none"><tbody><tr><th scope=3D"row" style=3D"text-align:left"></th><td sty=
+le=3D"text-align:right"></td></tr><tr><th scope=3D"row" style=3D"text-align=
+:left"></th><td style=3D"text-align:right"></td></tr></tbody></table>  <div=
+ aria-hidden=3D"true" style=3D"height:16px;line-height:16px">=C2=A0</div>  =
+<div aria-hidden=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div>=
+ <div style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;fo=
+nt-size:15px;font-weight:400;line-height:21px;text-align:left;color:#0f1111=
+"><span class=3D"m_-7291836101014079248rio-text"></span></div> <div aria-hi=
+dden=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div> <div style=
+=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15p=
+x;font-weight:400;line-height:21px;text-align:left;color:#0f1111"><span cla=
+ss=3D"m_-7291836101014079248rio-text"><b>Arriving by Saturday, Oct 11 </b><=
+/span></div> <div aria-hidden=3D"true" style=3D"height:4px;line-height:4px"=
+>=C2=A0</div> <div style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,=
+sans-serif;font-size:15px;font-weight:400;line-height:21px;text-align:left;=
+color:#0f1111"><span class=3D"m_-7291836101014079248rio-text">Last day to m=
+anage delivery: <a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNR=
+RE&amp;K=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34=
+bc191966ab30p0na&amp;R=3D1P4J83VXHBX5H&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.=
+amazon.com%2Fgp%2Fsubscribe-and-save%2Fmanage%3FshipId%3Dkhrpkxoutjp%26ref_=
+%3Dpe_122043850_1028231000__em_rd&amp;H=3DXDVQZ6R0ATQIVZ6ZEQJAGMAPJIYA&amp;=
+ref_=3Dpe_122043850_1028231000__em_rd" rel=3D"nofollow" target=3D"_blank"> =
+Sunday, Oct 05 </a></span></div> <div aria-hidden=3D"true" style=3D"height:=
+4px;line-height:4px">=C2=A0</div> <div style=3D"font-family:Ember,&#39;Amaz=
+on Ember&#39;,Arial,sans-serif;font-size:15px;font-weight:400;line-height:2=
+1px;text-align:left;color:#0f1111"><span class=3D"m_-7291836101014079248rio=
+-text"></span></div> <div aria-hidden=3D"true" style=3D"height:4px;line-hei=
+ght:4px">=C2=A0</div> <div style=3D"font-family:Ember,&#39;Amazon Ember&#39=
+;,Arial,sans-serif;font-size:15px;font-weight:400;line-height:21px;text-ali=
+gn:left;color:#0f1111"><span class=3D"m_-7291836101014079248rio-text"></spa=
+n></div> <div aria-hidden=3D"true" style=3D"height:4px;line-height:4px">=C2=
+=A0</div> <div style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans=
+-serif;font-size:15px;font-weight:400;line-height:21px;text-align:left;colo=
+r:#0f1111"><span class=3D"m_-7291836101014079248rio-text"><br aria-hidden=
+=3D"true"><b>Delivering to Jamie Fiore</b></span></div> <div aria-hidden=3D=
+"true" style=3D"height:4px;line-height:4px">=C2=A0</div> <div style=3D"font=
+-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-w=
+eight:400;line-height:21px;text-align:left;color:#0f1111"><span class=3D"m_=
+-7291836101014079248rio-text">9232 MARSHALL RD</span></div> <div aria-hidde=
+n=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div> <div style=3D"=
+font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;fo=
+nt-weight:400;line-height:21px;text-align:left;color:#0f1111"><span class=
+=3D"m_-7291836101014079248rio-text"><br aria-hidden=3D"true"></span></div> =
+   <div style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;=
+font-size:15px;line-height:1;text-align:left;color:#000000"><h3 style=3D"ma=
+rgin:0;padding:0;font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;=
+font-weight:700;font-size:15px;line-height:21px;color:#0f1111" class=3D"m_-=
+7291836101014079248rio-header">16 items in this delivery</h3></div>  <div a=
+ria-hidden=3D"true" style=3D"height:8px;line-height:8px">=C2=A0</div> <tabl=
+e role=3D"list" width=3D"100%" border=3D"0" style=3D"width:100%;font-size:0=
+;line-height:0"><tbody><tr><td role=3D"listitem" valign=3D"top" width=3D"10=
+0%" style=3D"width:100%">   <div style=3D"margin:0px auto;max-width:568px">=
+<table align=3D"center" border=3D"0" cellpadding=3D"0" cellspacing=3D"0" ro=
+le=3D"presentation" style=3D"width:100%"><tbody><tr><td style=3D"direction:=
+ltr;font-size:0px;padding:0;text-align:left"><div style=3D"font-size:0;line=
+-height:0;text-align:left;display:inline-block;width:100%;direction:ltr"><d=
+iv style=3D"font-size:0px;text-align:left;direction:ltr;display:inline-bloc=
+k;vertical-align:top;width:33%"><table border=3D"0" cellpadding=3D"0" cells=
+pacing=3D"0" role=3D"presentation" width=3D"100%"><tbody><tr><td style=3D"v=
+ertical-align:top;padding:0;padding-right:4px;padding-left:0px"><table bord=
+er=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D=
+"100%"><tbody><tr><td align=3D"left" class=3D"m_-7291836101014079248rio-asi=
+n-image" style=3D"font-size:0px;padding:0;word-break:break-word"><table sty=
+le=3D"width:100%;border-radius:4px" class=3D"m_-7291836101014079248rio-asin=
+-image-75PSNyvL8MatW84jT64H8f" border=3D"0" cellpadding=3D"0" cellspacing=
+=3D"0" role=3D"presentation" width=3D"100%"><tbody><tr><td class=3D"m_-7291=
+836101014079248productImageTd" style=3D"background-image:linear-gradient(rg=
+ba(15,17,17,0.03),rgba(15,17,17,0.03));border-radius:4px;width:100%;height:=
+93px;vertical-align:middle;text-align:center;padding:8px"><a href=3D"https:=
+//www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=3D24050BDJ7XINT&amp;M=3D=
+urn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&amp;R=3D1ROO8KKD=
+6MQQQ&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB000C4AZ8Q%2Fre=
+f%3Dpe_122043850_1028231000_OD0600IMG_OD99__em_rd&amp;H=3DZFG9VPG4SUC2S5RUY=
+FGZAAWBWOIA&amp;ref_=3Dpe_122043850_1028231000_OD0600IMG_OD99__em_rd" style=
+=3D"background-color:transparent;display:inline-block" target=3D"_blank"><i=
+mg style=3D"width:100%;height:auto;max-height:93px;max-width:93px;margin:au=
+to;display:block" class=3D"m_-7291836101014079248productImage" width=3D"165=
+" src=3D"https://m.media-amazon.com/images/I/71TZlvV85EL.jpg" alt=3D""></a>=
+</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></tab=
+le></div><div style=3D"font-size:0px;text-align:left;direction:ltr;display:=
+inline-block;vertical-align:top;width:67%"><table border=3D"0" cellpadding=
+=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody><tr><t=
+d style=3D"vertical-align:top;padding:0;padding-right:0px;padding-left:4px"=
+><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentati=
+on" width=3D"100%"><tbody> <tr><td align=3D"left" class=3D"m_-7291836101014=
+079248rio-text" style=3D"font-size:0px;padding:0;word-break:break-word">  <=
+div style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font=
+-size:13px;font-weight:700;line-height:18px;text-align:left;color:#cc0c39">=
+<span class=3D"m_-7291836101014079248rio-text">Price increase</span></div> =
+</td></tr> <tr><td align=3D"left" style=3D"font-size:0px;padding:0;word-bre=
+ak:break-word"><div aria-hidden=3D"true" style=3D"height:4px;line-height:4p=
+x">=C2=A0</div></td></tr><tr><td align=3D"left" style=3D"font-size:0px;padd=
+ing:0;word-break:break-word"><div style=3D"font-family:Ember,&#39;Amazon Em=
+ber&#39;,Arial,sans-serif;font-size:15px;font-weight:400;line-height:20px;t=
+ext-align:left;color:#0f1111"><span class=3D"m_-7291836101014079248rio-text=
+">Seventh Generation Dishwasher Detergent Gel Liquid...</span></div></td></=
+tr> <tr><td align=3D"left" style=3D"font-size:0px;padding:0;word-break:brea=
+k-word"><div aria-hidden=3D"true" style=3D"height:4px;line-height:4px">=C2=
+=A0</div></td></tr><tr><td align=3D"left" style=3D"font-size:0px;padding:0;=
+word-break:break-word"><div style=3D"font-family:Ember,&#39;Amazon Ember&#3=
+9;,Arial,sans-serif;font-size:15px;font-weight:400;line-height:20px;text-al=
+ign:left;color:#565959"><span class=3D"m_-7291836101014079248rio-text">QUAN=
+TITY: 1</span></div></td></tr> <tr><td align=3D"left" style=3D"font-size:0p=
+x;padding:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"heigh=
+t:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" style=
+=3D"font-size:0px;padding:0;word-break:break-word"><div style=3D"font-famil=
+y:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weight:=
+400;line-height:20px;text-align:left;color:#0f1111"><span class=3D"m_-72918=
+36101014079248rio-text">Last price: <b>$22.92</b><br aria-hidden=3D"true">
+New price: <b>$35.04</b><br aria-hidden=3D"true">
+Saving: 15%</span></div></td></tr></tbody></table></td></tr></tbody></table=
+></div></div></td></tr></tbody></table></div>   </td></tr><tr aria-hidden=
+=3D"true"><td colspan=3D"1" width=3D"100%" height=3D"8" style=3D"width:100%=
+;height:8px;line-height:8px">=C2=A0</td></tr><tr>  <td role=3D"listitem" va=
+lign=3D"top" width=3D"100%" style=3D"width:100%">   <div style=3D"margin:0p=
+x auto;max-width:568px"><table align=3D"center" border=3D"0" cellpadding=3D=
+"0" cellspacing=3D"0" role=3D"presentation" style=3D"width:100%"><tbody><tr=
+><td style=3D"direction:ltr;font-size:0px;padding:0;text-align:left"><div s=
+tyle=3D"font-size:0;line-height:0;text-align:left;display:inline-block;widt=
+h:100%;direction:ltr"><div style=3D"font-size:0px;text-align:left;direction=
+:ltr;display:inline-block;vertical-align:top;width:33%"><table border=3D"0"=
+ cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><=
+tbody><tr><td style=3D"vertical-align:top;padding:0;padding-right:4px;paddi=
+ng-left:0px"><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=
+=3D"presentation" width=3D"100%"><tbody><tr><td align=3D"left" class=3D"m_-=
+7291836101014079248rio-asin-image" style=3D"font-size:0px;padding:0;word-br=
+eak:break-word"><table style=3D"width:100%;border-radius:4px" class=3D"m_-7=
+291836101014079248rio-asin-image-75PSNyvL8MatW84jT64H8f" border=3D"0" cellp=
+adding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody>=
+<tr><td class=3D"m_-7291836101014079248productImageTd" style=3D"background-=
+image:linear-gradient(rgba(15,17,17,0.03),rgba(15,17,17,0.03));border-radiu=
+s:4px;width:100%;height:93px;vertical-align:middle;text-align:center;paddin=
+g:8px"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=
+=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966=
+ab30p0na&amp;R=3D1P7YQB7STHYKA&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.c=
+om%2Fdp%2FB07Q3SWL3X%2Fref%3Dpe_122043850_1028231000_OD0601IMG_OD99__em_rd&=
+amp;H=3DDVXAAWZE3WWKWGX0ODCUKURNF5IA&amp;ref_=3Dpe_122043850_1028231000_OD0=
+601IMG_OD99__em_rd" style=3D"background-color:transparent;display:inline-bl=
+ock" target=3D"_blank"><img style=3D"width:100%;height:auto;max-height:93px=
+;max-width:93px;margin:auto;display:block" class=3D"m_-7291836101014079248p=
+roductImage" width=3D"165" src=3D"https://m.media-amazon.com/images/I/71zSz=
+xYlZFL.jpg" alt=3D""></a></td></tr></tbody></table></td></tr></tbody></tabl=
+e></td></tr></tbody></table></div><div style=3D"font-size:0px;text-align:le=
+ft;direction:ltr;display:inline-block;vertical-align:top;width:67%"><table =
+border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" widt=
+h=3D"100%"><tbody><tr><td style=3D"vertical-align:top;padding:0;padding-rig=
+ht:0px;padding-left:4px"><table border=3D"0" cellpadding=3D"0" cellspacing=
+=3D"0" role=3D"presentation" width=3D"100%"><tbody> <tr><td align=3D"left" =
+class=3D"m_-7291836101014079248rio-text" style=3D"font-size:0px;padding:0;w=
+ord-break:break-word">  <div style=3D"font-family:Ember,&#39;Amazon Ember&#=
+39;,Arial,sans-serif;font-size:13px;font-weight:700;line-height:18px;text-a=
+lign:left;color:#cc0c39"><span class=3D"m_-7291836101014079248rio-text">Pri=
+ce increase</span></div> </td></tr> <tr><td align=3D"left" style=3D"font-si=
+ze:0px;padding:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"=
+height:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" st=
+yle=3D"font-size:0px;padding:0;word-break:break-word"><div style=3D"font-fa=
+mily:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weig=
+ht:400;line-height:20px;text-align:left;color:#0f1111"><span class=3D"m_-72=
+91836101014079248rio-text">Nature Made Super C with Vitamin D3 and Zinc,...=
+</span></div></td></tr> <tr><td align=3D"left" style=3D"font-size:0px;paddi=
+ng:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"height:4px;l=
+ine-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" style=3D"font-=
+size:0px;padding:0;word-break:break-word"><div style=3D"font-family:Ember,&=
+#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weight:400;line-=
+height:20px;text-align:left;color:#565959"><span class=3D"m_-72918361010140=
+79248rio-text"><a rel=3D"nofollow">1 unit every 2 months</a></span></div></=
+td></tr> <tr><td align=3D"left" style=3D"font-size:0px;padding:0;word-break=
+:break-word"><div aria-hidden=3D"true" style=3D"height:4px;line-height:4px"=
+>=C2=A0</div></td></tr><tr><td align=3D"left" style=3D"font-size:0px;paddin=
+g:0;word-break:break-word"><div style=3D"font-family:Ember,&#39;Amazon Embe=
+r&#39;,Arial,sans-serif;font-size:15px;font-weight:400;line-height:20px;tex=
+t-align:left;color:#0f1111"><span class=3D"m_-7291836101014079248rio-text">=
+Last price: <b>$6.79</b><br aria-hidden=3D"true">
+New price: <b>$9.17</b><br aria-hidden=3D"true">
+Saving: 15%</span></div></td></tr></tbody></table></td></tr></tbody></table=
+></div></div></td></tr></tbody></table></div>   </td></tr><tr aria-hidden=
+=3D"true"><td colspan=3D"1" width=3D"100%" height=3D"8" style=3D"width:100%=
+;height:8px;line-height:8px">=C2=A0</td></tr><tr>  <td role=3D"listitem" va=
+lign=3D"top" width=3D"100%" style=3D"width:100%">   <div style=3D"margin:0p=
+x auto;max-width:568px"><table align=3D"center" border=3D"0" cellpadding=3D=
+"0" cellspacing=3D"0" role=3D"presentation" style=3D"width:100%"><tbody><tr=
+><td style=3D"direction:ltr;font-size:0px;padding:0;text-align:left"><div s=
+tyle=3D"font-size:0;line-height:0;text-align:left;display:inline-block;widt=
+h:100%;direction:ltr"><div style=3D"font-size:0px;text-align:left;direction=
+:ltr;display:inline-block;vertical-align:top;width:33%"><table border=3D"0"=
+ cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><=
+tbody><tr><td style=3D"vertical-align:top;padding:0;padding-right:4px;paddi=
+ng-left:0px"><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=
+=3D"presentation" width=3D"100%"><tbody><tr><td align=3D"left" class=3D"m_-=
+7291836101014079248rio-asin-image" style=3D"font-size:0px;padding:0;word-br=
+eak:break-word"><table style=3D"width:100%;border-radius:4px" class=3D"m_-7=
+291836101014079248rio-asin-image-75PSNyvL8MatW84jT64H8f" border=3D"0" cellp=
+adding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody>=
+<tr><td class=3D"m_-7291836101014079248productImageTd" style=3D"background-=
+image:linear-gradient(rgba(15,17,17,0.03),rgba(15,17,17,0.03));border-radiu=
+s:4px;width:100%;height:93px;vertical-align:middle;text-align:center;paddin=
+g:8px"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=
+=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966=
+ab30p0na&amp;R=3D2DVUPZ9A7EB68&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.c=
+om%2Fdp%2FB00WAJAJ0K%2Fref%3Dpe_122043850_1028231000_OD0602IMG_OD99__em_rd&=
+amp;H=3DEZP34J3IXALSNVOJEBIX9SEBHRGA&amp;ref_=3Dpe_122043850_1028231000_OD0=
+602IMG_OD99__em_rd" style=3D"background-color:transparent;display:inline-bl=
+ock" target=3D"_blank"><img style=3D"width:100%;height:auto;max-height:93px=
+;max-width:93px;margin:auto;display:block" class=3D"m_-7291836101014079248p=
+roductImage" width=3D"165" src=3D"https://m.media-amazon.com/images/I/51HTi=
+UonnmL.jpg" alt=3D""></a></td></tr></tbody></table></td></tr></tbody></tabl=
+e></td></tr></tbody></table></div><div style=3D"font-size:0px;text-align:le=
+ft;direction:ltr;display:inline-block;vertical-align:top;width:67%"><table =
+border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" widt=
+h=3D"100%"><tbody><tr><td style=3D"vertical-align:top;padding:0;padding-rig=
+ht:0px;padding-left:4px"><table border=3D"0" cellpadding=3D"0" cellspacing=
+=3D"0" role=3D"presentation" width=3D"100%"><tbody> <tr><td align=3D"left" =
+class=3D"m_-7291836101014079248rio-text" style=3D"font-size:0px;padding:0;w=
+ord-break:break-word">  <div style=3D"font-family:Ember,&#39;Amazon Ember&#=
+39;,Arial,sans-serif;font-size:13px;font-weight:700;line-height:18px;text-a=
+lign:left;color:#cc0c39"><span class=3D"m_-7291836101014079248rio-text">Pri=
+ce increase</span></div> </td></tr> <tr><td align=3D"left" style=3D"font-si=
+ze:0px;padding:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"=
+height:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" st=
+yle=3D"font-size:0px;padding:0;word-break:break-word"><div style=3D"font-fa=
+mily:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weig=
+ht:400;line-height:20px;text-align:left;color:#0f1111"><span class=3D"m_-72=
+91836101014079248rio-text">e.l.f. Instant Lift Brow Pencil, Dual-Sided,...<=
+/span></div></td></tr> <tr><td align=3D"left" style=3D"font-size:0px;paddin=
+g:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"height:4px;li=
+ne-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" style=3D"font-s=
+ize:0px;padding:0;word-break:break-word"><div style=3D"font-family:Ember,&#=
+39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weight:400;line-h=
+eight:20px;text-align:left;color:#565959"><span class=3D"m_-729183610101407=
+9248rio-text"><a rel=3D"nofollow">1 unit every 3 months</a></span></div></t=
+d></tr> <tr><td align=3D"left" style=3D"font-size:0px;padding:0;word-break:=
+break-word"><div aria-hidden=3D"true" style=3D"height:4px;line-height:4px">=
+=C2=A0</div></td></tr><tr><td align=3D"left" style=3D"font-size:0px;padding=
+:0;word-break:break-word"><div style=3D"font-family:Ember,&#39;Amazon Ember=
+&#39;,Arial,sans-serif;font-size:15px;font-weight:400;line-height:20px;text=
+-align:left;color:#0f1111"><span class=3D"m_-7291836101014079248rio-text">L=
+ast price: <b>$2.55</b><br aria-hidden=3D"true">
+New price: <b>$3.40</b><br aria-hidden=3D"true">
+Saving: 15%</span></div></td></tr></tbody></table></td></tr></tbody></table=
+></div></div></td></tr></tbody></table></div>   </td></tr><tr aria-hidden=
+=3D"true"><td colspan=3D"1" width=3D"100%" height=3D"8" style=3D"width:100%=
+;height:8px;line-height:8px">=C2=A0</td></tr><tr>  <td role=3D"listitem" va=
+lign=3D"top" width=3D"100%" style=3D"width:100%">   <div style=3D"margin:0p=
+x auto;max-width:568px"><table align=3D"center" border=3D"0" cellpadding=3D=
+"0" cellspacing=3D"0" role=3D"presentation" style=3D"width:100%"><tbody><tr=
+><td style=3D"direction:ltr;font-size:0px;padding:0;text-align:left"><div s=
+tyle=3D"font-size:0;line-height:0;text-align:left;display:inline-block;widt=
+h:100%;direction:ltr"><div style=3D"font-size:0px;text-align:left;direction=
+:ltr;display:inline-block;vertical-align:top;width:33%"><table border=3D"0"=
+ cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><=
+tbody><tr><td style=3D"vertical-align:top;padding:0;padding-right:4px;paddi=
+ng-left:0px"><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=
+=3D"presentation" width=3D"100%"><tbody><tr><td align=3D"left" class=3D"m_-=
+7291836101014079248rio-asin-image" style=3D"font-size:0px;padding:0;word-br=
+eak:break-word"><table style=3D"width:100%;border-radius:4px" class=3D"m_-7=
+291836101014079248rio-asin-image-75PSNyvL8MatW84jT64H8f" border=3D"0" cellp=
+adding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody>=
+<tr><td class=3D"m_-7291836101014079248productImageTd" style=3D"background-=
+image:linear-gradient(rgba(15,17,17,0.03),rgba(15,17,17,0.03));border-radiu=
+s:4px;width:100%;height:93px;vertical-align:middle;text-align:center;paddin=
+g:8px"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=
+=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966=
+ab30p0na&amp;R=3DH6DFKRRDFZVC&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.co=
+m%2Fdp%2FB08JTDJ7BV%2Fref%3Dpe_122043850_1028231000_OD0603IMG_OD99__em_rd&a=
+mp;H=3DIACRKGADSEKUI9ZJUQJFMCDAZUWA&amp;ref_=3Dpe_122043850_1028231000_OD06=
+03IMG_OD99__em_rd" style=3D"background-color:transparent;display:inline-blo=
+ck" target=3D"_blank"><img style=3D"width:100%;height:auto;max-height:93px;=
+max-width:93px;margin:auto;display:block" class=3D"m_-7291836101014079248pr=
+oductImage" width=3D"165" src=3D"https://m.media-amazon.com/images/I/619d5M=
+S8NGL.jpg" alt=3D""></a></td></tr></tbody></table></td></tr></tbody></table=
+></td></tr></tbody></table></div><div style=3D"font-size:0px;text-align:lef=
+t;direction:ltr;display:inline-block;vertical-align:top;width:67%"><table b=
+order=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=
+=3D"100%"><tbody><tr><td style=3D"vertical-align:top;padding:0;padding-righ=
+t:0px;padding-left:4px"><table border=3D"0" cellpadding=3D"0" cellspacing=
+=3D"0" role=3D"presentation" width=3D"100%"><tbody> <tr><td align=3D"left" =
+class=3D"m_-7291836101014079248rio-text" style=3D"font-size:0px;padding:0;w=
+ord-break:break-word"> <div style=3D"font-family:Ember,&#39;Amazon Ember&#3=
+9;,Arial,sans-serif;font-size:13px;font-weight:700;line-height:18px;text-al=
+ign:left;color:#0f1111"><span class=3D"m_-7291836101014079248rio-text">Pric=
+e decrease</span></div>  </td></tr> <tr><td align=3D"left" style=3D"font-si=
+ze:0px;padding:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"=
+height:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" st=
+yle=3D"font-size:0px;padding:0;word-break:break-word"><div style=3D"font-fa=
+mily:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weig=
+ht:400;line-height:20px;text-align:left;color:#0f1111"><span class=3D"m_-72=
+91836101014079248rio-text">Aurite Saffron Supplement | Stress Management,..=
+.</span></div></td></tr> <tr><td align=3D"left" style=3D"font-size:0px;padd=
+ing:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"height:4px;=
+line-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" style=3D"font=
+-size:0px;padding:0;word-break:break-word"><div style=3D"font-family:Ember,=
+&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weight:400;line=
+-height:20px;text-align:left;color:#565959"><span class=3D"m_-7291836101014=
+079248rio-text"><a rel=3D"nofollow">1 unit every 2 months</a></span></div><=
+/td></tr> <tr><td align=3D"left" style=3D"font-size:0px;padding:0;word-brea=
+k:break-word"><div aria-hidden=3D"true" style=3D"height:4px;line-height:4px=
+">=C2=A0</div></td></tr><tr><td align=3D"left" style=3D"font-size:0px;paddi=
+ng:0;word-break:break-word"><div style=3D"font-family:Ember,&#39;Amazon Emb=
+er&#39;,Arial,sans-serif;font-size:15px;font-weight:400;line-height:20px;te=
+xt-align:left;color:#0f1111"><span class=3D"m_-7291836101014079248rio-text"=
+>Last price: <b>$24.88</b><br aria-hidden=3D"true">
+New price: <b>$19.91</b><br aria-hidden=3D"true">
+Saving: 10%</span></div></td></tr></tbody></table></td></tr></tbody></table=
+></div></div></td></tr></tbody></table></div>   </td></tr><tr aria-hidden=
+=3D"true"><td colspan=3D"1" width=3D"100%" height=3D"8" style=3D"width:100%=
+;height:8px;line-height:8px">=C2=A0</td></tr><tr>  <td role=3D"listitem" va=
+lign=3D"top" width=3D"100%" style=3D"width:100%">   <div style=3D"margin:0p=
+x auto;max-width:568px"><table align=3D"center" border=3D"0" cellpadding=3D=
+"0" cellspacing=3D"0" role=3D"presentation" style=3D"width:100%"><tbody><tr=
+><td style=3D"direction:ltr;font-size:0px;padding:0;text-align:left"><div s=
+tyle=3D"font-size:0;line-height:0;text-align:left;display:inline-block;widt=
+h:100%;direction:ltr"><div style=3D"font-size:0px;text-align:left;direction=
+:ltr;display:inline-block;vertical-align:top;width:33%"><table border=3D"0"=
+ cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><=
+tbody><tr><td style=3D"vertical-align:top;padding:0;padding-right:4px;paddi=
+ng-left:0px"><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=
+=3D"presentation" width=3D"100%"><tbody><tr><td align=3D"left" class=3D"m_-=
+7291836101014079248rio-asin-image" style=3D"font-size:0px;padding:0;word-br=
+eak:break-word"><table style=3D"width:100%;border-radius:4px" class=3D"m_-7=
+291836101014079248rio-asin-image-75PSNyvL8MatW84jT64H8f" border=3D"0" cellp=
+adding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody>=
+<tr><td class=3D"m_-7291836101014079248productImageTd" style=3D"background-=
+image:linear-gradient(rgba(15,17,17,0.03),rgba(15,17,17,0.03));border-radiu=
+s:4px;width:100%;height:93px;vertical-align:middle;text-align:center;paddin=
+g:8px"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=
+=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966=
+ab30p0na&amp;R=3D21RSZ1VZ9GEY7&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.c=
+om%2Fdp%2FB012T97SDQ%2Fref%3Dpe_122043850_1028231000_OD0604IMG_OD99__em_rd&=
+amp;H=3DEKLCGRVQFP1QRJPMMEVKEXNHKAWA&amp;ref_=3Dpe_122043850_1028231000_OD0=
+604IMG_OD99__em_rd" style=3D"background-color:transparent;display:inline-bl=
+ock" target=3D"_blank"><img style=3D"width:100%;height:auto;max-height:93px=
+;max-width:93px;margin:auto;display:block" class=3D"m_-7291836101014079248p=
+roductImage" width=3D"165" src=3D"https://m.media-amazon.com/images/I/61zF1=
+y8JJHL.jpg" alt=3D""></a></td></tr></tbody></table></td></tr></tbody></tabl=
+e></td></tr></tbody></table></div><div style=3D"font-size:0px;text-align:le=
+ft;direction:ltr;display:inline-block;vertical-align:top;width:67%"><table =
+border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" widt=
+h=3D"100%"><tbody><tr><td style=3D"vertical-align:top;padding:0;padding-rig=
+ht:0px;padding-left:4px"><table border=3D"0" cellpadding=3D"0" cellspacing=
+=3D"0" role=3D"presentation" width=3D"100%"><tbody>  <tr><td align=3D"left"=
+ style=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=
+=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><t=
+d align=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><d=
+iv style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-=
+size:15px;font-weight:400;line-height:20px;text-align:left;color:#0f1111"><=
+span class=3D"m_-7291836101014079248rio-text">Solgar Magnesium Citrate, 120=
+ Tablets - Promotes...</span></div></td></tr> <tr><td align=3D"left" style=
+=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=3D"true=
+" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=
+=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><div styl=
+e=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15=
+px;font-weight:400;line-height:20px;text-align:left;color:#565959"><span cl=
+ass=3D"m_-7291836101014079248rio-text"><a rel=3D"nofollow">1 unit every 4 m=
+onths</a></span></div></td></tr> <tr><td align=3D"left" style=3D"font-size:=
+0px;padding:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"hei=
+ght:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" style=
+=3D"font-size:0px;padding:0;word-break:break-word"><div style=3D"font-famil=
+y:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weight:=
+400;line-height:20px;text-align:left;color:#0f1111"><span class=3D"m_-72918=
+36101014079248rio-text"><b>$11.81</b><br aria-hidden=3D"true">
+Saving: 15%</span></div></td></tr></tbody></table></td></tr></tbody></table=
+></div></div></td></tr></tbody></table></div>   </td></tr><tr aria-hidden=
+=3D"true"><td colspan=3D"1" width=3D"100%" height=3D"8" style=3D"width:100%=
+;height:8px;line-height:8px">=C2=A0</td></tr><tr>  <td role=3D"listitem" va=
+lign=3D"top" width=3D"100%" style=3D"width:100%">   <div style=3D"margin:0p=
+x auto;max-width:568px"><table align=3D"center" border=3D"0" cellpadding=3D=
+"0" cellspacing=3D"0" role=3D"presentation" style=3D"width:100%"><tbody><tr=
+><td style=3D"direction:ltr;font-size:0px;padding:0;text-align:left"><div s=
+tyle=3D"font-size:0;line-height:0;text-align:left;display:inline-block;widt=
+h:100%;direction:ltr"><div style=3D"font-size:0px;text-align:left;direction=
+:ltr;display:inline-block;vertical-align:top;width:33%"><table border=3D"0"=
+ cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><=
+tbody><tr><td style=3D"vertical-align:top;padding:0;padding-right:4px;paddi=
+ng-left:0px"><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=
+=3D"presentation" width=3D"100%"><tbody><tr><td align=3D"left" class=3D"m_-=
+7291836101014079248rio-asin-image" style=3D"font-size:0px;padding:0;word-br=
+eak:break-word"><table style=3D"width:100%;border-radius:4px" class=3D"m_-7=
+291836101014079248rio-asin-image-75PSNyvL8MatW84jT64H8f" border=3D"0" cellp=
+adding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody>=
+<tr><td class=3D"m_-7291836101014079248productImageTd" style=3D"background-=
+image:linear-gradient(rgba(15,17,17,0.03),rgba(15,17,17,0.03));border-radiu=
+s:4px;width:100%;height:93px;vertical-align:middle;text-align:center;paddin=
+g:8px"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=
+=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966=
+ab30p0na&amp;R=3D37GV5VBOHIDKM&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.c=
+om%2Fdp%2FB0BZB68QPM%2Fref%3Dpe_122043850_1028231000_OD0605IMG_OD99__em_rd&=
+amp;H=3DGHIFTDCM2UPDICZ0DZLYIAKSWAGA&amp;ref_=3Dpe_122043850_1028231000_OD0=
+605IMG_OD99__em_rd" style=3D"background-color:transparent;display:inline-bl=
+ock" target=3D"_blank"><img style=3D"width:100%;height:auto;max-height:93px=
+;max-width:93px;margin:auto;display:block" class=3D"m_-7291836101014079248p=
+roductImage" width=3D"165" src=3D"https://m.media-amazon.com/images/I/81Ejq=
+ODtFrL.jpg" alt=3D""></a></td></tr></tbody></table></td></tr></tbody></tabl=
+e></td></tr></tbody></table></div><div style=3D"font-size:0px;text-align:le=
+ft;direction:ltr;display:inline-block;vertical-align:top;width:67%"><table =
+border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" widt=
+h=3D"100%"><tbody><tr><td style=3D"vertical-align:top;padding:0;padding-rig=
+ht:0px;padding-left:4px"><table border=3D"0" cellpadding=3D"0" cellspacing=
+=3D"0" role=3D"presentation" width=3D"100%"><tbody>  <tr><td align=3D"left"=
+ style=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=
+=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><t=
+d align=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><d=
+iv style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-=
+size:15px;font-weight:400;line-height:20px;text-align:left;color:#0f1111"><=
+span class=3D"m_-7291836101014079248rio-text">Goldfish Cheddar Cheese Crack=
+ers, Baked with Whole...</span></div></td></tr> <tr><td align=3D"left" styl=
+e=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=3D"tru=
+e" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=
+=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><div styl=
+e=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15=
+px;font-weight:400;line-height:20px;text-align:left;color:#565959"><span cl=
+ass=3D"m_-7291836101014079248rio-text"><a rel=3D"nofollow">1 unit every 1 m=
+onth</a></span></div></td></tr> <tr><td align=3D"left" style=3D"font-size:0=
+px;padding:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"heig=
+ht:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" style=
+=3D"font-size:0px;padding:0;word-break:break-word"><div style=3D"font-famil=
+y:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weight:=
+400;line-height:20px;text-align:left;color:#0f1111"><span class=3D"m_-72918=
+36101014079248rio-text">Last price: <b>$7.22</b><br aria-hidden=3D"true">
+New price: <b>$6.78</b><br aria-hidden=3D"true">
+Saving: 15%</span></div></td></tr></tbody></table></td></tr></tbody></table=
+></div></div></td></tr></tbody></table></div>   </td></tr><tr aria-hidden=
+=3D"true"><td colspan=3D"1" width=3D"100%" height=3D"8" style=3D"width:100%=
+;height:8px;line-height:8px">=C2=A0</td></tr><tr>  <td role=3D"listitem" va=
+lign=3D"top" width=3D"100%" style=3D"width:100%">   <div style=3D"margin:0p=
+x auto;max-width:568px"><table align=3D"center" border=3D"0" cellpadding=3D=
+"0" cellspacing=3D"0" role=3D"presentation" style=3D"width:100%"><tbody><tr=
+><td style=3D"direction:ltr;font-size:0px;padding:0;text-align:left"><div s=
+tyle=3D"font-size:0;line-height:0;text-align:left;display:inline-block;widt=
+h:100%;direction:ltr"><div style=3D"font-size:0px;text-align:left;direction=
+:ltr;display:inline-block;vertical-align:top;width:33%"><table border=3D"0"=
+ cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><=
+tbody><tr><td style=3D"vertical-align:top;padding:0;padding-right:4px;paddi=
+ng-left:0px"><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=
+=3D"presentation" width=3D"100%"><tbody><tr><td align=3D"left" class=3D"m_-=
+7291836101014079248rio-asin-image" style=3D"font-size:0px;padding:0;word-br=
+eak:break-word"><table style=3D"width:100%;border-radius:4px" class=3D"m_-7=
+291836101014079248rio-asin-image-75PSNyvL8MatW84jT64H8f" border=3D"0" cellp=
+adding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody>=
+<tr><td class=3D"m_-7291836101014079248productImageTd" style=3D"background-=
+image:linear-gradient(rgba(15,17,17,0.03),rgba(15,17,17,0.03));border-radiu=
+s:4px;width:100%;height:93px;vertical-align:middle;text-align:center;paddin=
+g:8px"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=
+=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966=
+ab30p0na&amp;R=3DB4VD84ACTHVQ&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.co=
+m%2Fdp%2FB0891XC8GY%2Fref%3Dpe_122043850_1028231000_OD0606IMG_OD99__em_rd&a=
+mp;H=3D55AGDWJPYBQSTFL4YDASGCLEGHCA&amp;ref_=3Dpe_122043850_1028231000_OD06=
+06IMG_OD99__em_rd" style=3D"background-color:transparent;display:inline-blo=
+ck" target=3D"_blank"><img style=3D"width:100%;height:auto;max-height:93px;=
+max-width:93px;margin:auto;display:block" class=3D"m_-7291836101014079248pr=
+oductImage" width=3D"165" src=3D"https://m.media-amazon.com/images/I/81Cj3s=
+iyBqL.jpg" alt=3D""></a></td></tr></tbody></table></td></tr></tbody></table=
+></td></tr></tbody></table></div><div style=3D"font-size:0px;text-align:lef=
+t;direction:ltr;display:inline-block;vertical-align:top;width:67%"><table b=
+order=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=
+=3D"100%"><tbody><tr><td style=3D"vertical-align:top;padding:0;padding-righ=
+t:0px;padding-left:4px"><table border=3D"0" cellpadding=3D"0" cellspacing=
+=3D"0" role=3D"presentation" width=3D"100%"><tbody>  <tr><td align=3D"left"=
+ style=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=
+=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><t=
+d align=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><d=
+iv style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-=
+size:15px;font-weight:400;line-height:20px;text-align:left;color:#0f1111"><=
+span class=3D"m_-7291836101014079248rio-text">Del Monte FRUIT CUP Snacks, F=
+amily Pack, No Sugar...</span></div></td></tr> <tr><td align=3D"left" style=
+=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=3D"true=
+" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=
+=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><div styl=
+e=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15=
+px;font-weight:400;line-height:20px;text-align:left;color:#565959"><span cl=
+ass=3D"m_-7291836101014079248rio-text"><a rel=3D"nofollow">1 unit every 2 m=
+onths</a></span></div></td></tr> <tr><td align=3D"left" style=3D"font-size:=
+0px;padding:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"hei=
+ght:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" style=
+=3D"font-size:0px;padding:0;word-break:break-word"><div style=3D"font-famil=
+y:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weight:=
+400;line-height:20px;text-align:left;color:#0f1111"><span class=3D"m_-72918=
+36101014079248rio-text"><b>$6.92</b><br aria-hidden=3D"true">
+Saving: 15%</span></div></td></tr></tbody></table></td></tr></tbody></table=
+></div></div></td></tr></tbody></table></div>   </td></tr><tr aria-hidden=
+=3D"true"><td colspan=3D"1" width=3D"100%" height=3D"8" style=3D"width:100%=
+;height:8px;line-height:8px">=C2=A0</td></tr><tr>  <td role=3D"listitem" va=
+lign=3D"top" width=3D"100%" style=3D"width:100%">   <div style=3D"margin:0p=
+x auto;max-width:568px"><table align=3D"center" border=3D"0" cellpadding=3D=
+"0" cellspacing=3D"0" role=3D"presentation" style=3D"width:100%"><tbody><tr=
+><td style=3D"direction:ltr;font-size:0px;padding:0;text-align:left"><div s=
+tyle=3D"font-size:0;line-height:0;text-align:left;display:inline-block;widt=
+h:100%;direction:ltr"><div style=3D"font-size:0px;text-align:left;direction=
+:ltr;display:inline-block;vertical-align:top;width:33%"><table border=3D"0"=
+ cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><=
+tbody><tr><td style=3D"vertical-align:top;padding:0;padding-right:4px;paddi=
+ng-left:0px"><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=
+=3D"presentation" width=3D"100%"><tbody><tr><td align=3D"left" class=3D"m_-=
+7291836101014079248rio-asin-image" style=3D"font-size:0px;padding:0;word-br=
+eak:break-word"><table style=3D"width:100%;border-radius:4px" class=3D"m_-7=
+291836101014079248rio-asin-image-75PSNyvL8MatW84jT64H8f" border=3D"0" cellp=
+adding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody>=
+<tr><td class=3D"m_-7291836101014079248productImageTd" style=3D"background-=
+image:linear-gradient(rgba(15,17,17,0.03),rgba(15,17,17,0.03));border-radiu=
+s:4px;width:100%;height:93px;vertical-align:middle;text-align:center;paddin=
+g:8px"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=
+=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966=
+ab30p0na&amp;R=3D3F4DRK18Y0USA&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.c=
+om%2Fdp%2FB0774242NN%2Fref%3Dpe_122043850_1028231000_OD0607IMG_OD99__em_rd&=
+amp;H=3DSDTDSY2AKDOKUAW9T6AI9RQNWIMA&amp;ref_=3Dpe_122043850_1028231000_OD0=
+607IMG_OD99__em_rd" style=3D"background-color:transparent;display:inline-bl=
+ock" target=3D"_blank"><img style=3D"width:100%;height:auto;max-height:93px=
+;max-width:93px;margin:auto;display:block" class=3D"m_-7291836101014079248p=
+roductImage" width=3D"165" src=3D"https://m.media-amazon.com/images/I/71NAN=
+qQ-JlL.jpg" alt=3D""></a></td></tr></tbody></table></td></tr></tbody></tabl=
+e></td></tr></tbody></table></div><div style=3D"font-size:0px;text-align:le=
+ft;direction:ltr;display:inline-block;vertical-align:top;width:67%"><table =
+border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" widt=
+h=3D"100%"><tbody><tr><td style=3D"vertical-align:top;padding:0;padding-rig=
+ht:0px;padding-left:4px"><table border=3D"0" cellpadding=3D"0" cellspacing=
+=3D"0" role=3D"presentation" width=3D"100%"><tbody>  <tr><td align=3D"left"=
+ style=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=
+=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><t=
+d align=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><d=
+iv style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-=
+size:15px;font-weight:400;line-height:20px;text-align:left;color:#0f1111"><=
+span class=3D"m_-7291836101014079248rio-text">NATURELO Teen Multivitamin - =
+Whole Food Multivitamin...</span></div></td></tr> <tr><td align=3D"left" st=
+yle=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=3D"t=
+rue" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><td ali=
+gn=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><div st=
+yle=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:=
+15px;font-weight:400;line-height:20px;text-align:left;color:#565959"><span =
+class=3D"m_-7291836101014079248rio-text"><a rel=3D"nofollow">1 unit every 1=
+ month</a></span></div></td></tr> <tr><td align=3D"left" style=3D"font-size=
+:0px;padding:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"he=
+ight:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" styl=
+e=3D"font-size:0px;padding:0;word-break:break-word"><div style=3D"font-fami=
+ly:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weight=
+:400;line-height:20px;text-align:left;color:#0f1111"><span class=3D"m_-7291=
+836101014079248rio-text"><b>$21.21</b><br aria-hidden=3D"true">
+Saving: 15%</span></div></td></tr></tbody></table></td></tr></tbody></table=
+></div></div></td></tr></tbody></table></div>   </td></tr><tr aria-hidden=
+=3D"true"><td colspan=3D"1" width=3D"100%" height=3D"8" style=3D"width:100%=
+;height:8px;line-height:8px">=C2=A0</td></tr><tr>  <td role=3D"listitem" va=
+lign=3D"top" width=3D"100%" style=3D"width:100%">   <div style=3D"margin:0p=
+x auto;max-width:568px"><table align=3D"center" border=3D"0" cellpadding=3D=
+"0" cellspacing=3D"0" role=3D"presentation" style=3D"width:100%"><tbody><tr=
+><td style=3D"direction:ltr;font-size:0px;padding:0;text-align:left"><div s=
+tyle=3D"font-size:0;line-height:0;text-align:left;display:inline-block;widt=
+h:100%;direction:ltr"><div style=3D"font-size:0px;text-align:left;direction=
+:ltr;display:inline-block;vertical-align:top;width:33%"><table border=3D"0"=
+ cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><=
+tbody><tr><td style=3D"vertical-align:top;padding:0;padding-right:4px;paddi=
+ng-left:0px"><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=
+=3D"presentation" width=3D"100%"><tbody><tr><td align=3D"left" class=3D"m_-=
+7291836101014079248rio-asin-image" style=3D"font-size:0px;padding:0;word-br=
+eak:break-word"><table style=3D"width:100%;border-radius:4px" class=3D"m_-7=
+291836101014079248rio-asin-image-75PSNyvL8MatW84jT64H8f" border=3D"0" cellp=
+adding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody>=
+<tr><td class=3D"m_-7291836101014079248productImageTd" style=3D"background-=
+image:linear-gradient(rgba(15,17,17,0.03),rgba(15,17,17,0.03));border-radiu=
+s:4px;width:100%;height:93px;vertical-align:middle;text-align:center;paddin=
+g:8px"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=
+=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966=
+ab30p0na&amp;R=3D2BZ4IVHR29C3C&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.c=
+om%2Fdp%2FB07B8BSGPL%2Fref%3Dpe_122043850_1028231000_OD0608IMG_OD99__em_rd&=
+amp;H=3DOQ8QYAR5LPWBAHGB9WGB8UB7JTCA&amp;ref_=3Dpe_122043850_1028231000_OD0=
+608IMG_OD99__em_rd" style=3D"background-color:transparent;display:inline-bl=
+ock" target=3D"_blank"><img style=3D"width:100%;height:auto;max-height:93px=
+;max-width:93px;margin:auto;display:block" class=3D"m_-7291836101014079248p=
+roductImage" width=3D"165" src=3D"https://m.media-amazon.com/images/I/81dxD=
+qjxq-L.jpg" alt=3D""></a></td></tr></tbody></table></td></tr></tbody></tabl=
+e></td></tr></tbody></table></div><div style=3D"font-size:0px;text-align:le=
+ft;direction:ltr;display:inline-block;vertical-align:top;width:67%"><table =
+border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" widt=
+h=3D"100%"><tbody><tr><td style=3D"vertical-align:top;padding:0;padding-rig=
+ht:0px;padding-left:4px"><table border=3D"0" cellpadding=3D"0" cellspacing=
+=3D"0" role=3D"presentation" width=3D"100%"><tbody>  <tr><td align=3D"left"=
+ style=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=
+=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><t=
+d align=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><d=
+iv style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-=
+size:15px;font-weight:400;line-height:20px;text-align:left;color:#0f1111"><=
+span class=3D"m_-7291836101014079248rio-text">Physician&#39;s CHOICE Probio=
+tics for Women - PH...</span></div></td></tr> <tr><td align=3D"left" style=
+=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=3D"true=
+" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=
+=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><div styl=
+e=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15=
+px;font-weight:400;line-height:20px;text-align:left;color:#565959"><span cl=
+ass=3D"m_-7291836101014079248rio-text"><a rel=3D"nofollow">1 unit every 1 m=
+onth</a></span></div></td></tr> <tr><td align=3D"left" style=3D"font-size:0=
+px;padding:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"heig=
+ht:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" style=
+=3D"font-size:0px;padding:0;word-break:break-word"><div style=3D"font-famil=
+y:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weight:=
+400;line-height:20px;text-align:left;color:#0f1111"><span class=3D"m_-72918=
+36101014079248rio-text"><b>$20.37</b><br aria-hidden=3D"true">
+Saving: 15%</span></div></td></tr></tbody></table></td></tr></tbody></table=
+></div></div></td></tr></tbody></table></div>   </td></tr><tr aria-hidden=
+=3D"true"><td colspan=3D"1" width=3D"100%" height=3D"8" style=3D"width:100%=
+;height:8px;line-height:8px">=C2=A0</td></tr><tr>  <td role=3D"listitem" va=
+lign=3D"top" width=3D"100%" style=3D"width:100%">   <div style=3D"margin:0p=
+x auto;max-width:568px"><table align=3D"center" border=3D"0" cellpadding=3D=
+"0" cellspacing=3D"0" role=3D"presentation" style=3D"width:100%"><tbody><tr=
+><td style=3D"direction:ltr;font-size:0px;padding:0;text-align:left"><div s=
+tyle=3D"font-size:0;line-height:0;text-align:left;display:inline-block;widt=
+h:100%;direction:ltr"><div style=3D"font-size:0px;text-align:left;direction=
+:ltr;display:inline-block;vertical-align:top;width:33%"><table border=3D"0"=
+ cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><=
+tbody><tr><td style=3D"vertical-align:top;padding:0;padding-right:4px;paddi=
+ng-left:0px"><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=
+=3D"presentation" width=3D"100%"><tbody><tr><td align=3D"left" class=3D"m_-=
+7291836101014079248rio-asin-image" style=3D"font-size:0px;padding:0;word-br=
+eak:break-word"><table style=3D"width:100%;border-radius:4px" class=3D"m_-7=
+291836101014079248rio-asin-image-75PSNyvL8MatW84jT64H8f" border=3D"0" cellp=
+adding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody>=
+<tr><td class=3D"m_-7291836101014079248productImageTd" style=3D"background-=
+image:linear-gradient(rgba(15,17,17,0.03),rgba(15,17,17,0.03));border-radiu=
+s:4px;width:100%;height:93px;vertical-align:middle;text-align:center;paddin=
+g:8px"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=
+=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966=
+ab30p0na&amp;R=3D2J6197CUTKDQK&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.c=
+om%2Fdp%2FB0DJDQCJX2%2Fref%3Dpe_122043850_1028231000_OD0609IMG_OD99__em_rd&=
+amp;H=3DGY5L30WZK29QVULCTXTVQFSQJ1SA&amp;ref_=3Dpe_122043850_1028231000_OD0=
+609IMG_OD99__em_rd" style=3D"background-color:transparent;display:inline-bl=
+ock" target=3D"_blank"><img style=3D"width:100%;height:auto;max-height:93px=
+;max-width:93px;margin:auto;display:block" class=3D"m_-7291836101014079248p=
+roductImage" width=3D"165" src=3D"https://m.media-amazon.com/images/I/81WYb=
+Rq-0ZL.jpg" alt=3D""></a></td></tr></tbody></table></td></tr></tbody></tabl=
+e></td></tr></tbody></table></div><div style=3D"font-size:0px;text-align:le=
+ft;direction:ltr;display:inline-block;vertical-align:top;width:67%"><table =
+border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" widt=
+h=3D"100%"><tbody><tr><td style=3D"vertical-align:top;padding:0;padding-rig=
+ht:0px;padding-left:4px"><table border=3D"0" cellpadding=3D"0" cellspacing=
+=3D"0" role=3D"presentation" width=3D"100%"><tbody>  <tr><td align=3D"left"=
+ style=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=
+=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><t=
+d align=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><d=
+iv style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-=
+size:15px;font-weight:400;line-height:20px;text-align:left;color:#0f1111"><=
+span class=3D"m_-7291836101014079248rio-text">Creatine for Women | Creatine=
+ Monohydrate + BCAA...</span></div></td></tr> <tr><td align=3D"left" style=
+=3D"font-size:0px;padding:0;word-break:break-word"><div aria-hidden=3D"true=
+" style=3D"height:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=
+=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"><div styl=
+e=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15=
+px;font-weight:400;line-height:20px;text-align:left;color:#565959"><span cl=
+ass=3D"m_-7291836101014079248rio-text"><a rel=3D"nofollow">1 unit every 1 m=
+onth</a></span></div></td></tr> <tr><td align=3D"left" style=3D"font-size:0=
+px;padding:0;word-break:break-word"><div aria-hidden=3D"true" style=3D"heig=
+ht:4px;line-height:4px">=C2=A0</div></td></tr><tr><td align=3D"left" style=
+=3D"font-size:0px;padding:0;word-break:break-word"><div style=3D"font-famil=
+y:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;font-weight:=
+400;line-height:20px;text-align:left;color:#0f1111"><span class=3D"m_-72918=
+36101014079248rio-text"><b>$28.01</b><br aria-hidden=3D"true">
+Saving: 15%</span></div></td></tr></tbody></table></td></tr></tbody></table=
+></div></div></td></tr></tbody></table></div>   </td>    </tr></tbody></tab=
+le>    <div aria-hidden=3D"true" style=3D"height:16px;line-height:16px">=C2=
+=A0</div> <div style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans=
+-serif;font-size:15px;line-height:1;text-align:left;color:#000000"><h3 styl=
+e=3D"margin:0;padding:0;font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans=
+-serif;font-weight:700;font-size:15px;line-height:21px;color:#0f1111" class=
+=3D"m_-7291836101014079248rio-header">+ 6 more item</h3></div>       <div a=
+ria-hidden=3D"true" style=3D"height:16px;line-height:16px">=C2=A0</div> <ta=
+ble cellpadding=3D"0" cellspacing=3D"0" border=3D"0" role=3D"presentation">=
+<tbody><tr><td style=3D"text-align:center;border-radius:24px;background:#ff=
+d916"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=
+=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966=
+ab30p0na&amp;R=3D197V2DR0V18PJ&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.c=
+om%2Fgp%2Fsubscribe-and-save%2Fmanage%3FshipId%3Dkhrpkxoutjp%26ref_%3Dpe_12=
+2043850_1028231000_OD0601BT_OD99__em_rd&amp;H=3DN8LOLKYAWDVQYIFVGQ8MVKOFHTM=
+A&amp;ref_=3Dpe_122043850_1028231000_OD0601BT_OD99__em_rd" style=3D"border:=
+1px solid #fcd200;background:#ffd916;font-family:Ember,&#39;Amazon Ember&#3=
+9;,Arial,sans-serif;color:#0f1111;text-decoration:none;border-radius:24px;p=
+adding:6px 16px;display:inline-block;font-size:13px;line-height:18px;white-=
+space:nowrap" target=3D"_blank"><span style=3D"text-decoration:none">Manage=
+ your delivery</span></a></td></tr></tbody></table>  </td></tr></tbody></ta=
+ble></div> </td></tr></tbody></table></div> <div style=3D"background:#f2f2f=
+2;background-color:#f2f2f2;margin:0px auto;max-width:600px"><table align=3D=
+"center" border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentat=
+ion" style=3D"background:#f2f2f2;background-color:#f2f2f2;width:100%"><tbod=
+y><tr><td style=3D"direction:ltr;font-size:0px;padding:4px 8px 4px 8px;text=
+-align:left">  <div style=3D"background:#ffffff;background-color:#ffffff;ma=
+rgin:0px auto;border-radius:4px;max-width:584px"><table align=3D"center" bo=
+rder=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" style=
+=3D"background:#ffffff;background-color:#ffffff;width:100%;border-radius:4p=
+x"><tbody><tr><td style=3D"direction:ltr;font-size:0px;padding:4px 8px 4px =
+8px;text-align:left">  <div style=3D"font-family:Ember,&#39;Amazon Ember&#3=
+9;,Arial,sans-serif;font-size:15px;line-height:1;text-align:left;color:#000=
+000"><h2 style=3D"margin:0;padding:0;font-family:Ember,&#39;Amazon Ember&#3=
+9;,Arial,sans-serif;font-weight:700;font-size:18px;line-height:22px;color:#=
+0f1111" class=3D"m_-7291836101014079248rio-header">Upgrade your next delive=
+ry for the same price</h2></div><div aria-hidden=3D"true" style=3D"height:8=
+px;line-height:8px">=C2=A0</div>  <div style=3D"font-family:Ember,&#39;Amaz=
+on Ember&#39;,Arial,sans-serif;font-size:15px;font-weight:400;line-height:2=
+1px;text-align:left;color:#0f1111"><span class=3D"m_-7291836101014079248rio=
+-text">No risk trial, switches back automatically</span></div><div aria-hid=
+den=3D"true" style=3D"height:8px;line-height:8px">=C2=A0</div><table cellpa=
+dding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%" border=
+=3D"0" style=3D"color:#000000;font-family:Ember,&#39;Amazon Ember&#39;,Aria=
+l,sans-serif;font-size:15px;line-height:22px;table-layout:auto;width:100%;b=
+order:none"> <tbody><tr><td><u></u></td></tr><tr><td valign=3D"top" style=
+=3D"padding-right:6px;padding-bottom:12px"> <div style=3D"font-family:Ember=
+,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;line-height:1;text-=
+align:left;color:#000000"><h3 style=3D"margin:0;padding:0;font-family:Ember=
+,&#39;Amazon Ember&#39;,Arial,sans-serif;font-weight:700;font-size:15px;lin=
+e-height:21px;color:#0f1111" class=3D"m_-7291836101014079248rio-header">Cur=
+rent subscription</h3></div><div aria-hidden=3D"true" style=3D"height:8px;l=
+ine-height:8px">=C2=A0</div> <table role=3D"presentation" style=3D"table-la=
+yout:fixed;width:100%;max-width:100%;background-color:#f7f7f7;border-radius=
+:8px"><tbody><tr><td style=3D"padding:0px"><table role=3D"presentation" cla=
+ss=3D"m_-7291836101014079248rio-asin-container-image" width=3D"100%"><tbody=
+><tr><td align=3D"center"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1=
+790AFH8RNRRE&amp;K=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8da=
+e5ae664a34bc191966ab30p0na&amp;R=3D2LO0B2L2CK6M2&amp;T=3DC&amp;U=3Dhttps%3A=
+%2F%2Fwww.amazon.com%2Fdp%2FB08MVQJFPY%2F%3Fref_%3Dpe_122043850_1028231000_=
+AS0700IMG_AS99_2p_0_lm&amp;H=3DPDYABECIY8HA6LEHEAGVHA1NR5QA&amp;ref_=3Dpe_1=
+22043850_1028231000_AS0700IMG_AS99_2p_0_lm" target=3D"_blank"><img src=3D"h=
+ttps://m.media-amazon.com/images/I/51m7nWPVFkL._SR259,259_.jpg" alt=3D"Seve=
+nth Generation Dish Liquid Soap Free &amp; Clear liquid soap Pack of 6 Dish=
+washing Soap Dish Soap for sensitive skin 19 oz" align=3D"center" width=3D"=
+259" height=3D"259" style=3D"width:100%;height:auto;max-width:259px;max-hei=
+ght:259px"></a></td></tr></tbody></table></td></tr></tbody></table><div ari=
+a-hidden=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div><div sty=
+le=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:1=
+5px;font-weight:400;line-height:21px;text-align:left;color:#0f1111"><span c=
+lass=3D"m_-7291836101014079248rio-text">Seventh Generation Dish Liquid Soap=
+ Free &amp;...</span></div> <div aria-hidden=3D"true" style=3D"height:4px;l=
+ine-height:4px">=C2=A0</div> <table cellpadding=3D"0" cellspacing=3D"0" bor=
+der=3D"0" role=3D"presentation"><tbody><tr><td style=3D"text-align:center;b=
+order-radius:24px;background:#fefefe"><a href=3D"https://www.amazon.com/gp/=
+r.html?C=3D1790AFH8RNRRE&amp;K=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930=
+014859b0b8dae5ae664a34bc191966ab30p0na&amp;R=3D2W455QK056C6D&amp;T=3DC&amp;=
+U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fgp%2Fsubscribe-and-save%2Fmanage%3FshipI=
+d%3Dkhrpkxoutjp%26ref_%3Dpe_122043850_1028231000_AS0701BT_AS99__em_rd&amp;H=
+=3DGQME5WCBW0A5VWA77EOTZZEA2ACA&amp;ref_=3Dpe_122043850_1028231000_AS0701BT=
+_AS99__em_rd" style=3D"border:1px solid #d5d9d9;background:#fefefe;font-fam=
+ily:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;color:#0f1111;text-decora=
+tion:none;border-radius:24px;padding:6px 16px;display:inline-block;font-siz=
+e:13px;line-height:18px;white-space:nowrap" target=3D"_blank"><span style=
+=3D"text-decoration:none">View subscription</span></a></td></tr></tbody></t=
+able></td><td valign=3D"top" style=3D"padding-left:6px;padding-bottom:12px;=
+width:50%"> <div style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sa=
+ns-serif;font-size:15px;line-height:1;text-align:left;color:#000000"><h3 st=
+yle=3D"margin:0;padding:0;font-family:Ember,&#39;Amazon Ember&#39;,Arial,sa=
+ns-serif;font-weight:700;font-size:15px;line-height:21px;color:#0f1111" cla=
+ss=3D"m_-7291836101014079248rio-header">Plant-based formula</h3></div><div =
+aria-hidden=3D"true" style=3D"height:8px;line-height:8px">=C2=A0</div> <tab=
+le role=3D"presentation" style=3D"table-layout:fixed;width:100%;max-width:1=
+00%;background-color:#f7f7f7;border-radius:8px"><tbody><tr><td style=3D"pad=
+ding:0px"><table role=3D"presentation" class=3D"m_-7291836101014079248rio-a=
+sin-container-image" width=3D"100%"><tbody><tr><td align=3D"center"><a href=
+=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=3D24050BDJ7XIN=
+T&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&amp;R=
+=3DY2WZKD62SNR6&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB0BMJ=
+S2LSZ%2F%3Fref_%3Dpe_122043850_1028231000_AS0700IMG_AS99_2p_0_lm&amp;H=3D9O=
+VTRMVO5JHK6I9NTJL1ODFYWPEA&amp;ref_=3Dpe_122043850_1028231000_AS0700IMG_AS9=
+9_2p_0_lm" target=3D"_blank"><img src=3D"https://m.media-amazon.com/images/=
+I/51nxxiv9j4L._SR259,259_.jpg" alt=3D"Seventh Generation Hand Dish Wash Ref=
+ill, Lavender Floral &amp; Mint, 3pk 50z" align=3D"center" width=3D"259" he=
+ight=3D"259" style=3D"width:100%;height:auto;max-width:259px;max-height:259=
+px"></a></td></tr></tbody></table></td></tr></tbody></table><div aria-hidde=
+n=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div><div style=3D"f=
+ont-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size:15px;fon=
+t-weight:400;line-height:21px;text-align:left;color:#0f1111"><span class=3D=
+"m_-7291836101014079248rio-text">Seventh Generation Hand Dish Wash Refill,.=
+..</span></div> <div aria-hidden=3D"true" style=3D"height:4px;line-height:4=
+px">=C2=A0</div> <table cellpadding=3D"0" cellspacing=3D"0" border=3D"0" ro=
+le=3D"presentation"><tbody><tr><td style=3D"text-align:center;border-radius=
+:24px;background:#ffd916"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1=
+790AFH8RNRRE&amp;K=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8da=
+e5ae664a34bc191966ab30p0na&amp;R=3D8JE6DUSJ1BES&amp;T=3DC&amp;U=3Dhttps%3A%=
+2F%2Fwww.amazon.com%2Fauto-deliveries%2Fupgrade%3FsubscriptionId%3DSNSD0_Z9=
+3WSE9J54PG1TMYFK1C%26deliveryDate%3D1760166000000%26productRec%3DB0BMJS2LSZ=
+%26ref_%3Dpe_122043850_1028231000_AS0702BT_AS99_Progshop_tradeup_trial_rd_&=
+amp;H=3DEJL09FK8VAGHAZLXNTHIQ7PQ0BEA&amp;ref_=3Dpe_122043850_1028231000_AS0=
+702BT_AS99_Progshop_tradeup_trial_rd_" style=3D"border:1px solid #fcd200;ba=
+ckground:#ffd916;font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;=
+color:#0f1111;text-decoration:none;border-radius:24px;padding:6px 16px;disp=
+lay:inline-block;font-size:13px;line-height:18px;white-space:nowrap" target=
+=3D"_blank"><span style=3D"text-decoration:none">Try it</span></a></td></tr=
+></tbody></table></td></tr><tr><td><u></u></td></tr></tbody></table></td></=
+tr></tbody></table></div>    </td></tr></tbody></table></div> <div style=3D=
+"background:#f2f2f2;background-color:#f2f2f2;margin:0px auto;max-width:600p=
+x"><table align=3D"center" border=3D"0" cellpadding=3D"0" cellspacing=3D"0"=
+ role=3D"presentation" style=3D"background:#f2f2f2;background-color:#f2f2f2=
+;width:100%"><tbody><tr><td style=3D"direction:ltr;font-size:0px;padding:4p=
+x 8px 4px 8px;text-align:left">    <div style=3D"background:#ffffff;backgro=
+und-color:#ffffff;margin:0px auto;border-radius:4px;max-width:584px"><table=
+ align=3D"center" border=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"=
+presentation" style=3D"background:#ffffff;background-color:#ffffff;width:10=
+0%;border-radius:4px"><tbody><tr><td style=3D"direction:ltr;font-size:0px;p=
+adding:4px 8px 4px 8px;text-align:left">  <table cellpadding=3D"0" cellspac=
+ing=3D"0" role=3D"presentation" width=3D"100%" border=3D"0" style=3D"color:=
+#000000;font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;font-size=
+:15px;line-height:22px;table-layout:auto;width:100%;border:none"><tbody><tr=
+><td width=3D"65%"><div style=3D"font-family:Ember,&#39;Amazon Ember&#39;,A=
+rial,sans-serif;font-size:15px;line-height:1;text-align:left;color:#000000"=
+><h2 style=3D"margin:0;padding:0;font-family:Ember,&#39;Amazon Ember&#39;,A=
+rial,sans-serif;font-weight:700;font-size:18px;line-height:22px;color:#0f11=
+11" class=3D"m_-7291836101014079248rio-header">Receive additional savings o=
+n your order when you add more subscriptions to this delivery</h2></div></t=
+d></tr></tbody></table><div aria-hidden=3D"true" style=3D"height:8px;line-h=
+eight:8px">=C2=A0</div> <table role=3D"list" width=3D"100%" border=3D"0" st=
+yle=3D"width:100%;font-size:0;line-height:0"><tbody><tr>  <td role=3D"listi=
+tem" valign=3D"top" width=3D"32%" style=3D"width:32%">     <a href=3D"https=
+://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=3D24050BDJ7XINT&amp;M=
+=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&amp;R=3D9M0RS=
+49KY8M6&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB00UXG4WR8%2F=
+ref%3Dpe_122043850_1028231000_CR0800IMG_CR99__sns_ryd_rec&amp;H=3DYMKXDFNYO=
+Z98QVIRNS7BG3GAIHIA&amp;ref_=3Dpe_122043850_1028231000_CR0800IMG_CR99__sns_=
+ryd_rec" target=3D"_blank"> <img width=3D"184" src=3D"https://m.media-amazo=
+n.com/images/I/317c+XdM3jL.jpg" alt=3D"everydrop by Whirlpool Ice and Water=
+ Refrigerator Filter 1, EDR1RXD1, Single-Pack , Purple" align=3D"center" st=
+yle=3D"width:100%;max-width:184px;display:block;border-radius:8px"> </a>   =
+<div aria-hidden=3D"true" style=3D"height:4px;line-height:4px">=C2=A0</div>=
+<div style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-serif;fon=
+t-size:15px;font-weight:400;line-height:20px;text-align:left;color:#0f1111"=
+><span class=3D"m_-7291836101014079248rio-text" aria-hidden=3D"true">everyd=
+rop by Whirlpool Ice...</span></div> </td><td aria-hidden=3D"true" width=3D=
+"2%" style=3D"width:2%"><div style=3D"width:8px">=C2=A0</div></td>    <td r=
+ole=3D"listitem" valign=3D"top" width=3D"32%" style=3D"width:32%">     <a h=
+ref=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=3D24050BDJ7=
+XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&amp=
+;R=3DR0KUSWOK7GJX&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fdp%2FB00=
+LH3DMUO%2Fref%3Dpe_122043850_1028231000_CR0801IMG_CR99__sns_ryd_rec&amp;H=
+=3D7FEQM6QIX4AFR8QNFBHTBWRUGCOA&amp;ref_=3Dpe_122043850_1028231000_CR0801IM=
+G_CR99__sns_ryd_rec" target=3D"_blank"> <img width=3D"184" src=3D"https://m=
+.media-amazon.com/images/I/41VtUi6pMDL.jpg" alt=3D"Amazon Basics AAA Alkali=
+ne High-Performance Batteries, 1.5 Volt, 10-Year Shelf Life, 36 Count (Pack=
+ of 1)" align=3D"center" style=3D"width:100%;max-width:184px;display:block;=
+border-radius:8px"> </a>   <div aria-hidden=3D"true" style=3D"height:4px;li=
+ne-height:4px">=C2=A0</div><div style=3D"font-family:Ember,&#39;Amazon Embe=
+r&#39;,Arial,sans-serif;font-size:15px;font-weight:400;line-height:20px;tex=
+t-align:left;color:#0f1111"><span class=3D"m_-7291836101014079248rio-text" =
+aria-hidden=3D"true">Amazon Basics AAA Alkaline...</span></div> </td><td ar=
+ia-hidden=3D"true" width=3D"2%" style=3D"width:2%"><div style=3D"width:8px"=
+>=C2=A0</div></td>    <td role=3D"listitem" valign=3D"top" width=3D"32%" st=
+yle=3D"width:32%">     <a href=3D"https://www.amazon.com/gp/r.html?C=3D1790=
+AFH8RNRRE&amp;K=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5a=
+e664a34bc191966ab30p0na&amp;R=3D3CX3Y5MMGGULE&amp;T=3DC&amp;U=3Dhttps%3A%2F=
+%2Fwww.amazon.com%2Fdp%2FB074CR89QG%2Fref%3Dpe_122043850_1028231000_CR0802I=
+MG_CR99__sns_ryd_rec&amp;H=3DJKLZTIG7DI6OGHRO0UGLSXUBEN4A&amp;ref_=3Dpe_122=
+043850_1028231000_CR0802IMG_CR99__sns_ryd_rec" target=3D"_blank"> <img widt=
+h=3D"184" src=3D"https://m.media-amazon.com/images/I/41m1f8C2NVL.jpg" alt=
+=3D"Amazon Brand - Presto! Flex-a-Size Paper Towels, 158 Sheet Huge Roll, 1=
+2 Rolls (2 Packs of 6), Equivalent to 38 Regular Rolls, White" align=3D"cen=
+ter" style=3D"width:100%;max-width:184px;display:block;border-radius:8px"> =
+</a>   <div aria-hidden=3D"true" style=3D"height:4px;line-height:4px">=C2=
+=A0</div><div style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans-=
+serif;font-size:15px;font-weight:400;line-height:20px;text-align:left;color=
+:#0f1111"><span class=3D"m_-7291836101014079248rio-text" aria-hidden=3D"tru=
+e">Amazon Brand - Presto!...</span></div> </td>    </tr></tbody></table>   =
+<div aria-hidden=3D"true" style=3D"height:16px;line-height:16px">=C2=A0</di=
+v><table cellpadding=3D"0" cellspacing=3D"0" border=3D"0" role=3D"presentat=
+ion"><tbody><tr><td style=3D"text-align:center;border-radius:24px;backgroun=
+d:#ffd916"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&am=
+p;K=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191=
+966ab30p0na&amp;R=3D3QFJLBPU78RAW&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazo=
+n.com%2FSubscribe%2Fb%3Fref_%3Dpe_122043850_1028231000_CR0801BT_CR99__em_rd=
+_st%26node%3D5856181011&amp;H=3DYR9ZP3JIBTU0SAU2JNUQMUKJGDSA&amp;ref_=3Dpe_=
+122043850_1028231000_CR0801BT_CR99__em_rd_st" style=3D"border:1px solid #fc=
+d200;background:#ffd916;font-family:Ember,&#39;Amazon Ember&#39;,Arial,sans=
+-serif;color:#0f1111;text-decoration:none;border-radius:24px;padding:6px 16=
+px;display:inline-block;font-size:13px;line-height:18px;white-space:nowrap"=
+ target=3D"_blank"><span style=3D"text-decoration:none">Shop recommended pr=
+oducts</span></a></td></tr></tbody></table></td></tr></tbody></table></div>=
+ </td></tr></tbody></table></div> <div style=3D"background:#f2f2f2;backgrou=
+nd-color:#f2f2f2;margin:0px auto;max-width:600px"><table align=3D"center" b=
+order=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" style=
+=3D"background:#f2f2f2;background-color:#f2f2f2;width:100%"><tbody><tr><td =
+style=3D"direction:ltr;font-size:0px;padding:4px 8px 4px 8px;text-align:lef=
+t"> <div class=3D"m_-7291836101014079248rio-card-text" style=3D"background:=
+#ffffff;background-color:#ffffff;margin:0px auto;border-radius:4px;max-widt=
+h:584px"><table align=3D"center" border=3D"0" cellpadding=3D"0" cellspacing=
+=3D"0" role=3D"presentation" style=3D"background:#ffffff;background-color:#=
+ffffff;width:100%;border-radius:4px"><tbody><tr><td style=3D"direction:ltr;=
+font-size:0px;padding:4px 8px 4px 8px;text-align:left"><div style=3D"margin=
+:0px auto;max-width:568px"><table align=3D"center" border=3D"0" cellpadding=
+=3D"0" cellspacing=3D"0" role=3D"presentation" style=3D"width:100%"><tbody>=
+<tr><td style=3D"direction:ltr;font-size:0px;padding:0;text-align:left"><di=
+v style=3D"font-size:0;line-height:0;text-align:left;display:inline-block;w=
+idth:100%;direction:ltr"><div style=3D"font-size:0px;text-align:left;direct=
+ion:ltr;display:inline-block;vertical-align:top;width:100%"><table border=
+=3D"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"1=
+00%"><tbody><tr><td style=3D"vertical-align:top;padding:0"><table border=3D=
+"0" cellpadding=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%=
+"><tbody><tr><td align=3D"left" style=3D"font-size:0px;padding:0;word-break=
+:break-word"><div style=3D"font-family:Ember,&#39;Amazon Ember&#39;,Arial,s=
+ans-serif;font-size:15px;line-height:1;text-align:left;color:#000000"><h2 s=
+tyle=3D"margin:0;padding:0;font-family:Ember,&#39;Amazon Ember&#39;,Arial,s=
+ans-serif;font-weight:700;font-size:22px;line-height:28px;color:#0f1111" cl=
+ass=3D"m_-7291836101014079248rio-header">Additional information</h2></div><=
+/td></tr><tr><td align=3D"left" style=3D"font-size:0px;padding:0;word-break=
+:break-word"><div aria-hidden=3D"true" style=3D"height:4px;line-height:4px"=
+>=C2=A0</div></td></tr><tr><td align=3D"left" style=3D"font-size:0px;paddin=
+g:0;word-break:break-word"><div style=3D"font-family:Ember,&#39;Amazon Embe=
+r&#39;,Arial,sans-serif;font-size:15px;font-weight:400;line-height:20px;tex=
+t-align:left;color:#0f1111"><span class=3D"m_-7291836101014079248rio-text">=
+Your Subscribe &amp; Save discount might have changed due to this update. P=
+rices go-up or down over time, but you=E2=80=99ll always get your Subscribe=
+ &amp; Save savings on top of current price. Ingredients, nutrition, or dru=
+g facts may be different from the product to which you were originally subs=
+cribed.</span></div></td></tr></tbody></table></td></tr></tbody></table></d=
+iv></div></td></tr></tbody></table></div><div style=3D"margin:0px auto;max-=
+width:568px"><table align=3D"center" border=3D"0" cellpadding=3D"0" cellspa=
+cing=3D"0" role=3D"presentation" style=3D"width:100%"><tbody><tr><td style=
+=3D"direction:ltr;font-size:0px;padding:0;text-align:left"><div style=3D"fo=
+nt-size:0;line-height:0;text-align:left;display:inline-block;width:100%;dir=
+ection:ltr"><div style=3D"font-size:0px;text-align:left;direction:ltr;displ=
+ay:inline-block;vertical-align:top;width:100%"><table border=3D"0" cellpadd=
+ing=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody><tr=
+><td style=3D"vertical-align:top;padding:0"><table border=3D"0" cellpadding=
+=3D"0" cellspacing=3D"0" role=3D"presentation" width=3D"100%"><tbody>   <tr=
+><td align=3D"left" style=3D"font-size:0px;padding:0;word-break:break-word"=
+><div aria-hidden=3D"true" style=3D"height:12px;line-height:12px">=C2=A0</d=
+iv></td></tr><tr><td align=3D"left" style=3D"font-size:0px;padding:0;word-b=
+reak:break-word"><table cellpadding=3D"0" cellspacing=3D"0" border=3D"0" ro=
+le=3D"presentation"><tbody><tr><td style=3D"text-align:center;border-radius=
+:24px;background:#fefefe"><a href=3D"https://www.amazon.com/gp/r.html?C=3D1=
+790AFH8RNRRE&amp;K=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8da=
+e5ae664a34bc191966ab30p0na&amp;R=3DJ47M35O8FRA8&amp;T=3DC&amp;U=3Dhttps%3A%=
+2F%2Fwww.amazon.com%2Fb%3Fnode%3D15283820011%26%2Fref%3Dpe_122043850_102823=
+1000_HC1002BT_HC99_sns_myd_learn_more&amp;H=3DSQUIYKCPGOTSPOCA4NDHLA0OFGKA&=
+amp;ref_=3Dpe_122043850_1028231000_HC1002BT_HC99_sns_myd_learn_more" style=
+=3D"border:1px solid #d5d9d9;background:#fefefe;font-family:Ember,&#39;Amaz=
+on Ember&#39;,Arial,sans-serif;color:#0f1111;text-decoration:none;border-ra=
+dius:24px;padding:6px 16px;display:inline-block;font-size:13px;line-height:=
+18px;white-space:nowrap" target=3D"_blank"><span style=3D"text-decoration:n=
+one">Learn more</span></a></td></tr></tbody></table></td></tr></tbody></tab=
+le></td></tr></tbody></table></div></div></td></tr></tbody></table></div></=
+td></tr></tbody></table></div> </td></tr></tbody></table></div><div style=
+=3D"background:#f2f2f2;background-color:#f2f2f2;margin:0px auto;max-width:6=
+00px"><table align=3D"center" border=3D"0" cellpadding=3D"0" cellspacing=3D=
+"0" role=3D"presentation" style=3D"background:#f2f2f2;background-color:#f2f=
+2f2;width:100%"><tbody><tr><td style=3D"direction:ltr;font-size:0px;padding=
+:4px 0px 0px 0px;text-align:left"> <table class=3D"m_-7291836101014079248fo=
+oter-card" width=3D"100%" cellspacing=3D"0" cellpadding=3D"0" border=3D"0" =
+role=3D"presentation" style=3D"background-color:#f0f2f2;width:100%"><tbody>=
+<tr><td width=3D"100%" align=3D"left" style=3D"width:100%;padding-bottom:4p=
+x;text-align:left"><table width=3D"100%" cellspacing=3D"0" cellpadding=3D"0=
+" border=3D"0" role=3D"presentation" style=3D"width:100%"><tbody><tr><td st=
+yle=3D"width:100%;padding:0 16px 16px 16px;font-family:Ember,&#39;Amazon Em=
+ber&#39;,Arial,sans-serif;font-size:14px;line-height:20px;color:#494d4d"><d=
+iv style=3D"margin-top:20px">=C2=A92025 Amazon.com, Inc. or its affiliates.=
+ Amazon and all related marks are trademarks of Amazon.com, Inc. or its aff=
+iliates, Amazon.com, Inc. 410 Terry Avenue N., Seattle, WA 98109.</div> <di=
+v style=3D"margin-top:20px">Automatic Renewal Notice: Your Subscribe &amp; =
+Save subscriptions will automatically renew until you cancel. We&#39;ll ema=
+il you before your upcoming delivery and provide an opportunity to manage y=
+our subscription. You can cancel your subscriptions by clicking on the subs=
+cription product in the =E2=80=9C<a href=3D"https://www.amazon.com/gp/r.htm=
+l?C=3D1790AFH8RNRRE&amp;K=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:2025093001485=
+9b0b8dae5ae664a34bc191966ab30p0na&amp;R=3D3C3S20RCTED8F&amp;T=3DC&amp;U=3Dh=
+ttps%3A%2F%2Fwww.amazon.com%2Fauto-deliveries%3Fref_%3Dpe_122043850_1028231=
+000__em_rd_vs&amp;H=3DBJARHUBMXKOCUASL6A0MR1IOMAIA&amp;ref_=3Dpe_122043850_=
+1028231000__em_rd_vs" rel=3D"nofollow" target=3D"_blank">Manage My Subscrip=
+tions</a>=E2=80=9D page. If you have questions regarding your subscription,=
+ please contact <a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNR=
+RE&amp;K=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34=
+bc191966ab30p0na&amp;R=3DJFY304DL69EX&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.a=
+mazon.com%2Fhz%2Fcontact-us%2Fforesight%2Fhubgateway%3Fref_%3Dpe_122043850_=
+1028231000&amp;H=3DACO17KK13CH9Z8WECRAEODVDU9UA&amp;ref_=3Dpe_122043850_102=
+8231000" rel=3D"nofollow" target=3D"_blank">Amazon Customer Service</a>.<br=
+ aria-hidden=3D"true"><br aria-hidden=3D"true">
+Please do not reply to this message. It was sent from a notification-only a=
+ddress that cannot accept incoming email. Subject to Subscribe &amp; Save <=
+a href=3D"https://www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=3D24050B=
+DJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&=
+amp;R=3D3L7LQ16YTGXEW&amp;T=3DC&amp;U=3Dhttps%3A%2F%2Fwww.amazon.com%2Fgp%2=
+Fhelp%2Fcustomer%2Fdisplay.html%3FnodeId%3D201889920%26ref_%3Dpe_122043850_=
+1028231000&amp;H=3DTS5NFIYA1HYBEBAOKUQ2CODOTMEA&amp;ref_=3Dpe_122043850_102=
+8231000" rel=3D"nofollow" target=3D"_blank"> terms and conditions </a></div=
+></td></tr></tbody></table><a href=3D"https://www.amazon.com/gp/r.html?C=3D=
+1790AFH8RNRRE&amp;K=3D24050BDJ7XINT&amp;M=3Durn:rtn:msg:20250930014859b0b8d=
+ae5ae664a34bc191966ab30p0na&amp;R=3DP9FK68ASWX3Q&amp;T=3DC&amp;U=3Dhttps%3A=
+%2F%2Fwww.amazon.com%3Fref_%3Dpe_122043850_1028231000_LF1104LNK_LF99&amp;H=
+=3DQXDHPJZQWOF03F3MGZ7AI1QCDTWA&amp;ref_=3Dpe_122043850_1028231000_LF1104LN=
+K_LF99" target=3D"_blank"><img src=3D"https://m.media-amazon.com/images/G/0=
+1/outbound/OutboundTemplates/Smile_Logo_Light._BG240,242,242_.png" alt=3D"A=
+mazon.com" height=3D"43" width=3D"86" align=3D"left" style=3D"display:block=
+"> <img src=3D"https://m.media-amazon.com/images/G/01/outbound/OutboundTemp=
+lates/Smile_Logo_Dark.png" alt=3D"Amazon.com" height=3D"43" width=3D"86" al=
+ign=3D"left" style=3D"display:none"></a></td></tr></tbody></table> </td></t=
+r></tbody></table></div></div><img width=3D"1" height=3D"1" src=3D"https://=
+www.amazon.com/gp/r.html?C=3D1790AFH8RNRRE&amp;K=3D24050BDJ7XINT&amp;M=3Dur=
+n:rtn:msg:20250930014859b0b8dae5ae664a34bc191966ab30p0na&amp;R=3D1C3KMO0ZEE=
+6NP&amp;T=3DE&amp;U=3Dhttps%3A%2F%2Fimages-na.ssl-images-amazon.com%2Fimage=
+s%2FG%2F01%2Fnav%2Ftransp.gif&amp;H=3D54ASBIED4JVRSARBJKMMCFPZX7YA&amp;ref_=
+=3Dpe_122043850_1028231000_open" alt=3D""></div></div></div></div>
+
+--0000000000002456af0641d4f051--

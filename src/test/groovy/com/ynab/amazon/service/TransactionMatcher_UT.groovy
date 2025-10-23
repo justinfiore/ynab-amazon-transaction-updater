@@ -248,8 +248,89 @@ class TransactionMatcher_UT extends Specification {
         method.setAccessible(true)
         def memo = method.invoke(matcher, transaction, amazonOrder)
         
-        then: "the memo should be sanitized"
-        memo == "Product with  special  characters "
+        then: "the memo should be sanitized (& is allowed for S&S)"
+        memo == "Product with & special  characters "
+    }
+    
+    def "generateProposedMemo should add S&S prefix for Subscribe and Save orders"() {
+        given: "a Subscribe and Save order with single item"
+        def transaction = createSampleTransaction("tx1", "2023-05-15", 25.99, "AMAZON.COM")
+        def amazonOrder = createSampleOrder("SUB-20230515", "2023-05-15", 25.99)
+        amazonOrder.addItem(new AmazonOrderItem(title: "Tide Laundry Detergent (Subscribe & Save)", price: 25.99, quantity: 1))
+        
+        when: "generateProposedMemo is called"
+        def method = TransactionMatcher.getDeclaredMethod("generateProposedMemo", YNABTransaction, AmazonOrder)
+        method.setAccessible(true)
+        def memo = method.invoke(matcher, transaction, amazonOrder)
+        
+        then: "the memo should have S&S prefix and no Subscribe & Save suffix"
+        memo == "S&S: Tide Laundry Detergent"
+    }
+    
+    def "generateProposedMemo should add S&S prefix for Subscribe and Save orders with multiple items"() {
+        given: "a Subscribe and Save order with multiple items"
+        def transaction = createSampleTransaction("tx1", "2023-05-15", 75.00, "AMAZON.COM")
+        def amazonOrder = createSampleOrder("SUB-20230515", "2023-05-15", 75.00)
+        amazonOrder.addItem(new AmazonOrderItem(title: "Tide Laundry Detergent (Subscribe & Save)", price: 25.00, quantity: 1))
+        amazonOrder.addItem(new AmazonOrderItem(title: "Charmin Toilet Paper (Subscribe & Save)", price: 25.00, quantity: 1))
+        amazonOrder.addItem(new AmazonOrderItem(title: "Bounty Paper Towels (Subscribe & Save)", price: 25.00, quantity: 1))
+        
+        when: "generateProposedMemo is called"
+        def method = TransactionMatcher.getDeclaredMethod("generateProposedMemo", YNABTransaction, AmazonOrder)
+        method.setAccessible(true)
+        def memo = method.invoke(matcher, transaction, amazonOrder)
+        
+        then: "the memo should have S&S prefix and list items without Subscribe & Save suffix"
+        memo == "S&S: 3 items: Tide Laundry Detergent, Charmin Toilet Paper, Bounty Paper Towels"
+    }
+    
+    def "generateProposedMemo should preserve existing memo for Subscribe and Save orders"() {
+        given: "a Subscribe and Save transaction with existing memo"
+        def transaction = createSampleTransaction("tx1", "2023-05-15", 25.99, "AMAZON.COM", "Monthly delivery")
+        def amazonOrder = createSampleOrder("SUB-20230515", "2023-05-15", 25.99)
+        amazonOrder.addItem(new AmazonOrderItem(title: "Tide Laundry Detergent (Subscribe & Save)", price: 25.99, quantity: 1))
+        
+        when: "generateProposedMemo is called"
+        def method = TransactionMatcher.getDeclaredMethod("generateProposedMemo", YNABTransaction, AmazonOrder)
+        method.setAccessible(true)
+        def memo = method.invoke(matcher, transaction, amazonOrder)
+        
+        then: "the memo should preserve original memo and add S&S prefix"
+        memo == "Monthly delivery | S&S: Tide Laundry Detergent"
+    }
+    
+    def "generateProposedMemo should handle Subscribe and Save orders with generic items"() {
+        given: "a Subscribe and Save order with generic item names"
+        def transaction = createSampleTransaction("tx1", "2023-05-15", 84.32, "AMAZON.COM")
+        def amazonOrder = createSampleOrder("SUB-20230515", "2023-05-15", 84.32)
+        amazonOrder.addItem(new AmazonOrderItem(title: "Subscribe & Save Item 1", price: 25.70, quantity: 1))
+        amazonOrder.addItem(new AmazonOrderItem(title: "Subscribe & Save Item 2", price: 16.13, quantity: 1))
+        amazonOrder.addItem(new AmazonOrderItem(title: "Subscribe & Save Item 3", price: 42.49, quantity: 1))
+        
+        when: "generateProposedMemo is called"
+        def method = TransactionMatcher.getDeclaredMethod("generateProposedMemo", YNABTransaction, AmazonOrder)
+        method.setAccessible(true)
+        def memo = method.invoke(matcher, transaction, amazonOrder)
+        
+        then: "the memo should have S&S prefix"
+        memo.startsWith("S&S: 3 items:")
+        memo.contains("Subscribe & Save Item 1")
+    }
+    
+    def "generateProposedMemo should not add S&S prefix for regular Amazon orders"() {
+        given: "a regular Amazon order (not Subscribe and Save)"
+        def transaction = createSampleTransaction("tx1", "2023-05-15", 25.99, "AMAZON.COM")
+        def amazonOrder = createSampleOrder("123-4567890-1234567", "2023-05-15", 25.99)
+        amazonOrder.addItem(new AmazonOrderItem(title: "Regular Product", price: 25.99, quantity: 1))
+        
+        when: "generateProposedMemo is called"
+        def method = TransactionMatcher.getDeclaredMethod("generateProposedMemo", YNABTransaction, AmazonOrder)
+        method.setAccessible(true)
+        def memo = method.invoke(matcher, transaction, amazonOrder)
+        
+        then: "the memo should NOT have S&S prefix"
+        memo == "Regular Product"
+        !memo.startsWith("S&S:")
     }
     
     // Helper methods to create test data

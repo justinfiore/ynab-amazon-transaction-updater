@@ -37,11 +37,26 @@ class AmazonOrderFetcher {
         "no-reply@amazon.com"
     ]
     
+    // Email patterns for Amazon Subscribe and Save notifications
+    private static final List<String> AMAZON_SUBSCRIPTION_EMAIL_PATTERNS = [
+        "subscribe-and-save@amazon.com",
+        "subscription-orders@amazon.com",
+        "auto-delivery@amazon.com",
+        "no-reply@amazon.com"
+    ]
+    
     // Regex patterns for extracting order information from emails
     private static final Pattern ORDER_ID_PATTERN = ~/(?i)Order\s*#\s*([A-Z0-9-]+)/
     private static final Pattern ORDER_DATE_PATTERN = ~/(?i)Ordered on ([A-Za-z]+ \d{1,2}, \d{4})/
     private static final Pattern ITEM_PATTERN = ~/\*\s*([^\r\n]+?)\s*Quantity: \d+\s*([\d.]+)\s*USD/
     private static final Pattern TOTAL_PATTERN = Pattern.compile('(?i)(?:Total|Total\\s+Amount|Total.+refund):?\\s*\\$?\\s*([0-9]+\\.?[0-9]{0,2})\\s*(?:USD)?', Pattern.DOTALL)
+    
+    // Regex patterns for Subscribe and Save emails
+    private static final Pattern SUBSCRIPTION_ID_PATTERN = ~/(?i)(?:Subscription|Delivery)\s*(?:#|ID|Order)\s*([A-Z0-9-]+)/
+    private static final Pattern SUBSCRIPTION_ITEM_PATTERN = ~/(?i)([^\r\n]+?)\s*.*?\*([0-9]+\.?[0-9]{0,2})\*/
+    private static final Pattern DELIVERY_DATE_PATTERN = ~/(?i)Arriving by ([A-Za-z]+, [A-Za-z]+ \d{1,2})/
+    private static final Pattern SUBSCRIPTION_TOTAL_PATTERN = Pattern.compile('(?i)(?:subscription total|amount charged|total cost):?\\s*\\$?\\s*([0-9]+\\.?[0-9]{0,2})\\s*(?:USD)?', Pattern.DOTALL)
+    private static final Pattern SUBSCRIPTION_PRICE_PATTERN = ~/\*\$([0-9]+\.?[0-9]{0,2})\*/
     
     AmazonOrderFetcher(Configuration config) {
         this.config = config
@@ -94,14 +109,26 @@ class AmazonOrderFetcher {
             Date fromDate = cal.getTime()
             logger.info("Looking back ${config.lookBackDays + 2} days (${config.lookBackDays} configured + 2 buffer) for Amazon orders")
             
-            // Search for messages first
+            // Search for messages first - including Subscribe and Save emails
+            // Build list of from addresses to search
+            List<FromTerm> fromTerms = [
+                new FromTerm(new InternetAddress("order-confirmation@amazon.com")),
+                new FromTerm(new InternetAddress("auto-confirm@amazon.com")),
+                new FromTerm(new InternetAddress("return@amazon.com")),
+                new FromTerm(new InternetAddress("subscribe-and-save@amazon.com")),
+                new FromTerm(new InternetAddress("subscription-orders@amazon.com")),
+                new FromTerm(new InternetAddress("auto-delivery@amazon.com")),
+                new FromTerm(new InternetAddress("no-reply@amazon.com"))
+            ]
+            
+            // Add forward_from_address if configured (for forwarded S&S emails)
+            if (config.amazonForwardFromAddress) {
+                fromTerms.add(new FromTerm(new InternetAddress(config.amazonForwardFromAddress)))
+            }
+            
             Message[] messages = inbox.search(
                 new AndTerm(
-                    new OrTerm(
-                        new FromTerm(new InternetAddress("order-confirmation@amazon.com")),
-                        new FromTerm(new InternetAddress("auto-confirm@amazon.com")),
-                        new FromTerm(new InternetAddress("return@amazon.com"))
-                    ),
+                    new OrTerm(fromTerms as FromTerm[]),
                     new ReceivedDateTerm(ComparisonTerm.GT, fromDate)
                 )
             )
@@ -124,23 +151,47 @@ class AmazonOrderFetcher {
             logger.info("Found ${messages.length} Amazon order emails (sorted oldest first)")
             messages.each { message ->
                 try {
-                    AmazonOrder order = parseOrderFromEmail(message)
-                    if (order) {
-                        // Merge with existing order if same order ID
-                        AmazonOrder existingOrder = orderMap.get(order.orderId)
-                        if (existingOrder) {
-                            if(existingOrder.items == null && existingItems.size() == 0 && order.items != null && order.items.size() > 0) {
-                                existingOrder.items = order.items
+                    String fromAddress = message.getFrom()[0].toString().toLowerCase()
+                    String subject = message.getSubject()
+                    
+                    logger.debug("Email from: ${fromAddress}, subject: ${subject}")
+                    
+                    // Check if this is a Subscribe and Save email
+                    // Can be from no-reply@amazon.com OR forwarded from configured address
+                    boolean isSubscribeAndSave = (subject.toLowerCase().contains("review your upcoming delivery") ||
+                                                   subject.toLowerCase().contains("price changes")) &&
+                                                  (fromAddress.contains("no-reply@amazon.com") || 
+                                                   (config.amazonForwardFromAddress && fromAddress.contains(config.amazonForwardFromAddress.toLowerCase())))
+                    
+                    if (isSubscribeAndSave) {
+                        logger.debug("Detected Subscribe and Save email")
+                        // S&S emails return multiple orders (one per item)
+                        List<AmazonOrder> subscriptionOrders = parseSubscriptionOrdersFromEmail(message)
+                        subscriptionOrders.each { order ->
+                            if (order) {
+                                orderMap[order.orderId] = order
+                                orders.add(order)
                             }
-                            if(existingOrder.totalAmount == null) {
-                                existingOrder.totalAmount = order.totalAmount
+                        }
+                    } else {
+                        AmazonOrder order = parseOrderFromEmail(message)
+                        if (order) {
+                            // Merge with existing order if same order ID
+                            AmazonOrder existingOrder = orderMap.get(order.orderId)
+                            if (existingOrder) {
+                                if(existingOrder.items == null && order.items != null && order.items.size() > 0) {
+                                    existingOrder.items = order.items
+                                }
+                                if(existingOrder.totalAmount == null) {
+                                    existingOrder.totalAmount = order.totalAmount
+                                }
+                                if(existingOrder.orderDate == null) {
+                                    existingOrder.orderDate = order.orderDate
+                                }
+                            } else {
+                                orderMap[order.orderId] = order
+                                orders.add(order)
                             }
-                            if(existingOrder.orderDate == null) {
-                                existingOrder.orderDate = order.orderDate
-                            }
-                        } else {
-                            orderMap[order.orderId] = order
-                            orders.add(order)
                         }
                     }
                 } catch (Exception e) {
@@ -155,6 +206,96 @@ class AmazonOrderFetcher {
             
         } catch (Exception e) {
             logger.error("Error fetching orders from email: ${e.message}", e)
+            return []
+        }
+    }
+    
+    /**
+     * Parse Subscribe and Save order information from an email message
+     * Returns a list of orders - one per item since Amazon charges separately for each S&S item
+     */
+    private List<AmazonOrder> parseSubscriptionOrdersFromEmail(Message message) {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd")
+        List<AmazonOrder> orders = []
+        
+        try {
+            String subject = message.getSubject()
+            String content = getEmailContent(message)
+            logger.debug("Parsing subscription email: ${subject} ...")
+            
+            // Extract delivery date from "Arriving by [Day], [Month] [Date]" pattern
+            String orderDate = sdf.format(message.getSentDate()) // Default to email date
+            Matcher deliveryDateMatcher = DELIVERY_DATE_PATTERN.matcher(content)
+            if (deliveryDateMatcher.find()) {
+                try {
+                    String dateStr = deliveryDateMatcher.group(1)
+                    logger.debug("Found delivery date string: ${dateStr}")
+                    
+                    // Parse "Friday, Jul 11" format - need to add year
+                    String currentYear = String.valueOf(Calendar.getInstance().get(Calendar.YEAR))
+                    String fullDateStr = dateStr + ", " + currentYear
+                    
+                    SimpleDateFormat emailDateFormat = new SimpleDateFormat("EEEE, MMM d, yyyy")
+                    Date parsedDate = emailDateFormat.parse(fullDateStr)
+                    orderDate = sdf.format(parsedDate)
+                    logger.debug("Parsed delivery date: ${orderDate}")
+                } catch (Exception e) {
+                    logger.debug("Could not parse delivery date '${deliveryDateMatcher.group(1)}', using email date: ${e.message}")
+                }
+            }
+            
+            // Extract individual item prices using the *$XX.XX* pattern
+            Matcher priceMatcher = SUBSCRIPTION_PRICE_PATTERN.matcher(content)
+            int itemCount = 0
+            while (priceMatcher.find()) {
+                BigDecimal price = new BigDecimal(priceMatcher.group(1))
+                itemCount++
+                
+                // Create a separate order for each item since Amazon charges separately
+                String orderId = "S&S-" + orderDate.replace("-", "") + "-" + String.format("%02d", itemCount)
+                String itemTitle = "S&S Item ${itemCount}"
+                
+                // Amazon charges are negative in YNAB
+                BigDecimal amount = price * -1.0
+                
+                AmazonOrder order = new AmazonOrder(
+                    orderId: orderId,
+                    orderDate: orderDate,
+                    totalAmount: amount,
+                    items: [new AmazonOrderItem(title: itemTitle, price: price, quantity: 1)],
+                    isReturn: false
+                )
+                
+                orders.add(order)
+            }
+            
+            // If no individual prices found, create a single order
+            if (orders.isEmpty()) {
+                // Look for any price pattern in the content
+                Matcher anyPriceMatcher = Pattern.compile('\\$([0-9]+\\.?[0-9]{0,2})').matcher(content)
+                if (anyPriceMatcher.find()) {
+                    BigDecimal price = new BigDecimal(anyPriceMatcher.group(1))
+                    String orderId = "S&S-" + orderDate.replace("-", "") + "-01"
+                    
+                    AmazonOrder order = new AmazonOrder(
+                        orderId: orderId,
+                        orderDate: orderDate,
+                        totalAmount: price * -1.0,
+                        items: [new AmazonOrderItem(title: "S&S Delivery", price: price, quantity: 1)],
+                        isReturn: false
+                    )
+                    orders.add(order)
+                } else {
+                    logger.warn("No prices found in subscription email")
+                    return []
+                }
+            }
+            
+            logger.debug("Parsed ${orders.size()} Subscribe & Save orders from email")
+            return orders
+            
+        } catch (Exception e) {
+            logger.error("Error parsing subscription from email: ${e.message}", e)
             return []
         }
     }

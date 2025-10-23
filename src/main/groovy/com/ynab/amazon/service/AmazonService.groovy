@@ -23,9 +23,12 @@ class AmazonService {
     
     /**
      * Get Amazon orders from the configured data source
-     * Priority: Email fetching (if configured) -> CSV file (if configured) -> Exception
+     * Priority: Email fetching (if configured) -> CSV file (if configured)
+     * Note: Email fetching now includes Subscribe & Save emails automatically
      */
     List<AmazonOrder> getOrders() {
+        List<AmazonOrder> allOrders = []
+        
         // Check if email credentials are configured
         boolean hasEmailConfig = config.amazonEmail && config.amazonEmailPassword
         
@@ -40,29 +43,28 @@ class AmazonService {
             )
         }
         
-        // Try email fetching first if configured
+        // Try email fetching first if configured (includes Subscribe & Save emails now)
         if (hasEmailConfig) {
             logger.info("Attempting to fetch Amazon orders from email...")
             List<AmazonOrder> emailOrders = orderFetcher.fetchOrders()
             
             if (emailOrders) {
                 logger.info("Successfully fetched ${emailOrders.size()} orders from email")
-                return emailOrders
+                allOrders.addAll(emailOrders)
             } else {
                 logger.warn("No orders found via email fetching")
             }
         }
         
-        // Fall back to CSV file if email failed or not configured
+        // Try CSV file if configured
         if (hasCsvConfig) {
-            logger.info("Falling back to CSV file: ${config.amazonCsvFilePath}")
-            return getOrdersFromCsv()
+            logger.info("Loading orders from CSV file: ${config.amazonCsvFilePath}")
+            List<AmazonOrder> csvOrders = getOrdersFromCsv()
+            allOrders.addAll(csvOrders)
         }
-
-        return new ArrayList<AmazonOrder>();
         
-        // This should not happen due to the validation above, but just in case
-        //throw new IllegalStateException("No valid data source found for Amazon orders")
+        logger.info("Total orders loaded: ${allOrders.size()}")
+        return allOrders
     }
     
     /**

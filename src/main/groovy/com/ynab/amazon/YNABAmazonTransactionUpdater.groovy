@@ -20,6 +20,7 @@ class YNABAmazonTransactionUpdater {
             
             // Load configuration
             Configuration config = new Configuration()
+            config.loadConfiguration()
             // Validate configuration (throws on invalid)
             try {
                 validateConfig(config)
