@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "name": "Update README on Source Changes",
+  "description": "Monitors all source files in the repository and triggers a README update whenever changes are detected",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "src/**/*.groovy",
+      "build.gradle",
+      "config.example.yml",
+      "*.md",
+      "gradlew",
+      "gradlew.bat",
+      ".agents/**/*"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Source files have been modified. Please review the changes and update the README.md file to reflect any new features, configuration changes, architectural updates, or usage instructions. Ensure the README accurately represents the current state of the codebase, including any new dependencies, build commands, or functionality."
+  }
+}
