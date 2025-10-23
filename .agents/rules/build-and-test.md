@@ -1,0 +1,50 @@
+---
+trigger: always_on
+---
+
+# Building and running Tests
+
+I have made your life easier by writing scripts for you to build, run unit tests and run integration tests.
+
+# Cleaning the project
+
+Clean the project with:
+```
+.windsurf/scripts/clean.sh
+```
+
+# Building the code
+
+Build the code with:
+```
+.windsurf/scripts/build.sh
+```
+
+# Running the Unit Tests with Gradle
+```
+.windsurf/scripts/run-unit-tests.sh
+```
+The test output will be in `test-results/`
+
+You can run specific tests with:
+```
+.windsurf/scripts/run-unit-tests.sh --tests <fully qualified test class or test method or wildcards>;
+```
+The test output will be in `test-results/`
+
+# Running the Integration Tests with Gradle
+```
+.windsurf/scripts/run-integration-tests.sh
+```
+The test output will be in `test-results/`
+
+You can run specific tests with:
+```
+.windsurf/scripts/run-integration-tests.sh --tests <fully qualified test class or test method or wildcards>
+```
+
+# Run all of the Tests with Gradle
+```
+.windsurf/scripts/run-tests.sh
+```
+The test output will be in `test-results/`

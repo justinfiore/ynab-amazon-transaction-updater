@@ -178,7 +178,12 @@ class TransactionProcessor {
      */
     private Set<String> loadProcessedTransactions() {
         try {
-            File file = new File(config.processedTransactionsFile)
+            String path = config?.processedTransactionsFile
+            if (path == null || path.trim().isEmpty()) {
+                logger.info("No processed transactions file configured, starting fresh")
+                return new HashSet<>()
+            }
+            File file = new File(path)
             if (!file.exists()) {
                 logger.info("No processed transactions file found, starting fresh")
                 return new HashSet<>()

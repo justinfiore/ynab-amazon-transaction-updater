@@ -11,3 +11,9 @@ mv logs/out.log logs/out.log.1
 echo "Launching YNABAmazonTransactionUpdater"
 echo "Logs going to ${script_dir}/logs/out.log"
 ./build/install/YNABAmazonTransactionUpdater/bin/YNABAmazonTransactionUpdater &> logs/out.log
+ret_code=$?
+if [ "$ret_code" == "0" ]; then
+  echo "YNABAmazonTransactionUpdater completed successfully."
+else
+  echo "YNABAmazonTransactionUpdater failed. Check the logs."
+fi

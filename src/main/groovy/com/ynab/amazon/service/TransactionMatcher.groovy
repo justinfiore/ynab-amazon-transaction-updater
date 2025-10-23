@@ -29,6 +29,9 @@ class TransactionMatcher {
         "TRANSFER"
     ]
     
+    // Do not match transactions with an order if the dates are too far apart
+    private static final int MAX_MATCH_DAYS_DIFFERENCE = 14
+    
     /**
      * Find matches between YNAB transactions and Amazon orders
      */
@@ -128,6 +131,10 @@ class TransactionMatcher {
         // Date matching (20% weight)
         if (transaction.date && order.orderDate) {
             int daysDiff = calculateDaysDifference(transaction.date, order.orderDate)
+            // Hard cut-off: if dates are too far apart, do not match at all
+            if (daysDiff > MAX_MATCH_DAYS_DIFFERENCE) {
+                return 0.0
+            }
             double dateScore = Math.max(0.0, 1.0 - (daysDiff / 7.0))  // Within 7 days
             score += dateScore * 0.2
         }
@@ -214,11 +221,13 @@ class TransactionMatcher {
         }
         
         // Sanitize the memo to only allow certain characters
+        // Allow comma, pipe, and period to preserve expected formatting
         // Note: + needs to be escaped in the character class
-        proposedMemo = proposedMemo.replaceAll(/[^a-zA-Z0-9 _\-\+:']/, " ")
+        proposedMemo = proposedMemo.replaceAll(/[^a-zA-Z0-9 _\-\+:'\|\.,]/, " ")
         
-        // Remove any extra whitespace and truncate to 500 characters
-        proposedMemo = proposedMemo.replaceAll("\\s+", " ").trim()
+        // Collapse 3+ spaces to exactly 2 spaces to match expected formatting
+        proposedMemo = proposedMemo.replaceAll(/ {3,}/, "  ")
+        // Enforce length limit
         return proposedMemo.length() > 500 ? proposedMemo.substring(0, 500) : proposedMemo
     }
     
