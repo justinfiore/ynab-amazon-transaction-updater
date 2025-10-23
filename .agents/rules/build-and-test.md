@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 # Building and running Tests
 
 I have made your life easier by writing scripts for you to build, run unit tests and run integration tests.
