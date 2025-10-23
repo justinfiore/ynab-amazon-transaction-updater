@@ -5,12 +5,17 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 ## Features
 
 - Connects to YNAB API to fetch transactions
-- Reads Amazon order data from CSV export
+- Reads Amazon order data from multiple sources:
+  - Email parsing (automatic order confirmation emails)
+  - Amazon Subscribe & Save delivery notifications
+  - CSV export files
 - Intelligently matches YNAB transactions with Amazon orders
 - Updates transaction memos with product summaries
+- Special handling for Subscribe & Save orders with "S&S:" prefix
 - Tracks processed transactions to avoid duplicates
 - Supports dry-run mode for testing
 - Configurable matching confidence thresholds
+- Configurable lookback period for transactions
 
 ## Prerequisites
 
@@ -18,8 +23,8 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 - Gradle (for building)
 - YNAB API key
 - YNAB Budget ID
-- YNAB Account ID
-- Amazon order history CSV export
+- Amazon order history (via email or CSV export)
+- (Optional) Email credentials for automatic order fetching
 
 ## Setup
 
@@ -30,32 +35,39 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 3. Give it a name (e.g., "Amazon Transaction Updater")
 4. Copy the generated API key
 
-### 2. Get Your YNAB Budget ID and Account ID
+### 2. Get Your YNAB Budget ID
 
-#### Budget ID:
 1. Go to your YNAB budget in a web browser
 2. The budget ID is in the URL: `https://app.youneedabudget.com/{BUDGET_ID}/...`
    - It will be a long string of letters and numbers
    - Example: `https://app.youneedabudget.com/abcdef12-3456-7890-abcd-ef1234567890/...`
 
-### 3. Export Amazon Order History
+### 3. Set Up Amazon Order Data Source
 
-**Note: Amazon's "Download order reports" feature is very difficult to find and may not be available in all accounts. Use one of the alternatives below.**
+You have two options for providing Amazon order data:
 
-**Option A: Try to Find Amazon's Export (Rarely Available)**
-1. Go to [Amazon.com](https://www.amazon.com)
-2. Sign in to your account
-3. Go to "Your Account" → "Your Orders"
-4. Look for "Download order reports" or "Order history reports" (usually hidden or not available)
-5. If found, select the date range and download as CSV
-6. Save the CSV file in your project directory
+**Option A: Email Parsing (Recommended)**
 
-**Option B: Use the Helper Script (Recommended)**
-1. Run `groovy create_amazon_csv.groovy` to interactively create your CSV file
-2. Follow the prompts to enter your Amazon order details
-3. The script will create `amazon_orders.csv` for you
+The application can automatically fetch Amazon orders from your email, including:
+- Regular order confirmations
+- Subscribe & Save delivery notifications
+- Return confirmations
 
-**Option C: Manual CSV Creation**
+Requirements:
+- Gmail or other IMAP-enabled email account
+- App-specific password (not your main email password)
+
+Setup:
+1. Enable IMAP in your email settings
+2. Generate an app-specific password:
+   - Gmail: [App Passwords](https://support.google.com/accounts/answer/185833)
+   - Outlook: [App Passwords](https://support.microsoft.com/account-billing/using-app-passwords-with-apps-that-don-t-support-two-step-verification-5896ed9b-4263-e681-128a-a6f2979a7944)
+3. Configure in `config.yml` (see below)
+
+**Option B: CSV Export (Fallback)**
+
+If email parsing is not available or you prefer manual control:
+
 1. Go to Amazon.com → Your Account → Your Orders
 2. Manually copy order details into a CSV file with these columns:
    ```
@@ -63,31 +75,36 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
    123-4567890-1234567,2024-01-15,Wireless Bluetooth Headphones,29.99,1
    ```
 3. Save as `amazon_orders.csv` in your project directory
+4. Configure the path in `config.yml`
 
-**Option D: Use the Sample File (For Testing)**
-1. The project includes `sample_amazon_orders.csv` for testing
-2. Copy it to `amazon_orders.csv` to test the application
+Note: CSV export does not include Subscribe & Save orders automatically.
 
 ### 4. Configure the Application
 
-Edit `config.yml` and update the following values:
+Copy `config.example.yml` to `config.yml` and update the following values:
 
 ```yaml
 ynab:
   api_key: "YOUR_ACTUAL_YNAB_API_KEY"
   budget_id: "YOUR_ACTUAL_YNAB_BUDGET_ID"
-  account_id: "YOUR_ACTUAL_YNAB_ACCOUNT_ID"
   base_url: "https://api.ynab.com/v1"
 
 amazon:
-  email: "your_amazon_email@example.com"  # IMAP email for Amazon order confirmations
-  email_password: "your_amazon_email_app_password"  # App password for your email
-  csv_file_path: "your_amazon_orders.csv"  # Fallback if email fetching is not used
+  # Email parsing (recommended - automatically includes Subscribe & Save)
+  email: "your_amazon_email@example.com"
+  email_password: "your_app_password"  # Use app-specific password, not main password
+  
+  # Optional: If Subscribe & Save emails are forwarded from another account
+  # forward_from_address: "some.email@example.com"  # Email address that forwards S&S emails to your inbox
+  
+  # CSV fallback (optional)
+  csv_file_path: "amazon_orders.csv"
 
 app:
   processed_transactions_file: "processed_transactions.json"
   log_level: "INFO"
   dry_run: true
+  look_back_days: 30  # How many days back to search for transactions
 ```
 
 ## Building and Running
@@ -113,44 +130,62 @@ java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
 ## How It Works
 
 1. **Configuration Loading**: Reads settings from `config.yml`
-2. **YNAB Integration**: Fetches transactions from your specified YNAB account
-3. **Amazon Data**: Reads order history from the CSV export
+2. **YNAB Integration**: Fetches transactions from your YNAB budget within the lookback period
+3. **Amazon Data**: Fetches order history from:
+   - Email (automatic parsing of order confirmations and Subscribe & Save notifications)
+   - CSV file (fallback or manual option)
 4. **Transaction Matching**: Uses intelligent algorithms to match YNAB transactions with Amazon orders based on:
    - Amount similarity (40% weight)
    - Date proximity (30% weight)
    - Payee name matching (20% weight)
    - Memo content (10% weight)
-5. **Memo Updates**: Updates matched transactions with product summaries
+5. **Memo Updates**: Updates matched transactions with product summaries:
+   - Regular orders: "Product Name" or "3 items: Product A, Product B, Product C"
+   - Subscribe & Save: "S&S: Product Name" or "S&S: 3 items: Product A, Product B, Product C"
 6. **Tracking**: Maintains a list of processed transactions to avoid duplicates
+
+## Amazon Subscribe & Save Support
+
+The application automatically detects and processes Amazon Subscribe & Save orders from email notifications. These orders:
+
+- Are identified by emails from `no-reply@amazon.com` with "review your upcoming delivery" in the subject
+- Get a special "S&S:" prefix in YNAB memos for easy identification
+- Parse delivery dates and individual item prices from email content
+- Generate unique order IDs with "SUB-" prefix
+
+For more details, see [SUBSCRIBE_AND_SAVE.md](SUBSCRIBE_AND_SAVE.md).
 
 ## CSV Format
 
-The application expects Amazon order CSV files with the following columns:
+If using CSV files, the application expects Amazon order CSV files with the following columns:
 - Order ID
 - Order Date
 - Title
 - Price
 - Quantity
 
-If your CSV has different column names or order, you may need to modify the `AmazonService.groovy` file.
+Note: CSV files do not automatically include Subscribe & Save orders. Use email parsing for complete coverage.
 
 ## Configuration Options
 
 ### YNAB Settings
-- `api_key`: Your YNAB API key
-- `budget_id`: Your YNAB budget ID (found in the URL when viewing your budget in YNAB)
-- `account_id`: Your YNAB account ID (found in the URL when viewing an account in YNAB)
-- `base_url`: YNAB API base URL (usually doesn't need to change)
+- `api_key`: Your YNAB API key (required)
+- `budget_id`: Your YNAB budget ID (required, found in the URL when viewing your budget)
+- `base_url`: YNAB API base URL (default: "https://api.ynab.com/v1")
 
 ### Amazon Settings
-- `email`: Your Amazon email address (IMAP, e.g. Gmail) for automatic order fetching
-- `email_password`: App password for your Amazon email (never use your main password; see your email provider's documentation for how to generate an app password)
-- `csv_file_path`: Path to your Amazon orders CSV file (used as fallback if email fetching is not configured or fails)
+- `email`: Your email address for Amazon order notifications (optional, enables automatic fetching)
+- `email_password`: App-specific password for your email (required if using email)
+- `forward_from_address`: Optional - Email address that forwards Subscribe & Save emails to your inbox (if S&S emails are forwarded from another account)
+- `csv_file_path`: Path to Amazon orders CSV file (optional, used as fallback)
+
+Note: At least one Amazon data source (email or CSV) must be configured.
 
 ### Application Settings
-- `processed_transactions_file`: File to track processed transactions
-- `log_level`: Logging level (INFO, DEBUG, WARN, ERROR)
-- `dry_run`: Set to `true` to see what would be updated without making changes
+- `processed_transactions_file`: File to track processed transactions (default: "processed_transactions.json")
+- `log_level`: Logging level - INFO, DEBUG, WARN, ERROR (default: "INFO")
+- `dry_run`: Set to `true` to preview changes without updating YNAB (default: true)
+- `look_back_days`: Number of days to look back for transactions (default: 30)
 
 ---
 
@@ -159,22 +194,32 @@ If your CSV has different column names or order, you may need to modify the `Ama
 ```yaml
 ynab:
   api_key: "YOUR_ACTUAL_YNAB_API_KEY"
-  account_id: "YOUR_ACTUAL_YNAB_ACCOUNT_ID"
+  budget_id: "YOUR_ACTUAL_YNAB_BUDGET_ID"
   base_url: "https://api.ynab.com/v1"
 
 amazon:
-  email: "your_amazon_email@example.com"  # IMAP email for Amazon order confirmations
-  email_password: "your_amazon_email_app_password"  # App password for your email
-  csv_file_path: "your_amazon_orders.csv"  # Fallback if email fetching is not used
+  # Email parsing (automatically includes Subscribe & Save)
+  email: "your_amazon_email@example.com"
+  email_password: "your_app_password"
+  
+  # Optional: If Subscribe & Save emails are forwarded from another account
+  # forward_from_address: "some.email@example.com"  # Email address that forwards S&S emails to your inbox
+  
+  # CSV fallback (optional)
+  csv_file_path: "amazon_orders.csv"
 
 app:
   processed_transactions_file: "processed_transactions.json"
   log_level: "INFO"
   dry_run: true
+  look_back_days: 30
 ```
 
-> **Note:** The application will first attempt to fetch Amazon orders from your email (if `email` and `email_password` are provided). If that fails or is not configured, it will use the CSV file as a fallback.
-> For Gmail, you must use an [App Password](https://support.google.com/accounts/answer/185833) (not your main password) and enable IMAP access in your account settings.
+> **Important Notes:**
+> - The application will first attempt to fetch Amazon orders from your email (if configured). This automatically includes Subscribe & Save orders.
+> - If email fetching fails or is not configured, it will use the CSV file as a fallback.
+> - For Gmail, you must use an [App Password](https://support.google.com/accounts/answer/185833) (not your main password) and enable IMAP access.
+> - Subscribe & Save orders are only available via email parsing, not CSV export.
 
 ## Matching Algorithm
 
@@ -204,24 +249,29 @@ Confidence thresholds:
 1. **"YNAB API key not configured"**
    - Make sure you've updated the `api_key` in `config.yml`
 
-2. **"YNAB Account ID not configured"**
-   - Verify your account ID in the YNAB URL and update `config.yml`
+2. **"YNAB Budget ID not configured"**
+   - Verify your budget ID in the YNAB URL and update `config.yml`
 
-3. **"Amazon CSV file not found"**
-   - Check that the CSV file path in `config.yml` is correct
-   - Ensure the file exists in the specified location
+3. **"Neither Amazon email credentials nor CSV file path are configured"**
+   - Configure at least one Amazon data source in `config.yml`
+   - Email parsing is recommended for automatic Subscribe & Save support
 
-4. **"Can't find Amazon order export"**
-   - Amazon's interface changes frequently
-   - Try the manual CSV creation option in the setup instructions
-   - Use the provided `sample_amazon_orders.csv` for testing
+4. **Email authentication fails**
+   - Ensure you're using an app-specific password, not your main email password
+   - Verify IMAP is enabled in your email account settings
+   - For Gmail: [App Passwords Guide](https://support.google.com/accounts/answer/185833)
 
-5. **No matches found**
-   - Verify your CSV file has the correct format
-   - Check that the dates and amounts are in the expected format
-   - Try running in dry-run mode to see what transactions are being considered
+5. **No Subscribe & Save orders found**
+   - Subscribe & Save orders are only available via email parsing
+   - Check that your email contains "review your upcoming delivery" messages from Amazon
+   - Verify the lookback period covers your subscription deliveries
 
-6. **API Rate Limits**
+6. **No matches found**
+   - Verify your data source (email or CSV) has orders in the lookback period
+   - Check that the dates and amounts match your YNAB transactions
+   - Try running in dry-run mode with DEBUG logging to see matching details
+
+7. **API Rate Limits**
    - YNAB has rate limits; the application includes delays between requests
    - If you get rate limit errors, wait a few minutes and try again
 
@@ -245,27 +295,33 @@ app:
 
 ```
 YNABAmazonTransactionUpdater/
-├── build.gradle                 # Gradle build configuration
-├── config.yml                   # Application configuration
-├── README.md                    # This file
+├── build.gradle                          # Gradle build configuration
+├── config.yml                            # Application configuration
+├── config.example.yml                    # Configuration template
+├── README.md                             # This file
+├── SUBSCRIBE_AND_SAVE.md                 # Subscribe & Save documentation
 ├── src/
-│   └── main/
-│       └── groovy/
-│           └── com/
-│               └── ynab/
-│                   └── amazon/
-│                       ├── YNABAmazonTransactionUpdater.groovy  # Main application
-│                       ├── config/
-│                       │   └── Configuration.groovy             # Configuration loader
-│                       ├── model/
-│                       │   ├── YNABTransaction.groovy          # YNAB transaction model
-│                       │   ├── AmazonOrder.groovy              # Amazon order model
-│                       │   └── TransactionMatch.groovy         # Match result model
-│                       └── service/
-│                           ├── YNABService.groovy              # YNAB API service
-│                           ├── AmazonService.groovy            # Amazon CSV service
-│                           ├── TransactionMatcher.groovy       # Matching logic
-│                           └── TransactionProcessor.groovy     # Processing logic
+│   ├── main/
+│   │   ├── groovy/com/ynab/amazon/
+│   │   │   ├── YNABAmazonTransactionUpdater.groovy  # Main application
+│   │   │   ├── config/
+│   │   │   │   └── Configuration.groovy             # Configuration loader
+│   │   │   ├── model/
+│   │   │   │   ├── YNABTransaction.groovy          # YNAB transaction model
+│   │   │   │   ├── AmazonOrder.groovy              # Amazon order model
+│   │   │   │   └── TransactionMatch.groovy         # Match result model
+│   │   │   └── service/
+│   │   │       ├── YNABService.groovy              # YNAB API service
+│   │   │       ├── AmazonService.groovy            # Amazon data orchestration
+│   │   │       ├── AmazonOrderFetcher.groovy       # Email parsing service
+│   │   │       ├── TransactionMatcher.groovy       # Matching logic
+│   │   │       └── TransactionProcessor.groovy     # Processing logic
+│   │   └── resources/
+│   │       └── logback.xml                         # Logging configuration
+│   └── test/
+│       ├── groovy/com/ynab/amazon/                 # Unit and integration tests
+│       └── resources/                              # Test email samples
+└── .agents/scripts/                                # Build and test scripts
 ```
 
 ## Contributing

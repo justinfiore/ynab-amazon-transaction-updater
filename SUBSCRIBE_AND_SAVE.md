@@ -29,9 +29,13 @@ These emails contain delivery notifications like:
 amazon:
   email: "your_amazon_email@example.com"
   email_password: "your_app_password"
+  # Optional: If you forward S&S emails to yourself
+  # forward_from_address: "your_amazon_email@example.com"
 ```
 
 That's it! Subscribe and Save emails are automatically detected and processed along with regular Amazon order emails.
+
+**Note:** If you forward Subscribe & Save emails to yourself (e.g., from one email account to another), you can specify the `forward_from_address` to ensure those forwarded emails are also detected and processed.
 
 ## How to Get Your Subscribe and Save Data
 
@@ -49,6 +53,8 @@ That's it! Subscribe and Save emails are automatically detected and processed al
    amazon:
      email: "your_email@example.com"
      email_password: "your_app_password"
+     # Optional: If you forward S&S emails
+     # forward_from_address: "your_email@example.com"
    ```
 
 2. **Run the application:**

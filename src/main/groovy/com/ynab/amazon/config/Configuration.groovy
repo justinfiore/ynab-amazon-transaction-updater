@@ -16,6 +16,7 @@ class Configuration {
     String ynabBaseUrl = "https://api.ynab.com/v1"
     String amazonEmail
     String amazonEmailPassword
+    String amazonForwardFromAddress
     String amazonCsvFilePath
     String processedTransactionsFile
     String logLevel = "INFO"
@@ -27,7 +28,7 @@ class Configuration {
         // Call loadFromFile() explicitly in application entrypoints when needed.
     }
     
-    private void loadConfiguration() {
+    public void loadConfiguration() {
         try {
             def yaml = new Yaml()
             def configFile = new File("config.yml")
@@ -56,6 +57,7 @@ class Configuration {
             // Amazon Configuration
             this.amazonEmail = config.amazon.email
             this.amazonEmailPassword = config.amazon.email_password
+            this.amazonForwardFromAddress = config.amazon.forward_from_address
             this.amazonCsvFilePath = config.amazon.csv_file_path
             
             // Application Configuration
