@@ -1,11 +1,13 @@
 package com.ynab.amazon.model
 
 import groovy.transform.CompileStatic
+import groovy.transform.MapConstructor
 
 /**
  * Model class representing a match between a YNAB transaction and an Amazon order
  */
 @CompileStatic
+@MapConstructor
 class TransactionMatch {
     YNABTransaction ynabTransaction
     AmazonOrder amazonOrder
@@ -13,6 +15,9 @@ class TransactionMatch {
     double confidenceScore
     String matchReason
     
+    // No-arg constructor to support Groovy named-argument initialization in tests
+    TransactionMatch() {}
+
     TransactionMatch(YNABTransaction ynabTransaction, AmazonOrder amazonOrder, String proposedMemo, double confidenceScore, String matchReason) {
         this.ynabTransaction = ynabTransaction
         this.amazonOrder = amazonOrder

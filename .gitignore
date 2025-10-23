@@ -47,4 +47,5 @@ processed_transactions.json
 
 # Temporary files
 *.tmp
-*.temp 
+*.temp
+logs/

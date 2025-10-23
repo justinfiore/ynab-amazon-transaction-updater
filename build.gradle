@@ -25,6 +25,9 @@ dependencies {
     implementation 'com.sun.mail:javax.mail:1.6.2'
     
     testImplementation 'org.spockframework:spock-core:2.3-groovy-3.0'
+    testImplementation 'org.mockito:mockito-core:5.3.1'
+    testImplementation 'cglib:cglib-nodep:3.3.0'    // For mocking classes
+    testImplementation 'org.objenesis:objenesis:3.3'  // For mocking classes
 }
 
 application {
@@ -34,4 +37,37 @@ application {
 java {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
+}
+
+task unitTest(type: Test) {
+    dependsOn testClasses
+    useJUnitPlatform()
+    description = 'Runs only the unit tests.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/*_UT*'
+}
+
+task integrationTest(type: Test) {
+    dependsOn testClasses
+    dependsOn unitTest
+    useJUnitPlatform()
+    description = 'Runs only the integration tests.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/*_IT*'
+    testLogging {
+        events "passed", "skipped", "failed" // Show output for all tests
+        showStandardStreams = true          // Enable standard out/err output
+    }
+}
+
+test {
+    description = 'Runs both unit and integration tests (unit tests first).'
+    dependsOn integrationTest
+    //finalizedBy integrationTest
+    // Optional: Disable default test task execution
+    onlyIf { false }
 }

@@ -13,17 +13,18 @@ class Configuration {
     String ynabApiKey
     String ynabAccountId
     String ynabBudgetId
-    String ynabBaseUrl
+    String ynabBaseUrl = "https://api.ynab.com/v1"
     String amazonEmail
     String amazonEmailPassword
     String amazonCsvFilePath
     String processedTransactionsFile
-    String logLevel
-    boolean dryRun
-    int lookBackDays
+    String logLevel = "INFO"
+    boolean dryRun = false
+    int lookBackDays = 30
     
     Configuration() {
-        loadConfiguration()
+        // Do not auto-load from file by default to keep tests deterministic.
+        // Call loadFromFile() explicitly in application entrypoints when needed.
     }
     
     private void loadConfiguration() {
@@ -32,7 +33,8 @@ class Configuration {
             def configFile = new File("config.yml")
             
             if (!configFile.exists()) {
-                logger.error("Configuration file config.yml not found")
+                // Keep defaults when no config file
+                logger.warn("Configuration file config.yml not found. Using defaults for optional settings.")
                 return
             }
             
@@ -49,7 +51,7 @@ class Configuration {
             // YNAB Configuration
             this.ynabApiKey = config.ynab.api_key
             this.ynabBudgetId = config.ynab.budget_id
-            this.ynabBaseUrl = config.ynab.base_url ?: "https://api.ynab.com/v1"
+            this.ynabBaseUrl = config.ynab.base_url ?: this.ynabBaseUrl
             
             // Amazon Configuration
             this.amazonEmail = config.amazon.email
@@ -58,9 +60,9 @@ class Configuration {
             
             // Application Configuration
             this.processedTransactionsFile = config.app.processed_transactions_file
-            this.logLevel = config.app.log_level ? config.app.log_level.toUpperCase() : "INFO"
-            this.dryRun = config.app.dry_run ?: false
-            this.lookBackDays = config.app.look_back_days ?: 30
+            this.logLevel = config.app.log_level ? config.app.log_level.toUpperCase() : this.logLevel
+            this.dryRun = (config.app.dry_run != null) ? config.app.dry_run : this.dryRun
+            this.lookBackDays = (config.app.look_back_days != null) ? config.app.look_back_days : this.lookBackDays
             
             // Configure SimpleLogger - must be set before any logger instances are created
             System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", this.logLevel)
