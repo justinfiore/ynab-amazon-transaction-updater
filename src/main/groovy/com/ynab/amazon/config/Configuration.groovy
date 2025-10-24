@@ -23,6 +23,13 @@ class Configuration {
     boolean dryRun = false
     int lookBackDays = 30
     
+    // Walmart Configuration
+    String walmartEmail
+    String walmartPassword
+    boolean walmartEnabled = false
+    int walmartBrowserTimeout = 30000
+    String walmartOrdersUrl = "https://www.walmart.com/orders"
+    
     Configuration() {
         // Do not auto-load from file by default to keep tests deterministic.
         // Call loadFromFile() explicitly in application entrypoints when needed.
@@ -65,6 +72,13 @@ class Configuration {
             this.logLevel = config.app.log_level ? config.app.log_level.toUpperCase() : this.logLevel
             this.dryRun = (config.app.dry_run != null) ? config.app.dry_run : this.dryRun
             this.lookBackDays = (config.app.look_back_days != null) ? config.app.look_back_days : this.lookBackDays
+            
+            // Walmart Configuration
+            this.walmartEnabled = (config.walmart?.enabled != null) ? config.walmart.enabled : this.walmartEnabled
+            this.walmartEmail = config.walmart?.email
+            this.walmartPassword = config.walmart?.password
+            this.walmartBrowserTimeout = (config.walmart?.browser_timeout != null) ? config.walmart.browser_timeout : this.walmartBrowserTimeout
+            this.walmartOrdersUrl = config.walmart?.orders_url ?: this.walmartOrdersUrl
             
             // Configure SimpleLogger - must be set before any logger instances are created
             System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", this.logLevel)
@@ -109,6 +123,18 @@ class Configuration {
         if (!hasEmailConfig && !hasCsvConfig) {
             logger.error("Neither Amazon email credentials nor CSV file path are configured")
             return false
+        }
+        
+        // Validate Walmart configuration if enabled
+        if (walmartEnabled) {
+            if (!walmartEmail) {
+                logger.error("Walmart is enabled but walmartEmail is not configured")
+                return false
+            }
+            if (!walmartPassword) {
+                logger.error("Walmart is enabled but walmartPassword is not configured")
+                return false
+            }
         }
         
         return true

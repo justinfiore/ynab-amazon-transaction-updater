@@ -128,4 +128,105 @@ class Configuration_UT extends Specification {
         then: "validation should pass"
         result
     }
+    
+    def "should use default Walmart values when not configured"() {
+        given: "a configuration without Walmart settings"
+        def configuration = new Configuration()
+        
+        expect: "default Walmart values should be used"
+        configuration.walmartEnabled == false
+        configuration.walmartBrowserTimeout == 30000
+        configuration.walmartOrdersUrl == "https://www.walmart.com/orders"
+    }
+    
+    def "should pass validation when Walmart is disabled"() {
+        given: "a configuration with Walmart disabled"
+        def configuration = new Configuration()
+        
+        and: "configuration has required YNAB and Amazon fields"
+        configuration.ynabApiKey = "test-api-key"
+        configuration.ynabBudgetId = "test-budget-id"
+        configuration.amazonEmail = "test@example.com"
+        configuration.amazonEmailPassword = "test-password"
+        configuration.walmartEnabled = false
+        
+        when: "isValid is called"
+        def result = configuration.isValid()
+        
+        then: "validation should pass even without Walmart credentials"
+        result
+    }
+    
+    def "should fail validation when Walmart is enabled but email is missing"() {
+        given: "a configuration with Walmart enabled but missing email"
+        def configuration = new Configuration()
+        
+        and: "configuration has required YNAB and Amazon fields"
+        configuration.ynabApiKey = "test-api-key"
+        configuration.ynabBudgetId = "test-budget-id"
+        configuration.amazonEmail = "test@example.com"
+        configuration.amazonEmailPassword = "test-password"
+        configuration.walmartEnabled = true
+        configuration.walmartPassword = "walmart-password"
+        // Missing walmartEmail
+        
+        when: "isValid is called"
+        def result = configuration.isValid()
+        
+        then: "validation should fail"
+        !result
+    }
+    
+    def "should fail validation when Walmart is enabled but password is missing"() {
+        given: "a configuration with Walmart enabled but missing password"
+        def configuration = new Configuration()
+        
+        and: "configuration has required YNAB and Amazon fields"
+        configuration.ynabApiKey = "test-api-key"
+        configuration.ynabBudgetId = "test-budget-id"
+        configuration.amazonEmail = "test@example.com"
+        configuration.amazonEmailPassword = "test-password"
+        configuration.walmartEnabled = true
+        configuration.walmartEmail = "walmart@example.com"
+        // Missing walmartPassword
+        
+        when: "isValid is called"
+        def result = configuration.isValid()
+        
+        then: "validation should fail"
+        !result
+    }
+    
+    def "should pass validation when Walmart is enabled with all required fields"() {
+        given: "a configuration with Walmart enabled and all required fields"
+        def configuration = new Configuration()
+        
+        and: "configuration has all required fields including Walmart"
+        configuration.ynabApiKey = "test-api-key"
+        configuration.ynabBudgetId = "test-budget-id"
+        configuration.amazonEmail = "test@example.com"
+        configuration.amazonEmailPassword = "test-password"
+        configuration.walmartEnabled = true
+        configuration.walmartEmail = "walmart@example.com"
+        configuration.walmartPassword = "walmart-password"
+        
+        when: "isValid is called"
+        def result = configuration.isValid()
+        
+        then: "validation should pass"
+        result
+    }
+    
+    def "should allow custom Walmart timeout and URL"() {
+        given: "a configuration with custom Walmart settings"
+        def configuration = new Configuration()
+        
+        and: "configuration has custom Walmart values"
+        configuration.walmartBrowserTimeout = 60000
+        configuration.walmartOrdersUrl = "https://custom.walmart.com/orders"
+        
+        expect: "custom values should be set"
+        configuration.walmartBrowserTimeout == 60000
+        configuration.walmartOrdersUrl == "https://custom.walmart.com/orders"
+    }
 }

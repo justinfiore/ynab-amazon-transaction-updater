@@ -7,7 +7,7 @@
   - Implement getProductSummary(), getOrderLink(), isDelivered(), and hasMultipleCharges() methods in WalmartOrder
   - _Requirements: 1.1, 3.3_
 
-- [ ] 2. Extend Configuration class for Walmart settings
+- [x] 2. Extend Configuration class for Walmart settings
   - Add walmartEmail, walmartPassword, walmartEnabled, walmartBrowserTimeout, and walmartOrdersUrl fields to Configuration class
   - Implement validation logic to require walmartEmail and walmartPassword when walmartEnabled is true
   - Add Walmart configuration loading from config.yml in loadConfiguration() method
