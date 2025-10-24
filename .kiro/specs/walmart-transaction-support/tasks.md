@@ -14,15 +14,15 @@
   - Provide sensible defaults for optional Walmart settings (timeout: 30000ms, ordersUrl: "https://www.walmart.com/orders")
   - _Requirements: 2.1, 2.3, 2.4, 2.5_
 
-- [ ] 3. Implement WalmartOrderFetcher with browser automation
-- [ ] 3.1 Create WalmartOrderFetcher class structure
+- [x] 3. Implement WalmartOrderFetcher with browser automation
+- [x] 3.1 Create WalmartOrderFetcher class structure
   - Create WalmartOrderFetcher class with Configuration dependency
   - Add browser, context, and page fields for Playwright
   - Implement initBrowser() method to launch headless Chromium browser
   - Implement closeBrowser() method with proper cleanup in finally block
   - _Requirements: 1.1, 2.2, 6.5_
 
-- [ ] 3.2 Implement authentication flow
+- [x] 3.2 Implement authentication flow
   - Implement authenticate() method to navigate to walmart.com
   - Click "Sign In" button
   - Enter email and password from configuration
@@ -30,7 +30,7 @@
   - Verify successful login before proceeding
   - _Requirements: 2.2, 6.2_
 
-- [ ] 3.3 Implement order fetching and parsing
+- [x] 3.3 Implement order fetching and parsing
   - Navigate to walmart.com/orders after authentication
   - Filter orders by lookBackDays date range
   - For each order, check if status is "Delivered" (skip non-delivered orders)
@@ -41,7 +41,7 @@
   - Navigate back to orders list for next order
   - _Requirements: 1.1, 2.2, 4.1_
 
-- [ ] 3.4 Implement error handling and retries
+- [x] 3.4 Implement error handling and retries
   - Add try-catch blocks for navigation errors with exponential backoff retry (up to 3 attempts)
   - Handle timeout errors with configurable timeout from configuration
   - Log warnings for parsing errors and skip problematic orders
@@ -49,7 +49,7 @@
   - Ensure browser cleanup in finally block even on errors
   - _Requirements: 6.1, 6.2, 6.3_
 
-- [ ] 3.5 Write unit tests for WalmartOrderFetcher
+- [x] 3.5 Write unit tests for WalmartOrderFetcher
   - Test HTML parsing with sample order data
   - Test order status filtering (verify non-delivered orders are skipped)
   - Test charge history extraction (verify only final charges extracted, temporary holds ignored)
