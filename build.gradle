@@ -24,6 +24,9 @@ dependencies {
     implementation 'javax.mail:javax.mail-api:1.6.2'
     implementation 'com.sun.mail:javax.mail:1.6.2'
     
+    // Playwright for browser automation
+    implementation 'com.microsoft.playwright:playwright:1.40.0'
+    
     testImplementation 'org.spockframework:spock-core:2.3-groovy-3.0'
     testImplementation 'org.mockito:mockito-core:5.3.1'
     testImplementation 'cglib:cglib-nodep:3.3.0'    // For mocking classes
