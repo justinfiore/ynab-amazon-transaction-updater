@@ -73,19 +73,19 @@
   - Verify logging output
   - _Requirements: 7.1_
 
-- [ ] 5. Extend TransactionMatcher for Walmart orders
-- [ ] 5.1 Add Walmart payee detection
+- [x] 5. Extend TransactionMatcher for Walmart orders
+- [x] 5.1 Add Walmart payee detection
   - Add WALMART_PAYEE_NAMES constant list with "WALMART", "WAL-MART", "WALMART.COM", "WALMART ONLINE"
   - Extend isPotentialWalmartTransaction() method to check for Walmart payees
   - _Requirements: 4.2_
 
-- [ ] 5.2 Implement single transaction matching for Walmart
+- [x] 5.2 Implement single transaction matching for Walmart
   - Create findWalmartMatches() method following Amazon pattern
   - Implement findSingleTransactionMatch() for single-charge Walmart orders
   - Use existing confidence scoring algorithm (amount 70%, date 20%, payee 10%)
   - _Requirements: 1.2, 4.2, 4.4_
 
-- [ ] 5.3 Implement multi-transaction matching for Walmart
+- [x] 5.3 Implement multi-transaction matching for Walmart
   - Implement findMultiTransactionMatch() to handle orders with multiple final charges
   - Group unmatched Walmart transactions by date proximity (within 7 days)
   - For each Walmart order with multiple finalChargeAmounts, find transaction groups where sum matches order total
@@ -93,7 +93,7 @@
   - Create TransactionMatch containing multiple transactions for multi-charge orders
   - _Requirements: 1.4, 4.1, 4.3, 4.4_
 
-- [ ] 5.4 Write unit tests for Walmart matching logic
+- [x] 5.4 Write unit tests for Walmart matching logic
   - Test single Walmart transaction matching
   - Test multi-transaction matching with 2 charges
   - Test multi-transaction matching with 3+ charges

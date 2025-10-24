@@ -473,4 +473,366 @@ class TransactionMatcher_UT extends Specification {
             isReturn: true
         )
     }
+
+    // ========== Walmart Matching Tests ==========
+    
+    def "findWalmartMatches should return empty list when no transactions provided"() {
+        given: "empty list of transactions and some Walmart orders"
+        def transactions = []
+        def orders = [createSampleWalmartOrder("1234", "2023-05-15", 25.99)]
+        
+        when: "findWalmartMatches is called"
+        def result = matcher.findWalmartMatches(transactions, orders)
+        
+        then: "an empty list should be returned"
+        result != null
+        result.isEmpty()
+    }
+    
+    def "findWalmartMatches should return empty list when no orders provided"() {
+        given: "some Walmart transactions and empty list of orders"
+        def transactions = [createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART")]
+        def orders = []
+        
+        when: "findWalmartMatches is called"
+        def result = matcher.findWalmartMatches(transactions, orders)
+        
+        then: "an empty list should be returned"
+        result != null
+        result.isEmpty()
+    }
+    
+    def "findWalmartMatches should match single transaction with exact amount and close date"() {
+        given: "matching Walmart transaction and order"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART")
+        ]
+        
+        def orders = [
+            createSampleWalmartOrder("1234", "2023-05-15", 25.99)
+        ]
+        
+        when: "findWalmartMatches is called"
+        def matches = matcher.findWalmartMatches(transactions, orders)
+        
+        then: "matching pair should be found"
+        matches.size() == 1
+        matches[0].ynabTransaction.id == "tx1"
+        matches[0].walmartOrder.orderId == "1234"
+        matches[0].isMultiTransaction == false
+    }
+    
+    def "findWalmartMatches should match transaction with charge amount for multi-charge order"() {
+        given: "Walmart transaction matching one charge of a multi-charge order"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 50.00, "WALMART.COM")
+        ]
+        
+        def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        order.addFinalCharge(100.00)
+        order.addFinalCharge(50.00)
+        def orders = [order]
+        
+        when: "findWalmartMatches is called"
+        def matches = matcher.findWalmartMatches(transactions, orders)
+        
+        then: "matching pair should be found"
+        matches.size() == 1
+        matches[0].ynabTransaction.id == "tx1"
+        matches[0].walmartOrder.orderId == "1234"
+    }
+    
+    def "findWalmartMatches should match multiple transactions to multi-charge order"() {
+        given: "two Walmart transactions that sum to order total"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 100.00, "WALMART"),
+            createSampleTransaction("tx2", "2023-05-16", 50.00, "WALMART")
+        ]
+        
+        def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        order.addFinalCharge(100.00)
+        order.addFinalCharge(50.00)
+        def orders = [order]
+        
+        when: "findWalmartMatches is called"
+        def matches = matcher.findWalmartMatches(transactions, orders)
+        
+        then: "both transactions should be matched (either as single or multi-transaction)"
+        matches.size() >= 1
+        // Verify both transactions are matched
+        def matchedTxIds = matches.collectMany { it.transactions }.collect { it.id }
+        matchedTxIds.contains("tx1")
+        matchedTxIds.contains("tx2")
+        matches.every { it.walmartOrder.orderId == "1234" }
+    }
+    
+    def "findWalmartMatches should match three transactions to multi-charge order"() {
+        given: "three Walmart transactions that sum to order total"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 50.00, "WALMART"),
+            createSampleTransaction("tx2", "2023-05-16", 50.00, "WALMART.COM"),
+            createSampleTransaction("tx3", "2023-05-17", 50.00, "WAL-MART")
+        ]
+        
+        def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        order.addFinalCharge(50.00)
+        order.addFinalCharge(50.00)
+        order.addFinalCharge(50.00)
+        def orders = [order]
+        
+        when: "findWalmartMatches is called"
+        def matches = matcher.findWalmartMatches(transactions, orders)
+        
+        then: "all three transactions should be matched"
+        matches.size() >= 1
+        // Verify all three transactions are matched
+        def matchedTxIds = matches.collectMany { it.transactions }.collect { it.id }
+        matchedTxIds.contains("tx1")
+        matchedTxIds.contains("tx2")
+        matchedTxIds.contains("tx3")
+        matches.every { it.walmartOrder.orderId == "1234" }
+    }
+    
+    def "findWalmartMatches should match multi-transaction when amounts don't match individual charges"() {
+        given: "two Walmart transactions that sum to order total but don't match individual charges"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 75.00, "WALMART"),
+            createSampleTransaction("tx2", "2023-05-16", 75.00, "WALMART")
+        ]
+        
+        def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        // Final charges are different from transaction amounts
+        order.addFinalCharge(100.00)
+        order.addFinalCharge(50.00)
+        def orders = [order]
+        
+        when: "findWalmartMatches is called"
+        def matches = matcher.findWalmartMatches(transactions, orders)
+        
+        then: "multi-transaction match should be found"
+        matches.size() == 1
+        matches[0].transactions.size() == 2
+        matches[0].isMultiTransaction == true
+        matches[0].walmartOrder.orderId == "1234"
+    }
+    
+    def "findWalmartMatches should not match transactions with different amounts"() {
+        given: "Walmart transaction and order with different amounts"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART")
+        ]
+        
+        def orders = [
+            createSampleWalmartOrder("1234", "2023-05-15", 26.99)
+        ]
+        
+        when: "findWalmartMatches is called"
+        def matches = matcher.findWalmartMatches(transactions, orders)
+        
+        then: "no matches should be found"
+        matches.isEmpty()
+    }
+    
+    def "findWalmartMatches should not match transactions with too distant dates"() {
+        given: "Walmart transaction and order with distant dates"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART")
+        ]
+        
+        def orders = [
+            createSampleWalmartOrder("1234", "2023-06-15", 25.99)  // One month later
+        ]
+        
+        when: "findWalmartMatches is called"
+        def matches = matcher.findWalmartMatches(transactions, orders)
+        
+        then: "no matches should be found due to date difference"
+        matches.isEmpty()
+    }
+    
+    def "findWalmartMatches should only match potential Walmart transactions"() {
+        given: "Walmart and non-Walmart transactions"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART"),
+            createSampleTransaction("tx2", "2023-05-20", 49.99, "AMAZON.COM")
+        ]
+        
+        def orders = [
+            createSampleWalmartOrder("1234", "2023-05-15", 25.99),
+            createSampleWalmartOrder("5678", "2023-05-20", 49.99)
+        ]
+        
+        when: "findWalmartMatches is called"
+        def matches = matcher.findWalmartMatches(transactions, orders)
+        
+        then: "only Walmart transactions should be matched"
+        matches.size() == 1
+        matches[0].ynabTransaction.id == "tx1"
+        matches[0].walmartOrder.orderId == "1234"
+    }
+    
+    def "findWalmartMatches should not match multi-transactions with sum mismatch"() {
+        given: "two Walmart transactions that don't sum to order total"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 100.00, "WALMART"),
+            createSampleTransaction("tx2", "2023-05-16", 40.00, "WALMART")  // Sum is 140, not 150
+        ]
+        
+        def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        order.addFinalCharge(100.00)
+        order.addFinalCharge(50.00)
+        def orders = [order]
+        
+        when: "findWalmartMatches is called"
+        def matches = matcher.findWalmartMatches(transactions, orders)
+        
+        then: "no multi-transaction match should be found"
+        // May find single transaction match for tx1 if it matches a charge amount
+        matches.every { it.transactions.size() == 1 }
+    }
+    
+    def "findWalmartMatches should not match transactions too far apart in time"() {
+        given: "two Walmart transactions more than 7 days apart"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 100.00, "WALMART"),
+            createSampleTransaction("tx2", "2023-05-25", 50.00, "WALMART")  // 10 days apart
+        ]
+        
+        def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        order.addFinalCharge(100.00)
+        order.addFinalCharge(50.00)
+        def orders = [order]
+        
+        when: "findWalmartMatches is called"
+        def matches = matcher.findWalmartMatches(transactions, orders)
+        
+        then: "no multi-transaction match should be found"
+        // May find single transaction match for tx1
+        matches.every { it.transactions.size() == 1 }
+    }
+    
+    @Unroll
+    def "isPotentialWalmartTransaction should identify Walmart-related payees: #payeeName"() {
+        given: "a transaction with the specified payee name"
+        def transaction = createSampleTransaction("tx1", "2023-05-15", 25.99, payeeName)
+        
+        when: "we check if it's a potential Walmart transaction"
+        def method = TransactionMatcher.getDeclaredMethod("isPotentialWalmartTransaction", YNABTransaction)
+        method.setAccessible(true)
+        def result = method.invoke(matcher, transaction)
+        
+        then: "the result should match expected outcome"
+        result == expected
+        
+        where:
+        payeeName              | expected
+        "WALMART"              | true
+        "WAL-MART"             | true
+        "WALMART.COM"          | true
+        "WALMART ONLINE"       | true
+        "AMAZON.COM"           | false
+        "TARGET"               | false
+        "TRANSFER: WALMART"    | false  // Blacklisted
+    }
+    
+    def "generateWalmartProposedMemo should handle single item orders"() {
+        given: "a Walmart order with a single item"
+        def transaction = createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART")
+        def walmartOrder = createSampleWalmartOrder("1234", "2023-05-15", 25.99)
+        walmartOrder.addItem(createSampleWalmartOrderItem("Test Product", 25.99, 1))
+        
+        when: "generateWalmartProposedMemo is called"
+        def method = TransactionMatcher.getDeclaredMethod("generateWalmartProposedMemo", 
+            YNABTransaction, com.ynab.amazon.model.WalmartOrder, boolean, int, int)
+        method.setAccessible(true)
+        def memo = method.invoke(matcher, transaction, walmartOrder, false, 1, 1)
+        
+        then: "the memo should contain the order ID and item title"
+        memo == "Walmart Order: 1234 - Test Product"
+    }
+    
+    def "generateWalmartProposedMemo should handle multi-transaction orders"() {
+        given: "a Walmart order with multiple charges"
+        def transaction = createSampleTransaction("tx1", "2023-05-15", 50.00, "WALMART")
+        def walmartOrder = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        walmartOrder.addItem(createSampleWalmartOrderItem("Product A", 50.00, 1))
+        walmartOrder.addItem(createSampleWalmartOrderItem("Product B", 100.00, 1))
+        
+        when: "generateWalmartProposedMemo is called for charge 1 of 2"
+        def method = TransactionMatcher.getDeclaredMethod("generateWalmartProposedMemo", 
+            YNABTransaction, com.ynab.amazon.model.WalmartOrder, boolean, int, int)
+        method.setAccessible(true)
+        def memo = method.invoke(matcher, transaction, walmartOrder, true, 1, 2)
+        
+        then: "the memo should indicate charge number"
+        memo.contains("Walmart Order: 1234 (Charge 1 of 2)")
+    }
+    
+    def "generateWalmartProposedMemo should preserve existing memo"() {
+        given: "a transaction with existing memo and a Walmart order"
+        def transaction = createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART", "Original memo")
+        def walmartOrder = createSampleWalmartOrder("1234", "2023-05-15", 25.99)
+        walmartOrder.addItem(createSampleWalmartOrderItem("Test Product", 25.99, 1))
+        
+        when: "generateWalmartProposedMemo is called"
+        def method = TransactionMatcher.getDeclaredMethod("generateWalmartProposedMemo", 
+            YNABTransaction, com.ynab.amazon.model.WalmartOrder, boolean, int, int)
+        method.setAccessible(true)
+        def memo = method.invoke(matcher, transaction, walmartOrder, false, 1, 1)
+        
+        then: "the memo should preserve the original memo"
+        memo == "Original memo | Walmart Order: 1234 - Test Product"
+    }
+    
+    def "calculateWalmartMatchScore should return high score for exact match"() {
+        given: "a transaction and order with exact amount and same date"
+        def transaction = createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART")
+        def order = createSampleWalmartOrder("1234", "2023-05-15", 25.99)
+        
+        when: "calculateWalmartMatchScore is called"
+        def method = TransactionMatcher.getDeclaredMethod("calculateWalmartMatchScore", 
+            YNABTransaction, com.ynab.amazon.model.WalmartOrder)
+        method.setAccessible(true)
+        def score = method.invoke(matcher, transaction, order)
+        
+        then: "score should be high (0.8 or above)"
+        score >= 0.8
+    }
+    
+    def "calculateMultiTransactionMatchScore should return high score for exact sum match"() {
+        given: "transactions that sum to order total with close dates"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 100.00, "WALMART"),
+            createSampleTransaction("tx2", "2023-05-16", 50.00, "WALMART")
+        ]
+        def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        
+        when: "calculateMultiTransactionMatchScore is called"
+        def method = TransactionMatcher.getDeclaredMethod("calculateMultiTransactionMatchScore", 
+            List, com.ynab.amazon.model.WalmartOrder)
+        method.setAccessible(true)
+        def score = method.invoke(matcher, transactions, order)
+        
+        then: "score should be high (0.7 or above)"
+        score >= 0.7
+    }
+    
+    // Helper method to create Walmart order
+    private com.ynab.amazon.model.WalmartOrder createSampleWalmartOrder(String orderId, String orderDate, BigDecimal totalAmount) {
+        return new com.ynab.amazon.model.WalmartOrder(
+            orderId: orderId,
+            orderDate: orderDate,
+            orderStatus: "Delivered",
+            totalAmount: totalAmount
+        )
+    }
+    
+    // Helper method to create Walmart order item
+    private com.ynab.amazon.model.WalmartOrderItem createSampleWalmartOrderItem(String title, BigDecimal price, int quantity) {
+        return new com.ynab.amazon.model.WalmartOrderItem(
+            title: title,
+            price: price,
+            quantity: quantity
+        )
+    }
 }
