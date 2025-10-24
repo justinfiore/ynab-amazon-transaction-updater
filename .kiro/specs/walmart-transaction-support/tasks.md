@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Add Playwright dependency and create Walmart model classes
+- [x] 1. Add Playwright dependency and create Walmart model classes
   - Add Playwright dependency to build.gradle
   - Create WalmartOrder model class with orderId, orderDate, orderStatus, totalAmount, finalChargeAmounts, items, and orderUrl fields
   - Create WalmartOrderItem model class with title, price, quantity, and imageUrl fields
