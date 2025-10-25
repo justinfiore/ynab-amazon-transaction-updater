@@ -101,7 +101,7 @@
   - Test edge cases (partial matches, date boundaries, amount mismatches)
   - _Requirements: 7.2_
 
-- [ ] 6. Extend TransactionProcessor for Walmart updates
+- [x] 6. Extend TransactionProcessor for Walmart updates
   - Add processWalmartMatches() method following processAmazonMatches() pattern
   - Implement generateWalmartMemo() to create memo with Walmart order link and product summary
   - For multi-transaction matches, format memo as "[existing memo] | Walmart Order: [order_number] (Charge X of Y) - [product_summary]"
@@ -110,7 +110,7 @@
   - Respect dry-run mode and log proposed updates without modifying YNAB
   - _Requirements: 1.3, 1.4, 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 6.1 Write unit tests for Walmart transaction processing
+- [x] 6.1 Write unit tests for Walmart transaction processing
   - Test Walmart memo generation for single-transaction orders
   - Test Walmart memo generation for multi-transaction orders
   - Test order link inclusion in memos

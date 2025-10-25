@@ -1,0 +1,26 @@
+feat: implement Walmart transaction matching logic
+
+Add comprehensive Walmart transaction matching capabilities to TransactionMatcher:
+
+- Add Walmart payee detection with WALMART_PAYEE_NAMES constant
+- Implement single-transaction matching for Walmart orders
+- Implement multi-transaction matching for orders with multiple charges
+- Add confidence scoring algorithms for both match types
+- Support matching transactions to individual charge amounts
+- Generate Walmart-specific memos with order links and product summaries
+- Extend TransactionMatch model to support Walmart orders and multi-transaction matches
+
+The matching logic follows the same pattern as Amazon matching but includes:
+- Single transaction matching: 70% amount, 20% date, 10% payee
+- Multi-transaction matching: 50% amount sum, 30% date proximity, 20% payee consistency
+- Support for grouping transactions by date proximity (within 7 days)
+- Combination generation to find transaction groups that sum to order totals
+
+Comprehensive unit tests added covering:
+- Single and multi-transaction matching scenarios
+- Edge cases (date boundaries, amount mismatches, partial matches)
+- Payee detection for various Walmart name formats
+- Memo generation for both single and multi-charge orders
+- Confidence scoring validation
+
+Tasks completed: 5.1, 5.2, 5.3, 5.4
