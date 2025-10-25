@@ -453,14 +453,16 @@ class TransactionMatcher {
         double score = 0.0
         
         // Amount must match exactly for high confidence
+        // YNAB stores expenses as negative, so use absolute value
         if (transaction.getAmountInDollars() && order.totalAmount) {
-            double amountDiff = Math.abs(transaction.getAmountInDollars() - order.totalAmount)
+            double transactionAmount = Math.abs(transaction.getAmountInDollars())
+            double amountDiff = Math.abs(transactionAmount - order.totalAmount)
             if (amountDiff > 0.01) {
                 // For single transaction match, check if it matches any of the final charge amounts
                 boolean matchesAnyCharge = false
                 if (order.finalChargeAmounts) {
                     matchesAnyCharge = order.finalChargeAmounts.any { charge ->
-                        Math.abs(transaction.getAmountInDollars() - charge) < 0.01
+                        Math.abs(transactionAmount - charge) < 0.01
                     }
                 }
                 
@@ -480,7 +482,7 @@ class TransactionMatcher {
             if (daysDiff > MAX_MATCH_DAYS_DIFFERENCE) {
                 return 0.0
             }
-            double dateScore = Math.max(0.0, 1.0 - (daysDiff / 7.0))  // Within 7 days
+            double dateScore = Math.abs(0.0, 1.0 - (daysDiff / 7.0))  // Within 7 days
             score += dateScore * 0.2
         }
         
@@ -694,7 +696,8 @@ class TransactionMatcher {
         double score = 0.0
         
         // Amount match (50% weight)
-        BigDecimal transactionSum = transactions.sum { it.getAmountInDollars() } as BigDecimal
+        // YNAB stores expenses as negative, so use absolute value
+        BigDecimal transactionSum = transactions.sum { Math.abs(it.getAmountInDollars()) } as BigDecimal
         if (Math.abs(transactionSum - order.totalAmount) < 0.01) {
             score += 0.5
         } else {

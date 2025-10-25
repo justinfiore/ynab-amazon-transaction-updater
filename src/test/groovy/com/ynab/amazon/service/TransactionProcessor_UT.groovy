@@ -308,8 +308,10 @@ class TransactionProcessor_UT extends Specification {
         method.setAccessible(true)
         def memo = method.invoke(processor, ynabTx, order, false, 1, 1)
         
-        then: "memo should be formatted correctly"
-        memo == "Walmart Order: 123456 - Test Product"
+        then: "memo should be formatted correctly with order URL"
+        memo.contains("Walmart Order: 123456")
+        memo.contains("Test Product")
+        memo.contains("https://www.walmart.com/orders/details?orderId=123456")
     }
     
     def "generateWalmartMemo should format multi-transaction correctly"() {
