@@ -1,26 +1,25 @@
-feat: implement Walmart transaction matching logic
+feat: add Walmart transaction processing support
 
-Add comprehensive Walmart transaction matching capabilities to TransactionMatcher:
+Extend TransactionProcessor to handle Walmart order matches with comprehensive
+support for both single and multi-transaction scenarios.
 
-- Add Walmart payee detection with WALMART_PAYEE_NAMES constant
-- Implement single-transaction matching for Walmart orders
-- Implement multi-transaction matching for orders with multiple charges
-- Add confidence scoring algorithms for both match types
-- Support matching transactions to individual charge amounts
-- Generate Walmart-specific memos with order links and product summaries
-- Extend TransactionMatch model to support Walmart orders and multi-transaction matches
+Changes:
+- Add processWalmartMatches() method following Amazon pattern
+- Implement generateWalmartMemo() for Walmart-specific memo formatting
+- Support multi-transaction orders with charge numbering (Charge X of Y)
+- Preserve existing memo content when updating transactions
+- Update isProcessed() to detect Walmart Order markers in memos
+- Enhance logging to distinguish between Amazon and Walmart retailers
 
-The matching logic follows the same pattern as Amazon matching but includes:
-- Single transaction matching: 70% amount, 20% date, 10% payee
-- Multi-transaction matching: 50% amount sum, 30% date proximity, 20% payee consistency
-- Support for grouping transactions by date proximity (within 7 days)
-- Combination generation to find transaction groups that sum to order totals
+Testing:
+- Add comprehensive unit tests for Walmart transaction processing
+- Test single-transaction and multi-transaction match handling
+- Verify memo generation for various scenarios
+- Test dry-run mode and confidence filtering
+- Validate existing memo preservation
 
-Comprehensive unit tests added covering:
-- Single and multi-transaction matching scenarios
-- Edge cases (date boundaries, amount mismatches, partial matches)
-- Payee detection for various Walmart name formats
-- Memo generation for both single and multi-charge orders
-- Confidence scoring validation
+Hook update:
+- Add explicit warning against using `git add -a` or `git add -A`
 
-Tasks completed: 5.1, 5.2, 5.3, 5.4
+Tasks completed: 6, 6.1
+Requirements: 1.3, 1.4, 5.1, 5.2, 5.3, 5.4, 5.5
