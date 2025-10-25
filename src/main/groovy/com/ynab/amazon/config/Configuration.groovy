@@ -27,6 +27,7 @@ class Configuration {
     String walmartEmail
     String walmartPassword
     boolean walmartEnabled = false
+    boolean walmartHeadless = true
     int walmartBrowserTimeout = 30000
     String walmartOrdersUrl = "https://www.walmart.com/orders"
     
@@ -77,6 +78,7 @@ class Configuration {
             this.walmartEnabled = (config.walmart?.enabled != null) ? config.walmart.enabled : this.walmartEnabled
             this.walmartEmail = config.walmart?.email
             this.walmartPassword = config.walmart?.password
+            this.walmartHeadless = (config.walmart?.headless != null) ? config.walmart.headless : this.walmartHeadless
             this.walmartBrowserTimeout = (config.walmart?.browser_timeout != null) ? config.walmart.browser_timeout : this.walmartBrowserTimeout
             this.walmartOrdersUrl = config.walmart?.orders_url ?: this.walmartOrdersUrl
             
