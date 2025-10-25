@@ -59,15 +59,16 @@ class WalmartOrderFetcher {
      */
     private void initBrowser() {
         try {
-            logger.debug("Initializing headless Chromium browser")
+            String browserMode = config.walmartHeadless ? "headless" : "non-headless"
+            logger.debug("Initializing ${browserMode} Chromium browser")
             playwright = Playwright.create()
             browser = playwright.chromium().launch(
-                new BrowserType.LaunchOptions().setHeadless(true)
+                new BrowserType.LaunchOptions().setHeadless(config.walmartHeadless)
             )
             context = browser.newContext()
             page = context.newPage()
             page.setDefaultTimeout(config.walmartBrowserTimeout)
-            logger.debug("Browser initialized successfully")
+            logger.debug("Browser initialized successfully in ${browserMode} mode")
         } catch (Exception e) {
             logger.error("Failed to initialize browser: ${e.message}", e)
             throw new RuntimeException("Browser initialization failed", e)

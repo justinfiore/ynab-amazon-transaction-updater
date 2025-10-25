@@ -140,6 +140,7 @@ walmart:
   enabled: true  # Set to true to enable Walmart integration
   email: "your_walmart_email@example.com"
   password: "your_walmart_password"
+  headless: true  # Set to false to see browser in action (default: true)
   browser_timeout: 30000  # Optional: timeout in milliseconds (default: 30000)
   orders_url: "https://www.walmart.com/orders"  # Optional: custom orders URL
 
@@ -264,6 +265,7 @@ Note: At least one Amazon data source (email or CSV) must be configured.
 - `enabled`: Enable/disable Walmart integration (default: false)
 - `email`: Your Walmart account email (required if enabled)
 - `password`: Your Walmart account password (required if enabled)
+- `headless`: Run browser in headless mode (default: true, set to false to see browser in action while testing)
 - `browser_timeout`: Browser operation timeout in milliseconds (optional, default: 30000)
 - `orders_url`: Walmart orders page URL (optional, default: "https://www.walmart.com/orders")
 
@@ -298,6 +300,7 @@ walmart:
   enabled: true  # Enable Walmart integration
   email: "your_walmart_email@example.com"
   password: "your_walmart_password"
+  headless: true  # Set to false to see browser in action (default: true)
   browser_timeout: 30000  # Optional
   orders_url: "https://www.walmart.com/orders"  # Optional
 

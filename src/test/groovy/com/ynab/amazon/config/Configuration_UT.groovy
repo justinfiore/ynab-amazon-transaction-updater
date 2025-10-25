@@ -135,6 +135,7 @@ class Configuration_UT extends Specification {
         
         expect: "default Walmart values should be used"
         configuration.walmartEnabled == false
+        configuration.walmartHeadless == true
         configuration.walmartBrowserTimeout == 30000
         configuration.walmartOrdersUrl == "https://www.walmart.com/orders"
     }
@@ -228,5 +229,24 @@ class Configuration_UT extends Specification {
         expect: "custom values should be set"
         configuration.walmartBrowserTimeout == 60000
         configuration.walmartOrdersUrl == "https://custom.walmart.com/orders"
+    }
+    
+    def "should allow setting Walmart headless mode to false"() {
+        given: "a configuration with headless mode disabled"
+        def configuration = new Configuration()
+        
+        and: "configuration has headless set to false"
+        configuration.walmartHeadless = false
+        
+        expect: "headless should be false"
+        configuration.walmartHeadless == false
+    }
+    
+    def "should default Walmart headless mode to true"() {
+        given: "a configuration without explicit headless setting"
+        def configuration = new Configuration()
+        
+        expect: "headless should default to true"
+        configuration.walmartHeadless == true
     }
 }
