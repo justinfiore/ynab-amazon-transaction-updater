@@ -263,13 +263,14 @@ class TransactionProcessor {
         String existingMemo = transaction.memo ?: ""
         String productSummary = order.getProductSummary()
         String orderNumber = order.orderId
+        String orderUrl = order.orderUrl ?: order.getOrderLink()
         
-        // Build the Walmart order information
+        // Build the Walmart order information with URL
         String walmartInfo
         if (isMultiTransaction) {
-            walmartInfo = "Walmart Order: ${orderNumber} (Charge ${chargeNumber} of ${totalCharges}) - ${productSummary}"
+            walmartInfo = "Walmart Order: ${orderNumber} (Charge ${chargeNumber} of ${totalCharges}) - ${productSummary} - ${orderUrl}"
         } else {
-            walmartInfo = "Walmart Order: ${orderNumber} - ${productSummary}"
+            walmartInfo = "Walmart Order: ${orderNumber} - ${productSummary} - ${orderUrl}"
         }
         
         // Preserve existing memo content
