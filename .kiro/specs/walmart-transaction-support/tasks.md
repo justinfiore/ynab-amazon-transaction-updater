@@ -118,7 +118,7 @@
   - Test dry-run mode behavior
   - _Requirements: 7.1_
 
-- [ ] 7. Integrate Walmart processing into main application
+- [x] 7. Integrate Walmart processing into main application
   - Update YNABAmazonTransactionUpdater to instantiate WalmartService when walmartEnabled is true
   - Add Walmart order fetching after Amazon order fetching
   - Call TransactionMatcher.findWalmartMatches() with fetched Walmart orders
