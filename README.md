@@ -1,19 +1,25 @@
-# YNAB Amazon Transaction Updater
+# YNAB Transaction Updater
 
-A Groovy application that automatically updates YNAB (You Need A Budget) transactions with Amazon order details by matching transactions and updating the memo field with product summaries.
+A Groovy application that automatically updates YNAB (You Need A Budget) transactions with retailer order details by matching transactions and updating the memo field with product summaries. Supports Amazon and Walmart orders.
 
 ## Features
 
 - Connects to YNAB API to fetch transactions
-- Reads Amazon order data from multiple sources:
+- **Amazon Integration:**
   - Email parsing (automatic order confirmation emails)
   - Amazon Subscribe & Save delivery notifications
   - Amazon refund notifications
   - CSV export files
-- Intelligently matches YNAB transactions with Amazon orders
+  - Special handling for Subscribe & Save orders with "S&S:" prefix
+  - Automatic refund detection and processing with positive amounts
+- **Walmart Integration:**
+  - Browser automation to fetch order history
+  - Multi-transaction order support (handles orders split into multiple charges)
+  - Automatic filtering of delivered orders only
+  - Extracts final charges (ignores temporary holds)
+  - Direct links to Walmart order details pages
+- Intelligently matches YNAB transactions with retailer orders
 - Updates transaction memos with product summaries
-- Special handling for Subscribe & Save orders with "S&S:" prefix
-- Automatic refund detection and processing with positive amounts
 - Tracks processed transactions to avoid duplicates
 - Supports dry-run mode for testing
 - Configurable matching confidence thresholds
@@ -25,8 +31,9 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 - Gradle (for building)
 - YNAB API key
 - YNAB Budget ID
-- Amazon order history (via email or CSV export)
-- (Optional) Email credentials for automatic order fetching
+- **For Amazon:** Order history (via email or CSV export)
+- **For Walmart:** Walmart account credentials (email and password)
+- (Optional) Email credentials for automatic Amazon order fetching
 
 ## Setup
 
@@ -44,7 +51,9 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
    - It will be a long string of letters and numbers
    - Example: `https://app.youneedabudget.com/abcdef12-3456-7890-abcd-ef1234567890/...`
 
-### 3. Set Up Amazon Order Data Source
+### 3. Set Up Retailer Data Sources
+
+#### Amazon Order Data Source
 
 You have two options for providing Amazon order data:
 
@@ -81,6 +90,31 @@ If email parsing is not available or you prefer manual control:
 
 Note: CSV export does not include Subscribe & Save orders automatically.
 
+#### Walmart Order Data Source (Optional)
+
+The application can automatically fetch Walmart orders using browser automation:
+
+Requirements:
+- Walmart account credentials (email and password)
+- Playwright browser automation library (automatically installed)
+
+How it works:
+1. Launches a headless browser
+2. Logs into your Walmart account
+3. Navigates to your order history
+4. Fetches delivered orders within the lookback period
+5. Extracts order details including:
+   - Order number and date
+   - Final charge amounts (ignores temporary holds)
+   - Product summaries
+   - Order status
+
+**Important Notes:**
+- Only "Delivered" orders are processed
+- Multi-transaction orders (orders split into multiple charges) are automatically detected and matched
+- The application extracts only "Final Order Charges" from the Charge History, ignoring "Temporary Hold" charges
+- Browser automation typically takes 10-15 seconds per fetch
+
 ### 4. Configure the Application
 
 Copy `config.example.yml` to `config.yml` and update the following values:
@@ -101,6 +135,13 @@ amazon:
   
   # CSV fallback (optional)
   csv_file_path: "amazon_orders.csv"
+
+walmart:
+  enabled: true  # Set to true to enable Walmart integration
+  email: "your_walmart_email@example.com"
+  password: "your_walmart_password"
+  browser_timeout: 30000  # Optional: timeout in milliseconds (default: 30000)
+  orders_url: "https://www.walmart.com/orders"  # Optional: custom orders URL
 
 app:
   processed_transactions_file: "processed_transactions.json"
@@ -133,18 +174,19 @@ java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
 
 1. **Configuration Loading**: Reads settings from `config.yml`
 2. **YNAB Integration**: Fetches transactions from your YNAB budget within the lookback period
-3. **Amazon Data**: Fetches order history from:
-   - Email (automatic parsing of order confirmations and Subscribe & Save notifications)
-   - CSV file (fallback or manual option)
-4. **Transaction Matching**: Uses intelligent algorithms to match YNAB transactions with Amazon orders based on:
-   - Amount similarity (40% weight)
-   - Date proximity (30% weight)
-   - Payee name matching (20% weight)
-   - Memo content (10% weight)
+3. **Retailer Data Fetching**:
+   - **Amazon**: Fetches order history from email (automatic parsing of order confirmations and Subscribe & Save notifications) or CSV file (fallback or manual option)
+   - **Walmart**: Uses browser automation to fetch order history from walmart.com (if enabled)
+4. **Transaction Matching**: Uses intelligent algorithms to match YNAB transactions with retailer orders:
+   - **Amazon**: Amount (40%), Date (30%), Payee (20%), Memo (10%)
+   - **Walmart Single Transaction**: Amount (70%), Date (20%), Payee (10%)
+   - **Walmart Multi-Transaction**: Amount match (50%), Date proximity (30%), Payee consistency (20%)
 5. **Memo Updates**: Updates matched transactions with product summaries:
-   - Regular orders: "Product Name" or "3 items: Product A, Product B, Product C"
-   - Subscribe & Save: "S&S: Product Name" or "S&S: 3 items: Product A, Product B, Product C"
-   - Refunds: "REFUND: Product Name" with positive amounts for easy identification
+   - **Amazon Regular**: "Product Name" or "3 items: Product A, Product B, Product C"
+   - **Amazon Subscribe & Save**: "S&S: Product Name" or "S&S: 3 items: Product A, Product B, Product C"
+   - **Amazon Refunds**: "REFUND: Product Name" with positive amounts
+   - **Walmart Single**: "[existing memo] | Walmart Order: [order_number] - [product_summary]"
+   - **Walmart Multi-Transaction**: "[existing memo] | Walmart Order: [order_number] (Charge X of Y) - [product_summary]"
 6. **Tracking**: Maintains a list of processed transactions to avoid duplicates
 
 ## Amazon Subscribe & Save Support
@@ -169,6 +211,28 @@ The application automatically detects and processes Amazon refund notifications 
 - Matched to YNAB transactions using the same intelligent matching algorithm
 
 This ensures refunds are properly tracked in your budget without manual intervention.
+
+## Walmart Multi-Transaction Order Support
+
+Walmart often splits a single order into multiple credit card charges. The application automatically handles this:
+
+**How it works:**
+1. Fetches Walmart orders and extracts the "Charge History" for each order
+2. Identifies only "Final Order Charges" (ignores "Temporary Hold" charges)
+3. Groups YNAB transactions by date proximity (within 7 days)
+4. Matches transaction groups where the sum equals the order total
+5. Updates all related transactions with the same Walmart order link
+
+**Example:**
+- Walmart Order #123: Total $150.00, Status: "Delivered"
+- Charge History shows:
+  - Temporary Hold: $150.00 (IGNORED)
+  - Final Charge 1: $100.00 on 2024-01-15
+  - Final Charge 2: $50.00 on 2024-01-16
+- YNAB Transactions:
+  - Transaction A: -$100.00, 2024-01-15, "WALMART.COM"
+  - Transaction B: -$50.00, 2024-01-16, "WALMART.COM"
+- Result: Both transactions updated with "Walmart Order: 123 (Charge 1 of 2)" and "Walmart Order: 123 (Charge 2 of 2)"
 
 ## CSV Format
 
@@ -195,6 +259,13 @@ Note: CSV files do not automatically include Subscribe & Save orders. Use email 
 - `csv_file_path`: Path to Amazon orders CSV file (optional, used as fallback)
 
 Note: At least one Amazon data source (email or CSV) must be configured.
+
+### Walmart Settings
+- `enabled`: Enable/disable Walmart integration (default: false)
+- `email`: Your Walmart account email (required if enabled)
+- `password`: Your Walmart account password (required if enabled)
+- `browser_timeout`: Browser operation timeout in milliseconds (optional, default: 30000)
+- `orders_url`: Walmart orders page URL (optional, default: "https://www.walmart.com/orders")
 
 ### Application Settings
 - `processed_transactions_file`: File to track processed transactions (default: "processed_transactions.json")
@@ -223,6 +294,13 @@ amazon:
   # CSV fallback (optional)
   csv_file_path: "amazon_orders.csv"
 
+walmart:
+  enabled: true  # Enable Walmart integration
+  email: "your_walmart_email@example.com"
+  password: "your_walmart_password"
+  browser_timeout: 30000  # Optional
+  orders_url: "https://www.walmart.com/orders"  # Optional
+
 app:
   processed_transactions_file: "processed_transactions.json"
   log_level: "INFO"
@@ -240,10 +318,21 @@ app:
 
 The application uses a weighted scoring system to match transactions:
 
+### Amazon Matching
 - **Amount Matching (40%)**: Compares transaction amounts with order totals
 - **Date Matching (30%)**: Checks if dates are within 7 days of each other
 - **Payee Matching (20%)**: Looks for Amazon-related payee names
 - **Memo Matching (10%)**: Checks for Amazon references in existing memos
+
+### Walmart Single Transaction Matching
+- **Amount Matching (70%)**: Compares transaction amount with order total
+- **Date Matching (20%)**: Checks if dates are within 7 days of each other
+- **Payee Matching (10%)**: Looks for Walmart-related payee names
+
+### Walmart Multi-Transaction Matching
+- **Amount Matching (50%)**: Sum of transactions matches order total
+- **Date Proximity (30%)**: All transactions within date range of order
+- **Payee Consistency (20%)**: All transactions have Walmart payee
 
 Confidence thresholds:
 - High confidence (≥80%): Automatically updated
@@ -291,7 +380,25 @@ Confidence thresholds:
    - Check that the dates and amounts match your YNAB transactions
    - Try running in dry-run mode with DEBUG logging to see matching details
 
-8. **API Rate Limits**
+8. **Walmart authentication fails**
+   - Verify your Walmart email and password are correct in `config.yml`
+   - Check that your Walmart account is accessible via web browser
+   - Ensure you don't have 2FA enabled (browser automation doesn't support 2FA yet)
+   - Try increasing `browser_timeout` if operations are timing out
+
+9. **Walmart browser automation issues**
+   - Ensure Playwright is properly installed (should happen automatically with Gradle)
+   - Check that you have sufficient disk space for browser downloads
+   - Try running with DEBUG logging to see browser automation details
+   - Verify your network connection is stable
+
+10. **Walmart multi-transaction orders not matching**
+   - Verify that all related transactions are within 7 days of each other
+   - Check that the sum of transaction amounts matches the order total
+   - Ensure all transactions have Walmart-related payee names
+   - Review the Charge History in your Walmart order to confirm final charge amounts
+
+11. **API Rate Limits**
    - YNAB has rate limits; the application includes delays between requests
    - If you get rate limit errors, wait a few minutes and try again
 
@@ -329,11 +436,14 @@ YNABAmazonTransactionUpdater/
 │   │   │   ├── model/
 │   │   │   │   ├── YNABTransaction.groovy          # YNAB transaction model
 │   │   │   │   ├── AmazonOrder.groovy              # Amazon order model
+│   │   │   │   ├── WalmartOrder.groovy             # Walmart order model
 │   │   │   │   └── TransactionMatch.groovy         # Match result model
 │   │   │   └── service/
 │   │   │       ├── YNABService.groovy              # YNAB API service
 │   │   │       ├── AmazonService.groovy            # Amazon data orchestration
 │   │   │       ├── AmazonOrderFetcher.groovy       # Email parsing service
+│   │   │       ├── WalmartService.groovy           # Walmart data orchestration
+│   │   │       ├── WalmartOrderFetcher.groovy      # Browser automation service
 │   │   │       ├── TransactionMatcher.groovy       # Matching logic
 │   │   │       └── TransactionProcessor.groovy     # Processing logic
 │   │   └── resources/

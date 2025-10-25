@@ -136,7 +136,7 @@
   - Verify YNAB transaction updates in dry-run mode
   - _Requirements: 7.3, 7.4, 7.5_
 
-- [ ] 8. Update configuration files and documentation
+- [x] 8. Update configuration files and documentation
   - Add Walmart configuration section to config.example.yml with example values
   - Update README.md with Walmart integration instructions
   - Document Walmart-specific configuration options (email, password, enabled, browser_timeout)

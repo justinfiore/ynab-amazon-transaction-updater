@@ -4,7 +4,8 @@
 - Java 11 or higher installed
 - YNAB API key
 - YNAB Account ID
-- Amazon order history CSV export
+- Amazon order history CSV export (or email credentials)
+- (Optional) Walmart account credentials for Walmart integration
 
 ## 5-Minute Setup
 

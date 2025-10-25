@@ -1,4 +1,4 @@
-# Example configuration file for YNAB Amazon Transaction Updater
+# Example configuration file for YNAB Transaction Updater
 # Copy this file to config.yml and update with your actual values
 
 # YNAB Configuration
@@ -55,6 +55,11 @@ app:
 # amazon:
 #   email: "your.email@example.com"
 #   csv_file_path: "my_amazon_orders.csv"
+# 
+# walmart:
+#   enabled: true
+#   email: "your.walmart.email@example.com"
+#   password: "your_secure_walmart_password"
 # 
 # app:
 #   processed_transactions_file: "processed_transactions.json"
