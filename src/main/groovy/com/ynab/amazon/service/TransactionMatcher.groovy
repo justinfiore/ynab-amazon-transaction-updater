@@ -152,7 +152,8 @@ class TransactionMatcher {
         
         // Amount must match exactly for high confidence
         if (transaction.getAmountInDollars() && order.totalAmount) {
-            if (Math.abs(transaction.getAmountInDollars() - order.totalAmount) > 0.01) {
+            // YNAB stores expenses as negative, Amazon orders are positive
+            if (Math.abs(Math.abs(transaction.getAmountInDollars()) - order.totalAmount) > 0.01) {
                 return 0.0  // No match if amounts don't match exactly
             }
             score += 0.7  // Full points for amount match
@@ -368,7 +369,8 @@ class TransactionMatcher {
         List<String> reasons = []
         
         if (transaction.amount && order.totalAmount) {
-            double amountDiff = Math.abs(transaction.getAmountInDollars() - order.totalAmount)
+            // YNAB stores expenses as negative, Amazon orders are positive
+            double amountDiff = Math.abs(Math.abs(transaction.getAmountInDollars()) - order.totalAmount)
             if (amountDiff < 0.01) {
                 reasons.add("exact amount match")
             } else if (amountDiff < 1.0) {
@@ -401,12 +403,16 @@ class TransactionMatcher {
             !isAlreadyProcessed(it) && isPotentialWalmartTransaction(it) 
         }
         
+        // Filter to only delivered orders
+        List<WalmartOrder> deliveredOrders = orders.findAll { it.isDelivered() }
+        
         logger.info("Found ${ynabTransactionsToMatch.size()} Walmart transactions to match")
+        logger.info("Found ${deliveredOrders.size()} delivered Walmart orders")
         
         // First, try single transaction matches
         List<YNABTransaction> unmatchedTransactions = []
         ynabTransactionsToMatch.each { transaction ->
-            TransactionMatch match = findSingleTransactionMatch(transaction, orders)
+            TransactionMatch match = findSingleTransactionMatch(transaction, deliveredOrders)
             if (match) {
                 matches.add(match)
             } else {
@@ -417,7 +423,7 @@ class TransactionMatcher {
         logger.info("Found ${matches.size()} single-transaction Walmart matches")
         
         // Then, try multi-transaction matches for remaining transactions
-        List<WalmartOrder> multiChargeOrders = orders.findAll { it.hasMultipleCharges() }
+        List<WalmartOrder> multiChargeOrders = deliveredOrders.findAll { it.hasMultipleCharges() }
         if (!unmatchedTransactions.isEmpty() && !multiChargeOrders.isEmpty()) {
             List<TransactionMatch> multiMatches = findMultiTransactionMatches(unmatchedTransactions, multiChargeOrders)
             matches.addAll(multiMatches)
@@ -453,16 +459,18 @@ class TransactionMatcher {
         double score = 0.0
         
         // Amount must match exactly for high confidence
-        // YNAB stores expenses as negative, so use absolute value
+        // YNAB stores expenses as negative, Walmart orders are expenses (negative)
+        // Compare directly without abs() to properly handle returns (positive amounts)
         if (transaction.getAmountInDollars() && order.totalAmount) {
-            double transactionAmount = Math.abs(transaction.getAmountInDollars())
-            double amountDiff = Math.abs(transactionAmount - order.totalAmount)
+            double transactionAmount = transaction.getAmountInDollars()
+            double orderAmount = -order.totalAmount  // Walmart orders are expenses (negative)
+            double amountDiff = Math.abs(transactionAmount - orderAmount)
             if (amountDiff > 0.01) {
                 // For single transaction match, check if it matches any of the final charge amounts
                 boolean matchesAnyCharge = false
                 if (order.finalChargeAmounts) {
                     matchesAnyCharge = order.finalChargeAmounts.any { charge ->
-                        Math.abs(transactionAmount - charge) < 0.01
+                        Math.abs(transactionAmount - (-charge)) < 0.01
                     }
                 }
                 
@@ -482,7 +490,7 @@ class TransactionMatcher {
             if (daysDiff > MAX_MATCH_DAYS_DIFFERENCE) {
                 return 0.0
             }
-            double dateScore = Math.abs(0.0, 1.0 - (daysDiff / 7.0))  // Within 7 days
+            double dateScore = Math.max(0.0, 1.0 - (daysDiff / 7.0))  // Within 7 days
             score += dateScore * 0.2
         }
         
@@ -540,15 +548,18 @@ class TransactionMatcher {
     private String generateWalmartMatchReason(YNABTransaction transaction, WalmartOrder order, double score) {
         List<String> reasons = []
         
+        // YNAB stores expenses as negative, Walmart orders are expenses (negative)
         if (transaction.amount && order.totalAmount) {
-            double amountDiff = Math.abs(transaction.getAmountInDollars() - order.totalAmount)
+            double transactionAmount = transaction.getAmountInDollars()
+            double orderAmount = -order.totalAmount  // Walmart orders are expenses (negative)
+            double amountDiff = Math.abs(transactionAmount - orderAmount)
             if (amountDiff < 0.01) {
                 reasons.add("exact amount match")
             } else {
                 // Check if it matches a charge amount
                 if (order.finalChargeAmounts) {
                     boolean matchesCharge = order.finalChargeAmounts.any { charge ->
-                        Math.abs(transaction.getAmountInDollars() - charge) < 0.01
+                        Math.abs(transactionAmount - (-charge)) < 0.01
                     }
                     if (matchesCharge) {
                         reasons.add("matches charge amount")
@@ -598,10 +609,12 @@ class TransactionMatcher {
                 }
                 
                 // Calculate the sum of transaction amounts in this group
+                // YNAB stores expenses as negative, Walmart orders are expenses (negative)
                 BigDecimal groupSum = group.sum { it.getAmountInDollars() } as BigDecimal
+                BigDecimal orderAmount = -order.totalAmount  // Walmart orders are expenses (negative)
                 
                 // Check if the sum matches the order total
-                if (Math.abs(groupSum - order.totalAmount) < 0.01) {
+                if (Math.abs(groupSum - orderAmount) < 0.01) {
                     // Verify all transactions are within date range of order
                     boolean allWithinDateRange = group.every { transaction ->
                         int daysDiff = calculateDaysDifference(transaction.date, order.orderDate)
@@ -696,9 +709,10 @@ class TransactionMatcher {
         double score = 0.0
         
         // Amount match (50% weight)
-        // YNAB stores expenses as negative, so use absolute value
-        BigDecimal transactionSum = transactions.sum { Math.abs(it.getAmountInDollars()) } as BigDecimal
-        if (Math.abs(transactionSum - order.totalAmount) < 0.01) {
+        // YNAB stores expenses as negative, Walmart orders are expenses (negative)
+        BigDecimal transactionSum = transactions.sum { it.getAmountInDollars() } as BigDecimal
+        BigDecimal orderAmount = -order.totalAmount  // Walmart orders are expenses (negative)
+        if (Math.abs(transactionSum - orderAmount) < 0.01) {
             score += 0.5
         } else {
             return 0.0  // No match if amounts don't match
@@ -749,8 +763,10 @@ class TransactionMatcher {
     private String generateMultiTransactionMatchReason(List<YNABTransaction> transactions, WalmartOrder order, double score) {
         List<String> reasons = []
         
+        // YNAB stores expenses as negative, Walmart orders are expenses (negative)
         BigDecimal transactionSum = transactions.sum { it.getAmountInDollars() } as BigDecimal
-        if (Math.abs(transactionSum - order.totalAmount) < 0.01) {
+        BigDecimal orderAmount = -order.totalAmount  // Walmart orders are expenses (negative)
+        if (Math.abs(transactionSum - orderAmount) < 0.01) {
             reasons.add("sum matches order total (${transactions.size()} charges)")
         }
         

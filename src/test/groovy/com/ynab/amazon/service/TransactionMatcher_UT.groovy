@@ -448,7 +448,7 @@ class TransactionMatcher_UT extends Specification {
         return new YNABTransaction(
             id: id,
             date: date,
-            amount: (amount * 1000).longValue(),  // Convert to milliunits
+            amount: -(amount * 1000).longValue(),  // Convert to milliunits and make negative for expenses
             payee_name: payeeName,
             memo: memo,
             cleared: "cleared",
@@ -479,7 +479,9 @@ class TransactionMatcher_UT extends Specification {
     def "findWalmartMatches should return empty list when no transactions provided"() {
         given: "empty list of transactions and some Walmart orders"
         def transactions = []
-        def orders = [createSampleWalmartOrder("1234", "2023-05-15", 25.99)]
+        def order = createSampleWalmartOrder("1234", "2023-05-15", 25.99)
+        order.orderStatus = "Delivered"
+        def orders = [order]
         
         when: "findWalmartMatches is called"
         def result = matcher.findWalmartMatches(transactions, orders)
@@ -508,9 +510,9 @@ class TransactionMatcher_UT extends Specification {
             createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART")
         ]
         
-        def orders = [
-            createSampleWalmartOrder("1234", "2023-05-15", 25.99)
-        ]
+        def order = createSampleWalmartOrder("1234", "2023-05-15", 25.99)
+        order.orderStatus = "Delivered"  // Make sure it's delivered
+        def orders = [order]
         
         when: "findWalmartMatches is called"
         def matches = matcher.findWalmartMatches(transactions, orders)
@@ -529,6 +531,7 @@ class TransactionMatcher_UT extends Specification {
         ]
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        order.orderStatus = "Delivered"  // Make sure it's delivered
         order.addFinalCharge(100.00)
         order.addFinalCharge(50.00)
         def orders = [order]
@@ -550,6 +553,7 @@ class TransactionMatcher_UT extends Specification {
         ]
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        order.orderStatus = "Delivered"  // Make sure it's delivered
         order.addFinalCharge(100.00)
         order.addFinalCharge(50.00)
         def orders = [order]
@@ -560,7 +564,7 @@ class TransactionMatcher_UT extends Specification {
         then: "both transactions should be matched (either as single or multi-transaction)"
         matches.size() >= 1
         // Verify both transactions are matched
-        def matchedTxIds = matches.collectMany { it.transactions }.collect { it.id }
+        def matchedTxIds = matches.collectMany { it.transactions ?: [it.ynabTransaction] }.collect { it.id }
         matchedTxIds.contains("tx1")
         matchedTxIds.contains("tx2")
         matches.every { it.walmartOrder.orderId == "1234" }
@@ -575,6 +579,7 @@ class TransactionMatcher_UT extends Specification {
         ]
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        order.orderStatus = "Delivered"  // Make sure it's delivered
         order.addFinalCharge(50.00)
         order.addFinalCharge(50.00)
         order.addFinalCharge(50.00)
@@ -586,7 +591,7 @@ class TransactionMatcher_UT extends Specification {
         then: "all three transactions should be matched"
         matches.size() >= 1
         // Verify all three transactions are matched
-        def matchedTxIds = matches.collectMany { it.transactions }.collect { it.id }
+        def matchedTxIds = matches.collectMany { it.transactions ?: [it.ynabTransaction] }.collect { it.id }
         matchedTxIds.contains("tx1")
         matchedTxIds.contains("tx2")
         matchedTxIds.contains("tx3")
@@ -601,6 +606,7 @@ class TransactionMatcher_UT extends Specification {
         ]
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        order.orderStatus = "Delivered"  // Make sure it's delivered
         // Final charges are different from transaction amounts
         order.addFinalCharge(100.00)
         order.addFinalCharge(50.00)
@@ -622,9 +628,9 @@ class TransactionMatcher_UT extends Specification {
             createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART")
         ]
         
-        def orders = [
-            createSampleWalmartOrder("1234", "2023-05-15", 26.99)
-        ]
+        def order = createSampleWalmartOrder("1234", "2023-05-15", 26.99)
+        order.orderStatus = "Delivered"
+        def orders = [order]
         
         when: "findWalmartMatches is called"
         def matches = matcher.findWalmartMatches(transactions, orders)
@@ -639,9 +645,9 @@ class TransactionMatcher_UT extends Specification {
             createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART")
         ]
         
-        def orders = [
-            createSampleWalmartOrder("1234", "2023-06-15", 25.99)  // One month later
-        ]
+        def order = createSampleWalmartOrder("1234", "2023-06-15", 25.99)  // One month later
+        order.orderStatus = "Delivered"
+        def orders = [order]
         
         when: "findWalmartMatches is called"
         def matches = matcher.findWalmartMatches(transactions, orders)
@@ -657,10 +663,11 @@ class TransactionMatcher_UT extends Specification {
             createSampleTransaction("tx2", "2023-05-20", 49.99, "AMAZON.COM")
         ]
         
-        def orders = [
-            createSampleWalmartOrder("1234", "2023-05-15", 25.99),
-            createSampleWalmartOrder("5678", "2023-05-20", 49.99)
-        ]
+        def order1 = createSampleWalmartOrder("1234", "2023-05-15", 25.99)
+        order1.orderStatus = "Delivered"
+        def order2 = createSampleWalmartOrder("5678", "2023-05-20", 49.99)
+        order2.orderStatus = "Delivered"
+        def orders = [order1, order2]
         
         when: "findWalmartMatches is called"
         def matches = matcher.findWalmartMatches(transactions, orders)
@@ -679,6 +686,7 @@ class TransactionMatcher_UT extends Specification {
         ]
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        order.orderStatus = "Delivered"
         order.addFinalCharge(100.00)
         order.addFinalCharge(50.00)
         def orders = [order]
@@ -688,7 +696,7 @@ class TransactionMatcher_UT extends Specification {
         
         then: "no multi-transaction match should be found"
         // May find single transaction match for tx1 if it matches a charge amount
-        matches.every { it.transactions.size() == 1 }
+        matches.every { (it.transactions ?: [it.ynabTransaction]).size() == 1 }
     }
     
     def "findWalmartMatches should not match transactions too far apart in time"() {
@@ -699,6 +707,7 @@ class TransactionMatcher_UT extends Specification {
         ]
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        order.orderStatus = "Delivered"
         order.addFinalCharge(100.00)
         order.addFinalCharge(50.00)
         def orders = [order]
@@ -708,7 +717,7 @@ class TransactionMatcher_UT extends Specification {
         
         then: "no multi-transaction match should be found"
         // May find single transaction match for tx1
-        matches.every { it.transactions.size() == 1 }
+        matches.every { (it.transactions ?: [it.ynabTransaction]).size() == 1 }
     }
     
     @Unroll
@@ -788,6 +797,7 @@ class TransactionMatcher_UT extends Specification {
         given: "a transaction and order with exact amount and same date"
         def transaction = createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART")
         def order = createSampleWalmartOrder("1234", "2023-05-15", 25.99)
+        order.orderStatus = "Delivered"
         
         when: "calculateWalmartMatchScore is called"
         def method = TransactionMatcher.getDeclaredMethod("calculateWalmartMatchScore", 
@@ -806,6 +816,7 @@ class TransactionMatcher_UT extends Specification {
             createSampleTransaction("tx2", "2023-05-16", 50.00, "WALMART")
         ]
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
+        order.orderStatus = "Delivered"
         
         when: "calculateMultiTransactionMatchScore is called"
         def method = TransactionMatcher.getDeclaredMethod("calculateMultiTransactionMatchScore", 
@@ -819,20 +830,20 @@ class TransactionMatcher_UT extends Specification {
     
     // Helper method to create Walmart order
     private com.ynab.amazon.model.WalmartOrder createSampleWalmartOrder(String orderId, String orderDate, BigDecimal totalAmount) {
-        return new com.ynab.amazon.model.WalmartOrder(
-            orderId: orderId,
-            orderDate: orderDate,
-            orderStatus: "Delivered",
-            totalAmount: totalAmount
-        )
+        def order = new com.ynab.amazon.model.WalmartOrder()
+        order.orderId = orderId
+        order.orderDate = orderDate
+        order.orderStatus = "Delivered"
+        order.totalAmount = totalAmount
+        return order
     }
     
     // Helper method to create Walmart order item
     private com.ynab.amazon.model.WalmartOrderItem createSampleWalmartOrderItem(String title, BigDecimal price, int quantity) {
-        return new com.ynab.amazon.model.WalmartOrderItem(
-            title: title,
-            price: price,
-            quantity: quantity
-        )
+        def item = new com.ynab.amazon.model.WalmartOrderItem()
+        item.title = title
+        item.price = price
+        item.quantity = quantity
+        return item
     }
 }
