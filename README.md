@@ -14,7 +14,7 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
   - Automatic refund detection and processing with positive amounts
 - **Walmart Integration:**
   - Browser automation to fetch order history
-  - Multi-transaction order support (handles orders split into multiple charges)
+  - Individual charge matching (matches transactions to specific final charge amounts)
   - Automatic filtering of delivered orders only
   - Extracts final charges (ignores temporary holds)
   - Direct links to Walmart order details pages
@@ -111,7 +111,7 @@ How it works:
 
 **Important Notes:**
 - Only "Delivered" orders are processed
-- Multi-transaction orders (orders split into multiple charges) are automatically detected and matched
+- Orders with multiple charges are handled by matching each transaction to individual final charge amounts
 - The application extracts only "Final Order Charges" from the Charge History, ignoring "Temporary Hold" charges
 - Browser automation typically takes 10-15 seconds per fetch
 
@@ -180,14 +180,12 @@ java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
    - **Walmart**: Uses browser automation to fetch order history from walmart.com (if enabled)
 4. **Transaction Matching**: Uses intelligent algorithms to match YNAB transactions with retailer orders:
    - **Amazon**: Amount (40%), Date (30%), Payee (20%), Memo (10%)
-   - **Walmart Single Transaction**: Amount (70%), Date (20%), Payee (10%)
-   - **Walmart Multi-Transaction**: Amount match (50%), Date proximity (30%), Payee consistency (20%)
+   - **Walmart**: Amount (70%), Date (20%), Payee (10%) - matches individual transactions to specific final charge amounts
 5. **Memo Updates**: Updates matched transactions with product summaries:
    - **Amazon Regular**: "Product Name" or "3 items: Product A, Product B, Product C"
    - **Amazon Subscribe & Save**: "S&S: Product Name" or "S&S: 3 items: Product A, Product B, Product C"
    - **Amazon Refunds**: "REFUND: Product Name" with positive amounts
-   - **Walmart Single**: "[existing memo] | Walmart Order: [order_number] - [product_summary]"
-   - **Walmart Multi-Transaction**: "[existing memo] | Walmart Order: [order_number] (Charge X of Y) - [product_summary]"
+   - **Walmart**: "[existing memo] | Walmart Order: [order_number] - [product_summary]"
 6. **Tracking**: Maintains a list of processed transactions to avoid duplicates
 
 ## Amazon Subscribe & Save Support
@@ -213,16 +211,15 @@ The application automatically detects and processes Amazon refund notifications 
 
 This ensures refunds are properly tracked in your budget without manual intervention.
 
-## Walmart Multi-Transaction Order Support
+## Walmart Individual Charge Matching
 
-Walmart often splits a single order into multiple credit card charges. The application automatically handles this:
+Walmart often splits a single order into multiple credit card charges. The application handles this by matching each YNAB transaction to individual final charge amounts:
 
 **How it works:**
 1. Fetches Walmart orders and extracts the "Charge History" for each order
 2. Identifies only "Final Order Charges" (ignores "Temporary Hold" charges)
-3. Groups YNAB transactions by date proximity (within 7 days)
-4. Matches transaction groups where the sum equals the order total
-5. Updates all related transactions with the same Walmart order link
+3. Matches each YNAB transaction to a specific final charge amount from any order
+4. Updates matched transactions with Walmart order information
 
 **Example:**
 - Walmart Order #123: Total $150.00, Status: "Delivered"
@@ -233,7 +230,7 @@ Walmart often splits a single order into multiple credit card charges. The appli
 - YNAB Transactions:
   - Transaction A: -$100.00, 2024-01-15, "WALMART.COM"
   - Transaction B: -$50.00, 2024-01-16, "WALMART.COM"
-- Result: Both transactions updated with "Walmart Order: 123 (Charge 1 of 2)" and "Walmart Order: 123 (Charge 2 of 2)"
+- Result: Both transactions updated with "Walmart Order: 123 - [product_summary]"
 
 ## CSV Format
 
@@ -327,15 +324,10 @@ The application uses a weighted scoring system to match transactions:
 - **Payee Matching (20%)**: Looks for Amazon-related payee names
 - **Memo Matching (10%)**: Checks for Amazon references in existing memos
 
-### Walmart Single Transaction Matching
-- **Amount Matching (70%)**: Compares transaction amount with order total
+### Walmart Individual Charge Matching
+- **Amount Matching (70%)**: Compares transaction amount with individual final charge amounts
 - **Date Matching (20%)**: Checks if dates are within 7 days of each other
 - **Payee Matching (10%)**: Looks for Walmart-related payee names
-
-### Walmart Multi-Transaction Matching
-- **Amount Matching (50%)**: Sum of transactions matches order total
-- **Date Proximity (30%)**: All transactions within date range of order
-- **Payee Consistency (20%)**: All transactions have Walmart payee
 
 Confidence thresholds:
 - High confidence (≥80%): Automatically updated
@@ -395,10 +387,10 @@ Confidence thresholds:
    - Try running with DEBUG logging to see browser automation details
    - Verify your network connection is stable
 
-10. **Walmart multi-transaction orders not matching**
-   - Verify that all related transactions are within 7 days of each other
-   - Check that the sum of transaction amounts matches the order total
-   - Ensure all transactions have Walmart-related payee names
+10. **Walmart transactions not matching**
+   - Verify that transaction amounts match individual final charge amounts (not order totals)
+   - Check that transaction dates are within 7 days of the order date
+   - Ensure transactions have Walmart-related payee names
    - Review the Charge History in your Walmart order to confirm final charge amounts
 
 11. **API Rate Limits**
