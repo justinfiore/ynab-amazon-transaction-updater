@@ -104,7 +104,7 @@ class TransactionMatcher_UT extends Specification {
     def "findMatches should match Amazon returns with transaction date up to 7 days after order date"() {
         given: "a return order and transaction 5 days later"
         def transactions = [
-            createSampleTransaction("tx1", "2023-05-20", 25.99, "AMAZON.COM")  // 5 days after order
+            createSampleReturnTransaction("tx1", "2023-05-20", 25.99, "AMAZON.COM")  // 5 days after order (return/inflow)
         ]
         
         def orders = [
@@ -124,7 +124,7 @@ class TransactionMatcher_UT extends Specification {
     def "findMatches should match Amazon returns with transaction date exactly 7 days after order date"() {
         given: "a return order and transaction exactly 7 days later"
         def transactions = [
-            createSampleTransaction("tx1", "2023-05-22", 25.99, "AMAZON.COM")  // Exactly 7 days after
+            createSampleReturnTransaction("tx1", "2023-05-22", 25.99, "AMAZON.COM")  // Exactly 7 days after (return/inflow)
         ]
         
         def orders = [
@@ -142,7 +142,7 @@ class TransactionMatcher_UT extends Specification {
     def "findMatches should match Amazon returns with transaction date 10 days after order date with lower confidence"() {
         given: "a return order and transaction 10 days later"
         def transactions = [
-            createSampleTransaction("tx1", "2023-05-25", 25.99, "AMAZON.COM")  // 10 days after
+            createSampleReturnTransaction("tx1", "2023-05-25", 25.99, "AMAZON.COM")  // 10 days after (return/inflow)
         ]
         
         def orders = [
@@ -161,7 +161,7 @@ class TransactionMatcher_UT extends Specification {
     def "findMatches should not match Amazon returns with transaction date more than 21 days after order date"() {
         given: "a return order and transaction 22 days later"
         def transactions = [
-            createSampleTransaction("tx1", "2023-06-06", 25.99, "AMAZON.COM")  // 22 days after
+            createSampleReturnTransaction("tx1", "2023-06-06", 25.99, "AMAZON.COM")  // 22 days after (return/inflow)
         ]
         
         def orders = [
@@ -196,7 +196,7 @@ class TransactionMatcher_UT extends Specification {
     def "findMatches should handle returns normally when transaction is before order date"() {
         given: "a return order and transaction 3 days before order date"
         def transactions = [
-            createSampleTransaction("tx1", "2023-05-12", 25.99, "AMAZON.COM")  // 3 days before
+            createSampleReturnTransaction("tx1", "2023-05-12", 25.99, "AMAZON.COM")  // 3 days before (return/inflow)
         ]
         
         def orders = [
@@ -209,6 +209,94 @@ class TransactionMatcher_UT extends Specification {
         then: "match should be found with normal date scoring (no grace period applied)"
         matches.size() == 1
         matches[0].confidenceScore <= 0.92  // Normal confidence for 3-day difference (allowing for calculation precision)
+    }
+    
+    def "findMatches should NOT match returns with expense transactions (sign validation)"() {
+        given: "a return order and a negative YNAB transaction (expense)"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 25.99, "AMAZON.COM")  // Negative (expense)
+        ]
+        
+        def orders = [
+            createSampleReturnOrder("1234", "2023-05-15", 25.99)  // Positive return
+        ]
+        
+        when: "findMatches is called"
+        def matches = matcher.findMatches(transactions, orders)
+        
+        then: "no match should be found due to sign mismatch"
+        matches.isEmpty()
+    }
+    
+    def "findMatches should NOT match orders with inflow transactions (sign validation)"() {
+        given: "a regular order and a positive YNAB transaction (inflow)"
+        def transactions = [
+            createSampleReturnTransaction("tx1", "2023-05-15", 25.99, "AMAZON.COM")  // Positive (inflow)
+        ]
+        
+        def orders = [
+            createSampleOrder("1234", "2023-05-15", 25.99)  // Negative order
+        ]
+        
+        when: "findMatches is called"
+        def matches = matcher.findMatches(transactions, orders)
+        
+        then: "no match should be found due to sign mismatch"
+        matches.isEmpty()
+    }
+    
+    def "findMatches should match amounts that differ in 3rd decimal place (rounding to cents)"() {
+        given: "a transaction and order that match when rounded to cents"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 25.993, "AMAZON.COM")  // -25.993, rounds to -25.99
+        ]
+        
+        def orders = [
+            createSampleOrder("1234", "2023-05-15", 25.994)  // -25.994, rounds to -25.99
+        ]
+        
+        when: "findMatches is called"
+        def matches = matcher.findMatches(transactions, orders)
+        
+        then: "match should be found since amounts round to same cents"
+        matches.size() == 1
+        matches[0].matchReason.contains("exact amount match")
+    }
+    
+    def "findMatches should report close match when amounts differ slightly but not to the cent"() {
+        given: "a transaction and order that differ in 3rd decimal but round differently"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 25.994, "AMAZON.COM")  // -25.994, rounds to -25.99
+        ]
+        
+        def orders = [
+            createSampleOrder("1234", "2023-05-15", 25.996)  // -25.996, rounds to -26.00
+        ]
+        
+        when: "findMatches is called"
+        def matches = matcher.findMatches(transactions, orders)
+        
+        then: "match should be found but as close match, not exact"
+        matches.size() == 1
+        matches[0].matchReason.contains("close amount match")
+        !matches[0].matchReason.contains("exact amount match")
+    }
+    
+    def "findMatches should NOT match when amounts differ by more than tolerance"() {
+        given: "a transaction and order that differ by more than one dollar"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-15", 25.99, "AMAZON.COM")  // -25.99
+        ]
+        
+        def orders = [
+            createSampleOrder("1234", "2023-05-15", 27.00)  // -27.00, differs by more than $1
+        ]
+        
+        when: "findMatches is called"
+        def matches = matcher.findMatches(transactions, orders)
+        
+        then: "no match should be found since amounts differ by more than tolerance"
+        matches.isEmpty()
     }
     
     def "findMatches should ignore already processed transactions"() {
@@ -456,11 +544,23 @@ class TransactionMatcher_UT extends Specification {
         )
     }
     
+    private YNABTransaction createSampleReturnTransaction(String id, String date, BigDecimal amount, String payeeName, String memo = null) {
+        return new YNABTransaction(
+            id: id,
+            date: date,
+            amount: (amount * 1000).longValue(),  // Convert to milliunits and keep positive for inflows (returns)
+            payee_name: payeeName,
+            memo: memo,
+            cleared: "cleared",
+            approved: "true"
+        )
+    }
+    
     private AmazonOrder createSampleOrder(String orderId, String orderDate, BigDecimal totalAmount) {
         return new AmazonOrder(
             orderId: orderId,
             orderDate: orderDate,
-            totalAmount: totalAmount,
+            totalAmount: -totalAmount,  // Negative for expenses/orders
             isReturn: false
         )
     }
@@ -469,7 +569,7 @@ class TransactionMatcher_UT extends Specification {
         return new AmazonOrder(
             orderId: orderId,
             orderDate: orderDate,
-            totalAmount: totalAmount,
+            totalAmount: totalAmount,  // Positive for returns
             isReturn: true
         )
     }
