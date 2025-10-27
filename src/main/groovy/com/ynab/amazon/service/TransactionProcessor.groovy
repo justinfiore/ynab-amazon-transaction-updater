@@ -355,6 +355,11 @@ class TransactionProcessor {
      * Save list of processed transaction IDs
      */
     private void saveProcessedTransactions() {
+        if (!config.processedTransactionsFile) {
+            logger.debug("No processed transactions file configured, skipping save")
+            return
+        }
+        
         try {
             def data = [
                 processed_transaction_ids: processedTransactionIds.toList(),

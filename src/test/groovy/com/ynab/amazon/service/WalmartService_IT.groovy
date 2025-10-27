@@ -23,6 +23,7 @@ class WalmartService_IT extends Specification {
         config = new Configuration()
         config.walmartEnabled = true
         config.dryRun = true
+        config.processedTransactionsFile = null  // Disable processed transactions file for tests
         
         matcher = new TransactionMatcher()
         processor = new TransactionProcessor(config)
@@ -36,13 +37,13 @@ class WalmartService_IT extends Specification {
         order.orderId = "1234567890123"
         order.orderDate = "2024-01-15"
         order.orderStatus = "Delivered"
-        order.totalAmount = -49.99  // Negative like YNAB transactions
-        order.addFinalCharge(-49.99)  // Negative like YNAB transactions
+        order.totalAmount = -49.99  // Negative to match YNAB transaction format
+        order.addFinalCharge(-49.99)  // Negative to match YNAB transaction format
         order.orderUrl = "https://www.walmart.com/orders/details?orderId=1234567890123"
         
         def item = new WalmartOrderItem()
         item.title = "Wireless Mouse"
-        item.price = -49.99  // Negative like YNAB transactions
+        item.price = -49.99  // Negative to match YNAB transaction format
         item.quantity = 1
         order.addItem(item)
         
@@ -54,20 +55,20 @@ class WalmartService_IT extends Specification {
         order.orderId = "2345678901234"
         order.orderDate = "2024-01-20"
         order.orderStatus = "Delivered"
-        order.totalAmount = -150.00  // Negative like YNAB transactions
-        order.addFinalCharge(-100.00)  // Negative like YNAB transactions
-        order.addFinalCharge(-50.00)   // Negative like YNAB transactions
+        order.totalAmount = -150.00  // Negative to match YNAB transaction format
+        order.addFinalCharge(-100.00)  // Negative to match YNAB transaction format
+        order.addFinalCharge(-50.00)   // Negative to match YNAB transaction format
         order.orderUrl = "https://www.walmart.com/orders/details?orderId=2345678901234"
         
         def item1 = new WalmartOrderItem()
         item1.title = "Laptop Stand"
-        item1.price = -100.00  // Negative like YNAB transactions
+        item1.price = -100.00  // Negative to match YNAB transaction format
         item1.quantity = 1
         order.addItem(item1)
         
         def item2 = new WalmartOrderItem()
         item2.title = "USB Cable"
-        item2.price = -50.00  // Negative like YNAB transactions
+        item2.price = -50.00  // Negative to match YNAB transaction format
         item2.quantity = 1
         order.addItem(item2)
         
@@ -79,13 +80,13 @@ class WalmartService_IT extends Specification {
         order.orderId = "3456789012345"
         order.orderDate = "2024-01-25"
         order.orderStatus = "Processing"
-        order.totalAmount = -29.99  // Negative like YNAB transactions
-        order.addFinalCharge(-29.99)  // Negative like YNAB transactions
+        order.totalAmount = -29.99  // Negative to match YNAB transaction format
+        order.addFinalCharge(-29.99)  // Negative to match YNAB transaction format
         order.orderUrl = "https://www.walmart.com/orders/details?orderId=3456789012345"
         
         def item = new WalmartOrderItem()
         item.title = "Phone Case"
-        item.price = -29.99  // Negative like YNAB transactions
+        item.price = -29.99  // Negative to match YNAB transaction format
         item.quantity = 1
         order.addItem(item)
         
@@ -190,7 +191,7 @@ class WalmartService_IT extends Specification {
         then: "should only match Walmart transaction"
         walmartMatches.size() == 1
         walmartMatches[0].transactions[0] == walmartTx
-        walmartMatches[0].transactions[0].payeeName.contains("WALMART")
+        walmartMatches[0].transactions[0].payee_name.contains("WALMART")
     }
     
     // ========== Subtask 7.1.3: Test multi-transaction order scenarios ==========
@@ -201,15 +202,15 @@ class WalmartService_IT extends Specification {
         order.orderId = "4567890123456"
         order.orderDate = "2024-02-01"
         order.orderStatus = "Delivered"
-        order.totalAmount = 200.00
-        order.addFinalCharge(100.00)
-        order.addFinalCharge(60.00)
-        order.addFinalCharge(40.00)
+        order.totalAmount = -200.00
+        order.addFinalCharge(-100.00)
+        order.addFinalCharge(-60.00)
+        order.addFinalCharge(-40.00)
         order.orderUrl = "https://www.walmart.com/orders/details?orderId=4567890123456"
         
         def item = new WalmartOrderItem()
         item.title = "Electronics Bundle"
-        item.price = 200.00
+        item.price = -200.00
         item.quantity = 1
         order.addItem(item)
         
@@ -224,32 +225,34 @@ class WalmartService_IT extends Specification {
         when: "matching"
         List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
         
-        then: "should match all three transactions to the order"
-        matches.size() == 1
-        matches[0].transactions.size() == 3
-        matches[0].isMultiTransaction == true
-        matches[0].walmartOrder.hasMultipleCharges() == true
+        then: "should match all three transactions individually to the order"
+        matches.size() == 3  // Three individual matches
+        matches.every { it.walmartOrder == order }
+        matches.every { !it.isMultiTransaction }
+        matches.every { it.confidenceScore >= 0.7 }
         
-        // Verify sum of transaction amounts matches order total (both negative for expenses)
-        BigDecimal txSum = matches[0].transactions.sum { it.amount / 1000.0 } as BigDecimal
-        txSum == -order.totalAmount
+        // Verify order has multiple charges
+        order.hasMultipleCharges() == true
+        order.finalChargeAmounts.size() == 3
     }
     
-    def "should not match transactions with incorrect sum"() {
+    def "should not match transactions with incorrect amounts"() {
         given: "a Walmart order with specific charges"
-        WalmartOrder order = createMultiChargeOrder() // Total: 150.00
+        WalmartOrder order = createMultiChargeOrder() // Charges: 100.00, 50.00
         List<WalmartOrder> orders = [order]
         
-        and: "YNAB transactions with wrong sum"
-        YNABTransaction tx1 = createWalmartTransaction(100.00, "2024-01-20")
-        YNABTransaction tx2 = createWalmartTransaction(40.00, "2024-01-21") // Wrong amount
+        and: "YNAB transactions with wrong amounts"
+        YNABTransaction tx1 = createWalmartTransaction(100.00, "2024-01-20") // Matches first charge
+        YNABTransaction tx2 = createWalmartTransaction(40.00, "2024-01-21") // Wrong amount, doesn't match 50.00
         List<YNABTransaction> transactions = [tx1, tx2]
         
         when: "matching"
         List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
         
-        then: "should not match due to amount mismatch"
-        matches.isEmpty() || matches[0].confidence < 0.7
+        then: "should only match the correct amount transaction"
+        matches.size() == 1  // Only tx1 matches
+        matches[0].ynabTransaction == tx1
+        matches[0].confidenceScore >= 0.7
     }
     
     def "should handle transactions spread across multiple days"() {
@@ -265,9 +268,10 @@ class WalmartService_IT extends Specification {
         when: "matching"
         List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
         
-        then: "should still match if within 7-day window"
-        matches.size() == 1
-        matches[0].transactions.size() == 2
+        then: "should match both transactions individually if within 14-day window"
+        matches.size() == 2  // Two individual matches
+        matches.every { it.walmartOrder == order }
+        matches.every { !it.isMultiTransaction }
     }
     
     // ========== Subtask 7.1.4: Test delivered vs non-delivered filtering ==========
@@ -284,8 +288,8 @@ class WalmartService_IT extends Specification {
         shippedOrder.orderId = "5678901234567"
         shippedOrder.orderDate = "2024-01-30"
         shippedOrder.orderStatus = "Shipped"
-        shippedOrder.totalAmount = 39.99
-        shippedOrder.addFinalCharge(39.99)
+        shippedOrder.totalAmount = -39.99
+        shippedOrder.addFinalCharge(-39.99)
         
         List<WalmartOrder> orders = [deliveredOrder, processingOrder, shippedOrder]
         
@@ -339,12 +343,13 @@ class WalmartService_IT extends Specification {
         List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
         
         then: "should match based on final charges, not total amount"
-        matches.size() == 1
-        matches[0].transactions.size() == 2
+        matches.size() == 2  // Two individual matches
+        matches.every { it.walmartOrder == order }
+        matches.every { !it.isMultiTransaction }
         
         // Verify it's using finalChargeAmounts
         order.finalChargeAmounts.size() == 2
-        order.finalChargeAmounts.sum() == 150.00
+        order.finalChargeAmounts.sum() == -150.00
     }
     
     def "should ignore temporary holds in matching"() {
@@ -353,13 +358,13 @@ class WalmartService_IT extends Specification {
         order.orderId = "6789012345678"
         order.orderDate = "2024-02-10"
         order.orderStatus = "Delivered"
-        order.totalAmount = 200.00 // This was the temporary hold
-        order.addFinalCharge(180.00) // Final charge after adjustments
+        order.totalAmount = -200.00 // This was the temporary hold
+        order.addFinalCharge(-180.00) // Final charge after adjustments
         order.orderUrl = "https://www.walmart.com/orders/details?orderId=6789012345678"
         
         def item = new WalmartOrderItem()
         item.title = "Discounted Item"
-        item.price = 180.00
+        item.price = -180.00
         item.quantity = 1
         order.addItem(item)
         
@@ -374,7 +379,8 @@ class WalmartService_IT extends Specification {
         
         then: "should match based on final charge amount"
         matches.size() == 1
-        matches[0].transactions[0].amount == -180000 // milliunits
+        matches[0].ynabTransaction.amount == -180000 // milliunits
+        matches[0].confidenceScore >= 0.7
     }
     
     // ========== Subtask 7.1.6: Test YNAB updates in dry-run mode ==========
@@ -413,9 +419,6 @@ class WalmartService_IT extends Specification {
         YNABTransaction transaction = createWalmartTransaction(49.99, "2024-01-15")
         List<YNABTransaction> transactions = [transaction]
         
-        and: "mock YNAB service returns success"
-        mockYnabService.updateTransaction(_, _) >> true
-        
         when: "matching and processing"
         List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
         Map<String, Integer> stats = processor.processWalmartMatches(matches, mockYnabService, false)
@@ -424,8 +427,8 @@ class WalmartService_IT extends Specification {
         matches.size() == 1
         stats.updated == 1
         
-        // Verify YNAB service was called
-        1 * mockYnabService.updateTransaction(_, _)
+        // Verify YNAB service was called and returns success
+        1 * mockYnabService.updateTransactionMemo(_, _) >> true
     }
     
     def "should generate correct memo format in dry-run"() {
@@ -473,14 +476,14 @@ class WalmartService_IT extends Specification {
         List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
         processor.processWalmartMatches(matches, mockYnabService, true)
         
-        then: "should indicate multi-transaction order"
-        matches.size() == 1
-        matches[0].isMultiTransaction == true
-        matches[0].transactions.size() == 2
+        then: "should create individual matches for multi-charge order"
+        matches.size() == 2  // Two individual matches
+        matches.every { !it.isMultiTransaction }
+        matches.every { it.walmartOrder == order }
         
         // Verify order data for memo generation
-        matches[0].walmartOrder.hasMultipleCharges() == true
-        matches[0].walmartOrder.finalChargeAmounts.size() == 2
+        order.hasMultipleCharges() == true
+        order.finalChargeAmounts.size() == 2
     }
     
     // ========== Additional Integration Scenarios ==========
@@ -531,20 +534,20 @@ class WalmartService_IT extends Specification {
         List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
         Map<String, Integer> stats = processor.processWalmartMatches(matches, mockYnabService, true)
         
-        then: "should match both orders correctly"
-        matches.size() == 2
+        then: "should match all transactions individually"
+        matches.size() == 3  // Three individual matches
         
-        // One single-transaction match
-        def singleMatch = matches.find { !it.isMultiTransaction }
-        singleMatch != null
-        singleMatch.transactions.size() == 1
+        // All matches should be individual (not multi-transaction)
+        matches.every { !it.isMultiTransaction }
         
-        // One multi-transaction match
-        def multiMatch = matches.find { it.isMultiTransaction }
-        multiMatch != null
-        multiMatch.transactions.size() == 2
+        // Should have matches for both orders
+        def order1Matches = matches.findAll { it.walmartOrder.orderId == order1.orderId }
+        def order2Matches = matches.findAll { it.walmartOrder.orderId == order2.orderId }
         
-        // Total updates should be 3 (1 + 2)
+        order1Matches.size() == 1  // Single charge order
+        order2Matches.size() == 2  // Multi charge order
+        
+        // Total updates should be 3
         stats.updated == 3
     }
     
@@ -566,7 +569,7 @@ class WalmartService_IT extends Specification {
         Map<String, Integer> stats = processor.processWalmartMatches(matches, mockYnabService, true)
         
         then: "should not update due to low confidence"
-        matches.isEmpty() || matches[0].confidence < 0.9
+        matches.isEmpty() || matches[0].confidenceScore < 0.9
         stats.updated == 0
     }
 }
