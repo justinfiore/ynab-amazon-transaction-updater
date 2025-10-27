@@ -133,18 +133,23 @@ class TransactionMatcher {
             int daysDiff = calculateDaysDifferenceForMatching(transaction, order)
             // Hard cut-off: if dates are too far apart, do not match at all
             if (daysDiff > MAX_MATCH_DAYS_DIFFERENCE) {
+                logger.debug("Date difference ${daysDiff} exceeds max ${MAX_MATCH_DAYS_DIFFERENCE}, rejecting match")
                 return 0.0
             }
             double dateScore = Math.max(0.0, 1.0 - (daysDiff / 7.0))  // Within 7 days
+            logger.debug("Date score calculation: daysDiff=${daysDiff}, dateScore=${dateScore}")
             score += dateScore * 0.2
         }
         
         // Payee name matching (10% weight)
         if (transaction.payee_name && isAmazonPayee(transaction.payee_name)) {
             score += 0.1
+            logger.debug("Added payee score, total now: ${score}")
         }
         
-        return Math.min(1.0, score)
+        double finalScore = Math.min(1.0, score)
+        logger.debug("Final confidence score: ${finalScore}")
+        return finalScore
     }
     
     /**
