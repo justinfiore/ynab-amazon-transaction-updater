@@ -532,8 +532,8 @@ class TransactionMatcher_UT extends Specification {
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"  // Make sure it's delivered
-        order.addFinalCharge(100.00)
-        order.addFinalCharge(50.00)
+        order.addFinalCharge(-100.00)
+        order.addFinalCharge(-50.00)
         def orders = [order]
         
         when: "findWalmartMatches is called"
@@ -554,8 +554,8 @@ class TransactionMatcher_UT extends Specification {
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"  // Make sure it's delivered
-        order.addFinalCharge(100.00)
-        order.addFinalCharge(50.00)
+        order.addFinalCharge(-100.00)
+        order.addFinalCharge(-50.00)
         def orders = [order]
         
         when: "findWalmartMatches is called"
@@ -580,9 +580,9 @@ class TransactionMatcher_UT extends Specification {
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"  // Make sure it's delivered
-        order.addFinalCharge(50.00)
-        order.addFinalCharge(50.00)
-        order.addFinalCharge(50.00)
+        order.addFinalCharge(-50.00)
+        order.addFinalCharge(-50.00)
+        order.addFinalCharge(-50.00)
         def orders = [order]
         
         when: "findWalmartMatches is called"
@@ -608,8 +608,8 @@ class TransactionMatcher_UT extends Specification {
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"  // Make sure it's delivered
         // Final charges are different from transaction amounts
-        order.addFinalCharge(100.00)
-        order.addFinalCharge(50.00)
+        order.addFinalCharge(-100.00)
+        order.addFinalCharge(-50.00)
         def orders = [order]
         
         when: "findWalmartMatches is called"
@@ -687,8 +687,8 @@ class TransactionMatcher_UT extends Specification {
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"
-        order.addFinalCharge(100.00)
-        order.addFinalCharge(50.00)
+        order.addFinalCharge(-100.00)
+        order.addFinalCharge(-50.00)
         def orders = [order]
         
         when: "findWalmartMatches is called"
@@ -708,8 +708,8 @@ class TransactionMatcher_UT extends Specification {
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"
-        order.addFinalCharge(100.00)
-        order.addFinalCharge(50.00)
+        order.addFinalCharge(-100.00)
+        order.addFinalCharge(-50.00)
         def orders = [order]
         
         when: "findWalmartMatches is called"
@@ -834,7 +834,8 @@ class TransactionMatcher_UT extends Specification {
         order.orderId = orderId
         order.orderDate = orderDate
         order.orderStatus = "Delivered"
-        order.totalAmount = totalAmount
+        // Walmart amounts should be negative for purchases (same as YNAB transactions)
+        order.totalAmount = -totalAmount
         return order
     }
     
@@ -842,7 +843,8 @@ class TransactionMatcher_UT extends Specification {
     private com.ynab.amazon.model.WalmartOrderItem createSampleWalmartOrderItem(String title, BigDecimal price, int quantity) {
         def item = new com.ynab.amazon.model.WalmartOrderItem()
         item.title = title
-        item.price = price
+        // Walmart item prices should be negative for purchases (same as YNAB transactions)
+        item.price = -price
         item.quantity = quantity
         return item
     }

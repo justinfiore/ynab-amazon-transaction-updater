@@ -459,18 +459,18 @@ class TransactionMatcher {
         double score = 0.0
         
         // Amount must match exactly for high confidence
-        // YNAB stores expenses as negative, Walmart orders are expenses (negative)
-        // Compare directly without abs() to properly handle returns (positive amounts)
+        // YNAB stores expenses as negative, Walmart orders are now also negative (same format)
+        // Compare directly since both are negative for expenses
         if (transaction.getAmountInDollars() && order.totalAmount) {
             double transactionAmount = transaction.getAmountInDollars()
-            double orderAmount = -order.totalAmount  // Walmart orders are expenses (negative)
+            double orderAmount = order.totalAmount  // Walmart orders are now negative like YNAB
             double amountDiff = Math.abs(transactionAmount - orderAmount)
             if (amountDiff > 0.01) {
                 // For single transaction match, check if it matches any of the final charge amounts
                 boolean matchesAnyCharge = false
                 if (order.finalChargeAmounts) {
                     matchesAnyCharge = order.finalChargeAmounts.any { charge ->
-                        Math.abs(transactionAmount - (-charge)) < 0.01
+                        Math.abs(transactionAmount - charge) < 0.01
                     }
                 }
                 
@@ -548,10 +548,10 @@ class TransactionMatcher {
     private String generateWalmartMatchReason(YNABTransaction transaction, WalmartOrder order, double score) {
         List<String> reasons = []
         
-        // YNAB stores expenses as negative, Walmart orders are expenses (negative)
+        // YNAB stores expenses as negative, Walmart orders are now also negative (same format)
         if (transaction.amount && order.totalAmount) {
             double transactionAmount = transaction.getAmountInDollars()
-            double orderAmount = -order.totalAmount  // Walmart orders are expenses (negative)
+            double orderAmount = order.totalAmount  // Walmart orders are now negative like YNAB
             double amountDiff = Math.abs(transactionAmount - orderAmount)
             if (amountDiff < 0.01) {
                 reasons.add("exact amount match")
@@ -559,7 +559,7 @@ class TransactionMatcher {
                 // Check if it matches a charge amount
                 if (order.finalChargeAmounts) {
                     boolean matchesCharge = order.finalChargeAmounts.any { charge ->
-                        Math.abs(transactionAmount - (-charge)) < 0.01
+                        Math.abs(transactionAmount - charge) < 0.01
                     }
                     if (matchesCharge) {
                         reasons.add("matches charge amount")
@@ -609,9 +609,9 @@ class TransactionMatcher {
                 }
                 
                 // Calculate the sum of transaction amounts in this group
-                // YNAB stores expenses as negative, Walmart orders are expenses (negative)
+                // YNAB stores expenses as negative, Walmart orders are now also negative (same format)
                 BigDecimal groupSum = group.sum { it.getAmountInDollars() } as BigDecimal
-                BigDecimal orderAmount = -order.totalAmount  // Walmart orders are expenses (negative)
+                BigDecimal orderAmount = order.totalAmount  // Walmart orders are now negative like YNAB
                 
                 // Check if the sum matches the order total
                 if (Math.abs(groupSum - orderAmount) < 0.01) {
@@ -709,9 +709,9 @@ class TransactionMatcher {
         double score = 0.0
         
         // Amount match (50% weight)
-        // YNAB stores expenses as negative, Walmart orders are expenses (negative)
+        // YNAB stores expenses as negative, Walmart orders are now also negative (same format)
         BigDecimal transactionSum = transactions.sum { it.getAmountInDollars() } as BigDecimal
-        BigDecimal orderAmount = -order.totalAmount  // Walmart orders are expenses (negative)
+        BigDecimal orderAmount = order.totalAmount  // Walmart orders are now negative like YNAB
         if (Math.abs(transactionSum - orderAmount) < 0.01) {
             score += 0.5
         } else {
@@ -763,9 +763,9 @@ class TransactionMatcher {
     private String generateMultiTransactionMatchReason(List<YNABTransaction> transactions, WalmartOrder order, double score) {
         List<String> reasons = []
         
-        // YNAB stores expenses as negative, Walmart orders are expenses (negative)
+        // YNAB stores expenses as negative, Walmart orders are now also negative (same format)
         BigDecimal transactionSum = transactions.sum { it.getAmountInDollars() } as BigDecimal
-        BigDecimal orderAmount = -order.totalAmount  // Walmart orders are expenses (negative)
+        BigDecimal orderAmount = order.totalAmount  // Walmart orders are now negative like YNAB
         if (Math.abs(transactionSum - orderAmount) < 0.01) {
             reasons.add("sum matches order total (${transactions.size()} charges)")
         }

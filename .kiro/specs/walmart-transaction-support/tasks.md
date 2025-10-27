@@ -127,7 +127,14 @@
   - Ensure Walmart processing doesn't interfere with existing Amazon processing
   - _Requirements: 1.1, 1.5, 3.2, 6.4_
 
-- [ ] 7.1 Write integration tests for end-to-end Walmart flow
+- [ ] 7.1 Fix Walmart amount formatting to match YNAB transaction format
+  - Update WalmartOrderFetcher to negate all amounts (totalAmount, finalChargeAmounts, item prices) to match YNAB's negative expense format
+  - Update WalmartOrder and WalmartOrderItem models to handle negative amounts consistently
+  - Update all Walmart-related tests to expect negative amounts for purchases
+  - Ensure consistency with Amazon order amount handling (both should be negative for expenses)
+  - _Requirements: 1.2, 4.2, 4.3_
+
+- [ ] 7.2 Write integration tests for end-to-end Walmart flow
   - Test complete flow: fetch → match → update with sample Walmart orders
   - Test with mixed Amazon and Walmart orders to verify both work together
   - Test multi-transaction order scenarios

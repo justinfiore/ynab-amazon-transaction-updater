@@ -434,7 +434,9 @@ class WalmartOrderFetcher {
                 String text = totalLocator.textContent()
                 def matcher = (text =~ /\$([0-9]+\.?[0-9]{0,2})/)
                 if (matcher.find()) {
-                    return new BigDecimal(matcher.group(1))
+                    // Walmart charges are negative in YNAB (same as Amazon)
+                    BigDecimal amount = new BigDecimal(matcher.group(1))
+                    return amount * -1.0
                 }
             }
         } catch (Exception e) {
@@ -468,7 +470,9 @@ class WalmartOrderFetcher {
                         String priceText = priceLocator.first().textContent()
                         def matcher = (priceText =~ /\$([0-9]+\.?[0-9]{0,2})/)
                         if (matcher.find()) {
-                            item.price = new BigDecimal(matcher.group(1))
+                            // Walmart item prices are negative in YNAB (same as Amazon)
+                            BigDecimal price = new BigDecimal(matcher.group(1))
+                            item.price = price * -1.0
                         }
                     }
                     
@@ -521,8 +525,10 @@ class WalmartOrderFetcher {
                         def matcher = (amountText =~ /\$([0-9]+\.?[0-9]{0,2})/)
                         if (matcher.find()) {
                             BigDecimal amount = new BigDecimal(matcher.group(1))
-                            finalCharges.add(amount)
-                            logger.debug("Found final charge: \$${amount}")
+                            // Walmart final charges are negative in YNAB (same as Amazon)
+                            BigDecimal negativeAmount = amount * -1.0
+                            finalCharges.add(negativeAmount)
+                            logger.debug("Found final charge: \$${negativeAmount}")
                         }
                     }
                 }
