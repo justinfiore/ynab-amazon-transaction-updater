@@ -191,10 +191,10 @@ Extend matching logic to handle Walmart orders and multi-transaction scenarios.
 - Payee contains "WALMART"
 
 **Multi-Transaction Match (new pattern):**
-- Sum of transaction amounts matches order total
+- Each transaction amount matches a specific final charge amount from the order
 - All transactions within date range of order
 - All transactions have Walmart payee
-- Transactions are chronologically close (within 7 days of each other)
+- Each transaction corresponds to one final charge (no summing of transactions)
 
 **Matching Algorithm:**
 ```groovy
@@ -231,22 +231,22 @@ class TransactionMatcher {
 ```
 
 **Multi-Transaction Matching Strategy:**
-1. Group unmatched Walmart transactions by date proximity (within 7 days)
-2. For each Walmart order with multiple charges:
-   - Find transaction groups where sum matches order total
-   - Verify all transactions are within order date range
+1. For each Walmart order with multiple final charges:
+   - For each unmatched Walmart transaction, try to match it to a specific final charge amount
+   - Verify transaction is within order date range
    - Calculate confidence score based on:
-     - Amount match (50%)
-     - Date proximity (30%)
-     - Payee consistency (20%)
-3. Create a single TransactionMatch containing multiple transactions
+     - Exact amount match with final charge (70%)
+     - Date proximity (20%)
+     - Payee consistency (10%)
+2. Create individual TransactionMatch objects for each transaction-to-charge match
+3. Do NOT sum transactions or match against order totals
 
 **Confidence Scoring:**
 - Single transaction: Use existing algorithm (amount 70%, date 20%, payee 10%)
-- Multi-transaction: 
-  - Amount match (sum of transactions vs order total): 50%
-  - Date proximity (all transactions near order date): 30%
-  - Payee consistency (all are Walmart): 20%
+- Multi-charge matching: Same as single transaction but match against individual final charges
+  - Exact amount match with final charge: 70%
+  - Date proximity to order date: 20%
+  - Payee consistency (Walmart): 10%
 
 ### 6. TransactionProcessor Extensions
 

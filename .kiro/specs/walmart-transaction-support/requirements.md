@@ -55,14 +55,14 @@ This feature adds support for fetching Walmart order data and matching it with Y
 
 ### Requirement 4
 
-**User Story:** As a YNAB user, I want accurate matching between Walmart orders and YNAB transactions even when one order creates multiple charges, so that all related transactions are properly documented
+**User Story:** As a YNAB user, I want accurate matching between Walmart orders and YNAB transactions based on individual charge amounts, so that each transaction corresponds to a specific Walmart final charge
 
 #### Acceptance Criteria
 
-1. WHEN a Walmart order generates multiple credit card charges, THE Transaction Matcher SHALL identify all corresponding YNAB transactions
-2. THE Transaction Matcher SHALL use amount, date, and payee information to correlate transactions with Walmart orders
-3. WHERE partial charges exist for a single order, THE Transaction Matcher SHALL sum transaction amounts to match the order total
-4. THE Transaction Matcher SHALL apply confidence scoring to Walmart matches using configurable thresholds
+1. WHEN a Walmart order generates multiple credit card charges, THE Transaction Matcher SHALL match each YNAB transaction to its corresponding individual final charge amount
+2. THE Transaction Matcher SHALL use individual final charge amounts, date, and payee information to correlate transactions with Walmart orders
+3. THE Transaction Matcher SHALL NOT sum transaction amounts to match order totals, but SHALL match each transaction to a specific final charge
+4. THE Transaction Matcher SHALL apply confidence scoring to Walmart matches using configurable thresholds based on individual charge matching
 5. WHERE confidence is below the threshold, THE YNAB Transaction Updater SHALL skip the transaction update
 
 ### Requirement 5

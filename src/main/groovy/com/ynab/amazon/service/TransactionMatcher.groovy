@@ -409,76 +409,72 @@ class TransactionMatcher {
         logger.info("Found ${ynabTransactionsToMatch.size()} Walmart transactions to match")
         logger.info("Found ${deliveredOrders.size()} delivered Walmart orders")
         
-        // First, try single transaction matches
-        List<YNABTransaction> unmatchedTransactions = []
+        // Match each transaction to individual final charges only
+        Set<String> matchedTransactionIds = new HashSet<>()
+        
         ynabTransactionsToMatch.each { transaction ->
-            TransactionMatch match = findSingleTransactionMatch(transaction, deliveredOrders)
+            if (matchedTransactionIds.contains(transaction.id)) {
+                return // Skip already matched transactions
+            }
+            
+            TransactionMatch match = findIndividualChargeMatch(transaction, deliveredOrders)
             if (match) {
                 matches.add(match)
-            } else {
-                unmatchedTransactions.add(transaction)
+                matchedTransactionIds.add(transaction.id)
             }
         }
         
-        logger.info("Found ${matches.size()} single-transaction Walmart matches")
-        
-        // Then, try multi-transaction matches for remaining transactions
-        List<WalmartOrder> multiChargeOrders = deliveredOrders.findAll { it.hasMultipleCharges() }
-        if (!unmatchedTransactions.isEmpty() && !multiChargeOrders.isEmpty()) {
-            List<TransactionMatch> multiMatches = findMultiTransactionMatches(unmatchedTransactions, multiChargeOrders)
-            matches.addAll(multiMatches)
-            logger.info("Found ${multiMatches.size()} multi-transaction Walmart matches")
-        }
-        
-        logger.info("Found ${matches.size()} total Walmart transaction matches")
+        logger.info("Found ${matches.size()} individual charge Walmart matches")
         return matches
     }
     
     /**
      * Find the best matching Walmart order for a single transaction
      */
-    private TransactionMatch findSingleTransactionMatch(YNABTransaction transaction, List<WalmartOrder> orders) {
+    private TransactionMatch findIndividualChargeMatch(YNABTransaction transaction, List<WalmartOrder> orders) {
         TransactionMatch bestMatch = null
         double bestScore = 0.0
         
         orders.each { order ->
-            double score = calculateWalmartMatchScore(transaction, order)
-            if (score > bestScore && score >= 0.5) {  // Minimum confidence threshold
-                bestScore = score
-                bestMatch = createWalmartMatch(transaction, order, score)
+            // Check if transaction matches any individual final charge
+            if (order.finalChargeAmounts && !order.finalChargeAmounts.isEmpty()) {
+                order.finalChargeAmounts.each { chargeAmount ->
+                    double chargeScore = calculateIndividualChargeMatchScore(transaction, order, chargeAmount)
+                    if (chargeScore > bestScore && chargeScore >= 0.5) {
+                        bestScore = chargeScore
+                        bestMatch = createWalmartMatch(transaction, order, chargeScore)
+                    }
+                }
+            } else {
+                // For orders without final charge amounts, match against total amount
+                double totalScore = calculateIndividualChargeMatchScore(transaction, order, order.totalAmount)
+                if (totalScore > bestScore && totalScore >= 0.5) {
+                    bestScore = totalScore
+                    bestMatch = createWalmartMatch(transaction, order, totalScore)
+                }
             }
         }
         
         return bestMatch
     }
     
+
+    
     /**
-     * Calculate a confidence score for matching a transaction with a Walmart order
+     * Calculate a confidence score for matching a transaction with a specific Walmart final charge
      */
-    private double calculateWalmartMatchScore(YNABTransaction transaction, WalmartOrder order) {
+    private double calculateIndividualChargeMatchScore(YNABTransaction transaction, WalmartOrder order, BigDecimal chargeAmount) {
         double score = 0.0
         
-        // Amount must match exactly for high confidence
-        // YNAB stores expenses as negative, Walmart orders are now also negative (same format)
-        // Compare directly since both are negative for expenses
-        if (transaction.getAmountInDollars() && order.totalAmount) {
+        // Amount must match exactly for high confidence (70% weight)
+        // YNAB stores expenses as negative, Walmart final charges are now also negative (same format)
+        if (transaction.getAmountInDollars() && chargeAmount) {
             double transactionAmount = transaction.getAmountInDollars()
-            double orderAmount = order.totalAmount  // Walmart orders are now negative like YNAB
-            double amountDiff = Math.abs(transactionAmount - orderAmount)
+            double amountDiff = Math.abs(transactionAmount - chargeAmount)
             if (amountDiff > 0.01) {
-                // For single transaction match, check if it matches any of the final charge amounts
-                boolean matchesAnyCharge = false
-                if (order.finalChargeAmounts) {
-                    matchesAnyCharge = order.finalChargeAmounts.any { charge ->
-                        Math.abs(transactionAmount - charge) < 0.01
-                    }
-                }
-                
-                if (!matchesAnyCharge) {
-                    return 0.0  // No match if amount doesn't match order total or any charge
-                }
+                return 0.0  // No match if amounts don't match exactly
             }
-            score += 0.7  // Full points for amount match
+            score += 0.7  // Full points for exact amount match
         } else {
             return 0.0  // No match if amount is missing
         }
@@ -486,7 +482,6 @@ class TransactionMatcher {
         // Date matching (20% weight)
         if (transaction.date && order.orderDate) {
             int daysDiff = calculateDaysDifference(transaction.date, order.orderDate)
-            // Hard cut-off: if dates are too far apart, do not match at all
             if (daysDiff > MAX_MATCH_DAYS_DIFFERENCE) {
                 return 0.0
             }
@@ -506,7 +501,7 @@ class TransactionMatcher {
      * Create a TransactionMatch object for Walmart
      */
     private TransactionMatch createWalmartMatch(YNABTransaction transaction, WalmartOrder order, double score) {
-        String proposedMemo = generateWalmartProposedMemo(transaction, order, false, 1, 1)
+        String proposedMemo = generateWalmartProposedMemo(transaction, order)
         String matchReason = generateWalmartMatchReason(transaction, order, score)
         
         return new TransactionMatch(transaction, order, proposedMemo, score, matchReason)
@@ -515,16 +510,11 @@ class TransactionMatcher {
     /**
      * Generate a sanitized and truncated memo for a Walmart transaction
      */
-    private String generateWalmartProposedMemo(YNABTransaction transaction, WalmartOrder order, 
-                                                boolean isMultiTransaction, int chargeNumber, int totalCharges) {
+    private String generateWalmartProposedMemo(YNABTransaction transaction, WalmartOrder order) {
         String summary = order.getProductSummary()
         
-        // Add charge indicator for multi-transaction orders
-        if (isMultiTransaction) {
-            summary = "Walmart Order: ${order.orderId} (Charge ${chargeNumber} of ${totalCharges}) - ${summary}"
-        } else {
-            summary = "Walmart Order: ${order.orderId} - ${summary}"
-        }
+        // Format as single transaction memo
+        summary = "Walmart Order: ${order.orderId} - ${summary}"
         
         // Combine with existing memo if it exists
         String proposedMemo = summary
@@ -548,22 +538,20 @@ class TransactionMatcher {
     private String generateWalmartMatchReason(YNABTransaction transaction, WalmartOrder order, double score) {
         List<String> reasons = []
         
-        // YNAB stores expenses as negative, Walmart orders are now also negative (same format)
-        if (transaction.amount && order.totalAmount) {
+        // Check if transaction matches order total or any final charge amount
+        if (transaction.amount) {
             double transactionAmount = transaction.getAmountInDollars()
-            double orderAmount = order.totalAmount  // Walmart orders are now negative like YNAB
-            double amountDiff = Math.abs(transactionAmount - orderAmount)
-            if (amountDiff < 0.01) {
+            
+            // Check order total match
+            if (order.totalAmount && Math.abs(transactionAmount - order.totalAmount) < 0.01) {
                 reasons.add("exact amount match")
-            } else {
-                // Check if it matches a charge amount
-                if (order.finalChargeAmounts) {
-                    boolean matchesCharge = order.finalChargeAmounts.any { charge ->
-                        Math.abs(transactionAmount - charge) < 0.01
-                    }
-                    if (matchesCharge) {
-                        reasons.add("matches charge amount")
-                    }
+            } else if (order.finalChargeAmounts) {
+                // Check if it matches any final charge amount
+                boolean matchesCharge = order.finalChargeAmounts.any { charge ->
+                    Math.abs(transactionAmount - charge) < 0.01
+                }
+                if (matchesCharge) {
+                    reasons.add("matches charge amount")
                 }
             }
         }
@@ -583,206 +571,4 @@ class TransactionMatcher {
         
         return reasons.join(", ")
     }
-    
-    /**
-     * Find multi-transaction matches for Walmart orders with multiple charges
-     */
-    private List<TransactionMatch> findMultiTransactionMatches(List<YNABTransaction> transactions, 
-                                                                List<WalmartOrder> multiChargeOrders) {
-        List<TransactionMatch> matches = []
-        Set<String> matchedTransactionIds = new HashSet<>()
-        
-        // Group transactions by date proximity (within 7 days of each other)
-        List<List<YNABTransaction>> transactionGroups = groupTransactionsByDateProximity(transactions, 7)
-        
-        // For each Walmart order with multiple charges
-        multiChargeOrders.each { order ->
-            if (!order.finalChargeAmounts || order.finalChargeAmounts.isEmpty()) {
-                return
-            }
-            
-            // Try to find a group of transactions that matches this order
-            transactionGroups.each { group ->
-                // Skip if any transaction in this group is already matched
-                if (group.any { matchedTransactionIds.contains(it.id) }) {
-                    return
-                }
-                
-                // Calculate the sum of transaction amounts in this group
-                // YNAB stores expenses as negative, Walmart orders are now also negative (same format)
-                BigDecimal groupSum = group.sum { it.getAmountInDollars() } as BigDecimal
-                BigDecimal orderAmount = order.totalAmount  // Walmart orders are now negative like YNAB
-                
-                // Check if the sum matches the order total
-                if (Math.abs(groupSum - orderAmount) < 0.01) {
-                    // Verify all transactions are within date range of order
-                    boolean allWithinDateRange = group.every { transaction ->
-                        int daysDiff = calculateDaysDifference(transaction.date, order.orderDate)
-                        daysDiff <= MAX_MATCH_DAYS_DIFFERENCE
-                    }
-                    
-                    if (allWithinDateRange) {
-                        // Calculate confidence score for multi-transaction match
-                        double score = calculateMultiTransactionMatchScore(group, order)
-                        
-                        if (score >= 0.5) {  // Minimum confidence threshold
-                            // Create a match for this group
-                            TransactionMatch match = createMultiTransactionMatch(group, order, score)
-                            matches.add(match)
-                            
-                            // Mark these transactions as matched
-                            group.each { matchedTransactionIds.add(it.id) }
-                        }
-                    }
-                }
-            }
-        }
-        
-        return matches
-    }
-    
-    /**
-     * Group transactions by date proximity
-     */
-    private List<List<YNABTransaction>> groupTransactionsByDateProximity(List<YNABTransaction> transactions, int maxDaysDiff) {
-        List<List<YNABTransaction>> groups = []
-        
-        // Sort transactions by date
-        List<YNABTransaction> sortedTransactions = transactions.sort { it.date }
-        
-        // Generate all possible combinations of 2 or more transactions
-        for (int size = 2; size <= Math.min(sortedTransactions.size(), 5); size++) {
-            generateCombinations(sortedTransactions, size).each { combination ->
-                // Check if all transactions in this combination are within maxDaysDiff of each other
-                boolean withinProximity = true
-                for (int i = 0; i < combination.size() - 1; i++) {
-                    int daysDiff = calculateDaysDifference(combination[i].date, combination[i + 1].date)
-                    if (daysDiff > maxDaysDiff) {
-                        withinProximity = false
-                        break
-                    }
-                }
-                
-                if (withinProximity) {
-                    groups.add(combination)
-                }
-            }
-        }
-        
-        return groups
-    }
-    
-    /**
-     * Generate all combinations of a given size from a list
-     */
-    private List<List<YNABTransaction>> generateCombinations(List<YNABTransaction> list, int size) {
-        List<List<YNABTransaction>> result = []
-        
-        if (size == 0) {
-            result.add([])
-            return result
-        }
-        
-        if (list.isEmpty()) {
-            return result
-        }
-        
-        // Include first element
-        YNABTransaction first = list.first()
-        List<YNABTransaction> rest = list.tail()
-        
-        // Combinations that include the first element
-        generateCombinations(rest, size - 1).each { combination ->
-            result.add([first] + combination)
-        }
-        
-        // Combinations that don't include the first element
-        result.addAll(generateCombinations(rest, size))
-        
-        return result
-    }
-    
-    /**
-     * Calculate confidence score for multi-transaction match
-     */
-    private double calculateMultiTransactionMatchScore(List<YNABTransaction> transactions, WalmartOrder order) {
-        double score = 0.0
-        
-        // Amount match (50% weight)
-        // YNAB stores expenses as negative, Walmart orders are now also negative (same format)
-        BigDecimal transactionSum = transactions.sum { it.getAmountInDollars() } as BigDecimal
-        BigDecimal orderAmount = order.totalAmount  // Walmart orders are now negative like YNAB
-        if (Math.abs(transactionSum - orderAmount) < 0.01) {
-            score += 0.5
-        } else {
-            return 0.0  // No match if amounts don't match
-        }
-        
-        // Date proximity (30% weight) - average distance from order date
-        double avgDaysDiff = transactions.sum { transaction ->
-            calculateDaysDifference(transaction.date, order.orderDate)
-        } / transactions.size()
-        
-        double dateScore = Math.max(0.0, 1.0 - (avgDaysDiff / 7.0))
-        score += dateScore * 0.3
-        
-        // Payee consistency (20% weight) - all transactions must be Walmart
-        boolean allWalmartPayees = transactions.every { isWalmartPayee(it.payee_name) }
-        if (allWalmartPayees) {
-            score += 0.2
-        }
-        
-        return Math.min(1.0, score)
-    }
-    
-    /**
-     * Create a multi-transaction match
-     */
-    private TransactionMatch createMultiTransactionMatch(List<YNABTransaction> transactions, WalmartOrder order, double score) {
-        // Sort transactions by date to assign charge numbers
-        List<YNABTransaction> sortedTransactions = transactions.sort { it.date }
-        int totalCharges = sortedTransactions.size()
-        
-        // Generate memo for the first transaction (will be used as the primary memo)
-        String proposedMemo = generateWalmartProposedMemo(
-            sortedTransactions.first(), 
-            order, 
-            true, 
-            1, 
-            totalCharges
-        )
-        
-        String matchReason = generateMultiTransactionMatchReason(sortedTransactions, order, score)
-        
-        return new TransactionMatch(sortedTransactions, order, proposedMemo, score, matchReason)
-    }
-    
-    /**
-     * Generate match reason for multi-transaction match
-     */
-    private String generateMultiTransactionMatchReason(List<YNABTransaction> transactions, WalmartOrder order, double score) {
-        List<String> reasons = []
-        
-        // YNAB stores expenses as negative, Walmart orders are now also negative (same format)
-        BigDecimal transactionSum = transactions.sum { it.getAmountInDollars() } as BigDecimal
-        BigDecimal orderAmount = order.totalAmount  // Walmart orders are now negative like YNAB
-        if (Math.abs(transactionSum - orderAmount) < 0.01) {
-            reasons.add("sum matches order total (${transactions.size()} charges)")
-        }
-        
-        double avgDaysDiff = transactions.sum { transaction ->
-            calculateDaysDifference(transaction.date, order.orderDate)
-        } / transactions.size()
-        
-        if (avgDaysDiff <= 3) {
-            reasons.add("close date match")
-        }
-        
-        boolean allWalmartPayees = transactions.every { isWalmartPayee(it.payee_name) }
-        if (allWalmartPayees) {
-            reasons.add("all Walmart payees")
-        }
-        
-        return reasons.join(", ")
-    }
-} 
+}
