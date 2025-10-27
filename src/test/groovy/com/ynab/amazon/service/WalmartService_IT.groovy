@@ -36,13 +36,13 @@ class WalmartService_IT extends Specification {
         order.orderId = "1234567890123"
         order.orderDate = "2024-01-15"
         order.orderStatus = "Delivered"
-        order.totalAmount = 49.99
-        order.addFinalCharge(49.99)
+        order.totalAmount = -49.99  // Negative like YNAB transactions
+        order.addFinalCharge(-49.99)  // Negative like YNAB transactions
         order.orderUrl = "https://www.walmart.com/orders/details?orderId=1234567890123"
         
         def item = new WalmartOrderItem()
         item.title = "Wireless Mouse"
-        item.price = 49.99
+        item.price = -49.99  // Negative like YNAB transactions
         item.quantity = 1
         order.addItem(item)
         
@@ -54,20 +54,20 @@ class WalmartService_IT extends Specification {
         order.orderId = "2345678901234"
         order.orderDate = "2024-01-20"
         order.orderStatus = "Delivered"
-        order.totalAmount = 150.00
-        order.addFinalCharge(100.00)
-        order.addFinalCharge(50.00)
+        order.totalAmount = -150.00  // Negative like YNAB transactions
+        order.addFinalCharge(-100.00)  // Negative like YNAB transactions
+        order.addFinalCharge(-50.00)   // Negative like YNAB transactions
         order.orderUrl = "https://www.walmart.com/orders/details?orderId=2345678901234"
         
         def item1 = new WalmartOrderItem()
         item1.title = "Laptop Stand"
-        item1.price = 100.00
+        item1.price = -100.00  // Negative like YNAB transactions
         item1.quantity = 1
         order.addItem(item1)
         
         def item2 = new WalmartOrderItem()
         item2.title = "USB Cable"
-        item2.price = 50.00
+        item2.price = -50.00  // Negative like YNAB transactions
         item2.quantity = 1
         order.addItem(item2)
         
@@ -79,13 +79,13 @@ class WalmartService_IT extends Specification {
         order.orderId = "3456789012345"
         order.orderDate = "2024-01-25"
         order.orderStatus = "Processing"
-        order.totalAmount = 29.99
-        order.addFinalCharge(29.99)
+        order.totalAmount = -29.99  // Negative like YNAB transactions
+        order.addFinalCharge(-29.99)  // Negative like YNAB transactions
         order.orderUrl = "https://www.walmart.com/orders/details?orderId=3456789012345"
         
         def item = new WalmartOrderItem()
         item.title = "Phone Case"
-        item.price = 29.99
+        item.price = -29.99  // Negative like YNAB transactions
         item.quantity = 1
         order.addItem(item)
         
@@ -120,9 +120,9 @@ class WalmartService_IT extends Specification {
         then: "should find match and process successfully"
         matches.size() == 1
         matches[0].walmartOrder == order
-        matches[0].transactions.size() == 1
-        matches[0].transactions[0] == transaction
-        matches[0].confidence >= 0.7
+        matches[0].ynabTransaction == transaction
+        matches[0].confidenceScore >= 0.7
+        !matches[0].isMultiTransaction
         
         stats.updated == 1
         stats.high_confidence >= 1
@@ -142,12 +142,11 @@ class WalmartService_IT extends Specification {
         List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
         Map<String, Integer> stats = processor.processWalmartMatches(matches, mockYnabService, true)
         
-        then: "should find multi-transaction match and process successfully"
-        matches.size() == 1
-        matches[0].walmartOrder == order
-        matches[0].transactions.size() == 2
-        matches[0].isMultiTransaction == true
-        matches[0].confidence >= 0.7
+        then: "should find individual charge matches and process successfully"
+        matches.size() == 2  // Two individual matches
+        matches.every { it.walmartOrder == order }
+        matches.every { !it.isMultiTransaction }
+        matches.every { it.confidenceScore >= 0.7 }
         
         stats.updated == 2 // Both transactions updated
     }
