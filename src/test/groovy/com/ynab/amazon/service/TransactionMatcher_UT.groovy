@@ -190,7 +190,7 @@ class TransactionMatcher_UT extends Specification {
         
         then: "match should be found but with normal date scoring (no grace period)"
         matches.size() == 1
-        matches[0].confidence < 0.9  // Lower confidence due to 5-day difference
+        matches[0].confidenceScore < 0.9  // Lower confidence due to 5-day difference
     }
     
     def "findMatches should handle returns normally when transaction is before order date"() {
@@ -208,7 +208,7 @@ class TransactionMatcher_UT extends Specification {
         
         then: "match should be found with normal date scoring (no grace period applied)"
         matches.size() == 1
-        matches[0].confidence < 0.9  // Normal confidence for 3-day difference
+        matches[0].confidenceScore < 0.9  // Normal confidence for 3-day difference
     }
     
     def "findMatches should ignore already processed transactions"() {

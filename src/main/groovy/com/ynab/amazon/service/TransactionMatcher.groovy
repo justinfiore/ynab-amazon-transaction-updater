@@ -176,17 +176,24 @@ class TransactionMatcher {
             // Calculate the actual difference (transaction date - order date)
             int actualDiff = calculateSignedDaysDifference(transaction.date, order.orderDate)
             
+            logger.debug("Return order detected: actualDiff=${actualDiff}, txDate=${transaction.date}, orderDate=${order.orderDate}")
+            
             // If within the return grace period (7 days), treat as same-day for scoring
             if (actualDiff <= 7) {
+                logger.debug("Within grace period, returning 0 for perfect date score")
                 return 0  // Perfect date match for confidence scoring
             } else {
                 // Beyond grace period, subtract the grace period from the difference
-                return actualDiff - 7
+                int adjustedDiff = actualDiff - 7
+                logger.debug("Beyond grace period, adjustedDiff=${adjustedDiff}")
+                return adjustedDiff
             }
         }
         
         // Normal case: use absolute difference
-        return calculateDaysDifference(transaction.date, order.orderDate)
+        int normalDiff = calculateDaysDifference(transaction.date, order.orderDate)
+        logger.debug("Normal case: diff=${normalDiff}, txDate=${transaction.date}, orderDate=${order.orderDate}")
+        return normalDiff
     }
     
     /**
