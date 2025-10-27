@@ -143,7 +143,7 @@
   - Update all tests to reflect individual charge matching instead of sum-based matching
   - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 7.2 Write integration tests for end-to-end Walmart flow
+- [x] 7.2 Write integration tests for end-to-end Walmart flow
   - Test complete flow: fetch → match → update with sample Walmart orders
   - Test with mixed Amazon and Walmart orders to verify both work together
   - Test multi-transaction order scenarios
