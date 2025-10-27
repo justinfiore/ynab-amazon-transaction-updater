@@ -58,20 +58,64 @@ class WalmartOrderFetcher {
      * Initialize Playwright browser in headless mode
      */
     private void initBrowser() {
+        boolean tryHeadlessOnce = false
+        boolean originalHeadlessSetting = config.walmartHeadless
+        
         try {
             String browserMode = config.walmartHeadless ? "headless" : "non-headless"
             logger.debug("Initializing ${browserMode} Chromium browser")
             playwright = Playwright.create()
-            browser = playwright.chromium().launch(
-                new BrowserType.LaunchOptions().setHeadless(config.walmartHeadless)
-            )
+            
+            // Configure launch options with args to prevent crashes on macOS
+            def launchOptions = new BrowserType.LaunchOptions()
+                .setHeadless(config.walmartHeadless)
+            
+            // Add args to disable GPU and prevent segmentation faults on macOS
+            if (!config.walmartHeadless) {
+                launchOptions.setArgs([
+                    "--disable-gpu",
+                    "--disable-software-rasterizer",
+                    "--disable-dev-shm-usage",
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox"
+                ])
+            }
+            
+            browser = playwright.chromium().launch(launchOptions)
             context = browser.newContext()
             page = context.newPage()
             page.setDefaultTimeout(config.walmartBrowserTimeout)
             logger.debug("Browser initialized successfully in ${browserMode} mode")
         } catch (Exception e) {
-            logger.error("Failed to initialize browser: ${e.message}", e)
-            throw new RuntimeException("Browser initialization failed", e)
+            logger.warn("Failed to initialize browser in ${config.walmartHeadless ? 'headless' : 'non-headless'} mode: ${e.message}")
+            
+            // If non-headless mode failed, try headless mode as fallback
+            if (!config.walmartHeadless && !tryHeadlessOnce) {
+                tryHeadlessOnce = true
+                logger.info("Attempting to initialize browser in headless mode as fallback")
+                
+                try {
+                    // Clean up any partial initialization
+                    if (playwright != null) {
+                        try { playwright.close() } catch (Exception ignored) {}
+                        playwright = null
+                    }
+                    
+                    playwright = Playwright.create()
+                    def fallbackOptions = new BrowserType.LaunchOptions().setHeadless(true)
+                    browser = playwright.chromium().launch(fallbackOptions)
+                    context = browser.newContext()
+                    page = context.newPage()
+                    page.setDefaultTimeout(config.walmartBrowserTimeout)
+                    logger.info("Browser initialized successfully in headless mode (fallback)")
+                } catch (Exception fallbackError) {
+                    logger.error("Failed to initialize browser even in headless mode: ${fallbackError.message}", fallbackError)
+                    throw new RuntimeException("Browser initialization failed in both non-headless and headless modes", fallbackError)
+                }
+            } else {
+                logger.error("Failed to initialize browser: ${e.message}", e)
+                throw new RuntimeException("Browser initialization failed", e)
+            }
         }
     }
     
