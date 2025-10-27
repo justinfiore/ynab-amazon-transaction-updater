@@ -152,8 +152,20 @@ class TransactionMatcher {
         
         // Amount must match exactly for high confidence
         if (transaction.getAmountInDollars() && order.totalAmount) {
-            // YNAB stores expenses as negative, Amazon orders are positive
-            if (Math.abs(Math.abs(transaction.getAmountInDollars()) - order.totalAmount) > 0.01) {
+            // Both YNAB transactions and Amazon orders should have same sign:
+            // - Returns: both positive (YNAB inflow, Amazon return)
+            // - Orders: both negative (YNAB expense, Amazon order)
+            double transactionAmount = transaction.getAmountInDollars()
+            double orderAmount = order.totalAmount
+            
+            // Check if signs match (both positive or both negative)
+            if ((transactionAmount > 0) != (orderAmount > 0)) {
+                logger.debug("Amount sign mismatch: transaction=${transactionAmount}, order=${orderAmount}")
+                return 0.0  // No match if signs don't match (return vs order)
+            }
+            
+            // Check if amounts match within tolerance
+            if (Math.abs(transactionAmount - orderAmount) > 0.01) {
                 return 0.0  // No match if amounts don't match exactly
             }
             score += 0.7  // Full points for amount match
@@ -369,12 +381,20 @@ class TransactionMatcher {
         List<String> reasons = []
         
         if (transaction.amount && order.totalAmount) {
-            // YNAB stores expenses as negative, Amazon orders are positive
-            double amountDiff = Math.abs(Math.abs(transaction.getAmountInDollars()) - order.totalAmount)
-            if (amountDiff < 0.01) {
+            double transactionAmount = transaction.getAmountInDollars()
+            double orderAmount = order.totalAmount
+            
+            // Round to 2 decimal places (cents) for comparison
+            BigDecimal txRounded = new BigDecimal(transactionAmount).setScale(2, BigDecimal.ROUND_HALF_UP)
+            BigDecimal orderRounded = new BigDecimal(orderAmount).setScale(2, BigDecimal.ROUND_HALF_UP)
+            
+            if (txRounded.compareTo(orderRounded) == 0) {
                 reasons.add("exact amount match")
-            } else if (amountDiff < 1.0) {
-                reasons.add("close amount match")
+            } else {
+                double amountDiff = Math.abs(transactionAmount - orderAmount)
+                if (amountDiff < 1.0) {
+                    reasons.add("close amount match")
+                }
             }
         }
         
@@ -543,15 +563,34 @@ class TransactionMatcher {
             double transactionAmount = transaction.getAmountInDollars()
             
             // Check order total match
-            if (order.totalAmount && Math.abs(transactionAmount - order.totalAmount) < 0.01) {
-                reasons.add("exact amount match")
+            if (order.totalAmount) {
+                // Round to 2 decimal places (cents) for comparison
+                BigDecimal txRounded = new BigDecimal(transactionAmount).setScale(2, BigDecimal.ROUND_HALF_UP)
+                BigDecimal orderRounded = new BigDecimal(order.totalAmount).setScale(2, BigDecimal.ROUND_HALF_UP)
+                
+                if (txRounded.compareTo(orderRounded) == 0) {
+                    reasons.add("exact amount match")
+                } else {
+                    double amountDiff = Math.abs(transactionAmount - order.totalAmount)
+                    if (amountDiff < 1.0) {
+                        reasons.add("close amount match")
+                    }
+                }
             } else if (order.finalChargeAmounts) {
                 // Check if it matches any final charge amount
-                boolean matchesCharge = order.finalChargeAmounts.any { charge ->
-                    Math.abs(transactionAmount - charge) < 0.01
+                def matchedCharge = order.finalChargeAmounts.find { charge ->
+                    Math.abs(transactionAmount - charge) <= 0.01
                 }
-                if (matchesCharge) {
-                    reasons.add("matches charge amount")
+                if (matchedCharge) {
+                    // Round to 2 decimal places (cents) for comparison
+                    BigDecimal txRounded = new BigDecimal(transactionAmount).setScale(2, BigDecimal.ROUND_HALF_UP)
+                    BigDecimal chargeRounded = new BigDecimal(matchedCharge).setScale(2, BigDecimal.ROUND_HALF_UP)
+                    
+                    if (txRounded.compareTo(chargeRounded) == 0) {
+                        reasons.add("matches charge amount")
+                    } else {
+                        reasons.add("close charge match")
+                    }
                 }
             }
         }
