@@ -128,9 +128,9 @@ class TransactionMatcher {
             return 0.0  // No match if amount is missing
         }
         
-        // Date matching (20% weight)
+        // Date matching (20% weight) with special handling for returns
         if (transaction.date && order.orderDate) {
-            int daysDiff = calculateDaysDifference(transaction.date, order.orderDate)
+            int daysDiff = calculateDaysDifferenceForMatching(transaction, order)
             // Hard cut-off: if dates are too far apart, do not match at all
             if (daysDiff > MAX_MATCH_DAYS_DIFFERENCE) {
                 return 0.0
