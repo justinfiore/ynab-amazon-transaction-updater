@@ -101,6 +101,116 @@ class TransactionMatcher_UT extends Specification {
         matches.isEmpty()
     }
     
+    def "findMatches should match Amazon returns with transaction date up to 7 days after order date"() {
+        given: "a return order and transaction 5 days later"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-20", 25.99, "AMAZON.COM")  // 5 days after order
+        ]
+        
+        def orders = [
+            createSampleReturnOrder("1234", "2023-05-15", 25.99)  // Return order
+        ]
+        
+        when: "findMatches is called"
+        def matches = matcher.findMatches(transactions, orders)
+        
+        then: "match should be found with high confidence"
+        matches.size() == 1
+        matches[0].ynabTransaction.id == "tx1"
+        matches[0].amazonOrder.orderId == "1234"
+        matches[0].confidenceScore >= 0.9  // Should have high confidence due to return grace period
+    }
+    
+    def "findMatches should match Amazon returns with transaction date exactly 7 days after order date"() {
+        given: "a return order and transaction exactly 7 days later"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-22", 25.99, "AMAZON.COM")  // Exactly 7 days after
+        ]
+        
+        def orders = [
+            createSampleReturnOrder("1234", "2023-05-15", 25.99)  // Return order
+        ]
+        
+        when: "findMatches is called"
+        def matches = matcher.findMatches(transactions, orders)
+        
+        then: "match should be found with high confidence"
+        matches.size() == 1
+        matches[0].confidenceScore >= 0.9  // Should have high confidence
+    }
+    
+    def "findMatches should match Amazon returns with transaction date 10 days after order date with lower confidence"() {
+        given: "a return order and transaction 10 days later"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-25", 25.99, "AMAZON.COM")  // 10 days after
+        ]
+        
+        def orders = [
+            createSampleReturnOrder("1234", "2023-05-15", 25.99)  // Return order
+        ]
+        
+        when: "findMatches is called"
+        def matches = matcher.findMatches(transactions, orders)
+        
+        then: "match should be found but with lower confidence"
+        matches.size() == 1
+        matches[0].confidenceScore >= 0.5  // Should still match but with lower confidence
+        matches[0].confidenceScore < 0.9   // But not as high as within grace period
+    }
+    
+    def "findMatches should not match Amazon returns with transaction date more than 14 days after order date"() {
+        given: "a return order and transaction 20 days later"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-06-04", 25.99, "AMAZON.COM")  // 20 days after
+        ]
+        
+        def orders = [
+            createSampleReturnOrder("1234", "2023-05-15", 25.99)  // Return order
+        ]
+        
+        when: "findMatches is called"
+        def matches = matcher.findMatches(transactions, orders)
+        
+        then: "no match should be found due to exceeding maximum date difference"
+        matches.isEmpty()
+    }
+    
+    def "findMatches should handle regular orders normally when transaction is after order date"() {
+        given: "a regular order and transaction 5 days later"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-20", 25.99, "AMAZON.COM")  // 5 days after
+        ]
+        
+        def orders = [
+            createSampleOrder("1234", "2023-05-15", 25.99)  // Regular order (not return)
+        ]
+        
+        when: "findMatches is called"
+        def matches = matcher.findMatches(transactions, orders)
+        
+        then: "match should be found but with normal date scoring (no grace period)"
+        matches.size() == 1
+        matches[0].confidence < 0.9  // Lower confidence due to 5-day difference
+    }
+    
+    def "findMatches should handle returns normally when transaction is before order date"() {
+        given: "a return order and transaction 3 days before order date"
+        def transactions = [
+            createSampleTransaction("tx1", "2023-05-12", 25.99, "AMAZON.COM")  // 3 days before
+        ]
+        
+        def orders = [
+            createSampleReturnOrder("1234", "2023-05-15", 25.99)  // Return order
+        ]
+        
+        when: "findMatches is called"
+        def matches = matcher.findMatches(transactions, orders)
+        
+        then: "match should be found with normal date scoring (no grace period applied)"
+        matches.size() == 1
+        matches[0].confidence < 0.9  // Normal confidence for 3-day difference
+    }
+    
     def "findMatches should ignore already processed transactions"() {
         given: "transactions with existing memos and matching orders"
         def transactions = [
@@ -352,6 +462,15 @@ class TransactionMatcher_UT extends Specification {
             orderDate: orderDate,
             totalAmount: totalAmount,
             isReturn: false
+        )
+    }
+    
+    private AmazonOrder createSampleReturnOrder(String orderId, String orderDate, BigDecimal totalAmount) {
+        return new AmazonOrder(
+            orderId: orderId,
+            orderDate: orderDate,
+            totalAmount: totalAmount,
+            isReturn: true
         )
     }
 }
