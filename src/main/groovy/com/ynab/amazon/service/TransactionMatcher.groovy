@@ -128,23 +128,28 @@ class TransactionMatcher {
             return 0.0  // No match if amount is missing
         }
         
-        // Date matching (20% weight)
+        // Date matching (20% weight) with special handling for returns
         if (transaction.date && order.orderDate) {
-            int daysDiff = calculateDaysDifference(transaction.date, order.orderDate)
+            int daysDiff = calculateDaysDifferenceForMatching(transaction, order)
             // Hard cut-off: if dates are too far apart, do not match at all
             if (daysDiff > MAX_MATCH_DAYS_DIFFERENCE) {
+                logger.debug("Date difference ${daysDiff} exceeds max ${MAX_MATCH_DAYS_DIFFERENCE}, rejecting match")
                 return 0.0
             }
             double dateScore = Math.max(0.0, 1.0 - (daysDiff / 7.0))  // Within 7 days
+            logger.debug("Date score calculation: daysDiff=${daysDiff}, dateScore=${dateScore}")
             score += dateScore * 0.2
         }
         
         // Payee name matching (10% weight)
         if (transaction.payee_name && isAmazonPayee(transaction.payee_name)) {
             score += 0.1
+            logger.debug("Added payee score, total now: ${score}")
         }
         
-        return Math.min(1.0, score)
+        double finalScore = Math.min(1.0, score)
+        logger.debug("Final confidence score: ${finalScore}")
+        return finalScore
     }
     
     /**
@@ -159,6 +164,67 @@ class TransactionMatcher {
             Date d2 = sdf.parse(date2)
             
             long diffInMillies = Math.abs(d1.getTime() - d2.getTime())
+            return (int) (diffInMillies / (1000 * 60 * 60 * 24))
+        } catch (Exception e) {
+            logger.warn("Could not parse dates: ${date1}, ${date2}: ${e.message}")
+            return 999  // Large number to indicate no match
+        }
+    }
+    
+    /**
+     * Calculate days difference for matching purposes, with special handling for Amazon returns
+     */
+    private int calculateDaysDifferenceForMatching(YNABTransaction transaction, AmazonOrder order) {
+        // For returns where YNAB transaction is later than Amazon order date,
+        // allow up to 7 days of "grace period" by adjusting the calculation
+        if (order.isReturn && isTransactionDateLater(transaction.date, order.orderDate)) {
+            // Calculate the actual difference (transaction date - order date)
+            int actualDiff = calculateSignedDaysDifference(transaction.date, order.orderDate)
+            
+            // If within the return grace period (7 days), treat as same-day for scoring
+            if (actualDiff <= 7) {
+                return 0  // Perfect date match for confidence scoring
+            } else {
+                // Beyond grace period, subtract the grace period from the difference
+                return actualDiff - 7
+            }
+        }
+        
+        // Normal case: use absolute difference
+        return calculateDaysDifference(transaction.date, order.orderDate)
+    }
+    
+    /**
+     * Check if transaction date is later than order date
+     */
+    private boolean isTransactionDateLater(String transactionDate, String orderDate) {
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd")
+            sdf.setLenient(false)
+            
+            Date txDate = sdf.parse(transactionDate)
+            Date ordDate = sdf.parse(orderDate)
+            
+            return txDate.after(ordDate)
+        } catch (Exception e) {
+            logger.warn("Could not parse dates for comparison: ${transactionDate}, ${orderDate}: ${e.message}")
+            return false
+        }
+    }
+    
+    /**
+     * Calculate signed days difference (date1 - date2)
+     * Positive if date1 is later, negative if date1 is earlier
+     */
+    private int calculateSignedDaysDifference(String date1, String date2) {
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd")
+            sdf.setLenient(false)
+            
+            Date d1 = sdf.parse(date1)
+            Date d2 = sdf.parse(date2)
+            
+            long diffInMillies = d1.getTime() - d2.getTime()
             return (int) (diffInMillies / (1000 * 60 * 60 * 24))
         } catch (Exception e) {
             logger.warn("Could not parse dates: ${date1}, ${date2}: ${e.message}")
