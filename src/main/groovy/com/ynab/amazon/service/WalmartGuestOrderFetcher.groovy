@@ -217,8 +217,10 @@ class WalmartGuestOrderFetcher {
         try {
             Object content = message.getContent()
             if (content instanceof String) {
+                logger.debug("Extracted Content from email as String")
                 return content
             } else if (content instanceof Multipart) {
+                logger.debug("Extracted Content from email as Multipart")
                 return extractContentFromMultipart(content)
             }
         } catch (Exception e) {
