@@ -45,8 +45,9 @@ Configuration.WALMART_MODE_LOGIN = "login"
 ### Required Fields
 
 **Guest Mode:**
-- `walmart.email` - Your Walmart account email
-- Amazon email credentials (reused for IMAP access)
+- `walmart.email` - Email address to search for Walmart order notifications (IMAP)
+- `walmart.walmart_email` - Actual Walmart account email (used in order lookup form). If not specified, defaults to `walmart.email`
+- `walmart.email_password` - Email app password for IMAP access
 
 **Login Mode:**
 - `walmart.email` - Your Walmart account email
@@ -61,12 +62,24 @@ Configuration.WALMART_MODE_LOGIN = "login"
 
 ## Example Configuration
 
+### Same Email for Notifications and Account
 ```yaml
 walmart:
   enabled: true
-  mode: "guest"  # Use guest mode (no password required)
-  email: "your.email@example.com"
-  # password not needed for guest mode
+  mode: "guest"
+  email: "your.walmart@example.com"  # Used for both IMAP and order lookup
+  email_password: "your_app_password"
+  headless: true
+```
+
+### Different Emails (Notifications forwarded to different account)
+```yaml
+walmart:
+  enabled: true
+  mode: "guest"
+  email: "your.gmail@example.com"  # Email to search for notifications
+  walmart_email: "your.walmart@example.com"  # Walmart account email
+  email_password: "your_gmail_app_password"
   headless: true
 ```
 

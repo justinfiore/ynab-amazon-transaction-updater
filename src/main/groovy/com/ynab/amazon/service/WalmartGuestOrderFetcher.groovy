@@ -276,13 +276,15 @@ class WalmartGuestOrderFetcher {
                 randomDelay(2000, 3000)
             }
             
-            // Fill in email address
+            // Fill in Walmart account email address
             def emailInput = page.locator("input[name='emailAddress']")
             if (emailInput.count() == 0) {
                 logger.error("Could not find email input field")
                 return null
             }
-            emailInput.fill(config.walmartEmail)
+            String walmartAccountEmail = config.walmartWalmartEmail ?: config.walmartEmail
+            logger.debug("Using Walmart account email for lookup: ${walmartAccountEmail}")
+            emailInput.fill(walmartAccountEmail)
             randomDelay(500, 1000)
             
             // Fill in order number

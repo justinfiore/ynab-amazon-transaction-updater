@@ -28,7 +28,8 @@ class Configuration {
     int lookBackDays = 30
     
     // Walmart Configuration
-    String walmartEmail
+    String walmartEmail  // Email address to search for order notifications (IMAP)
+    String walmartWalmartEmail  // Actual Walmart account email (used in order lookup form)
     String walmartEmailPassword
     String walmartPassword
     String walmartForwardFromAddress
@@ -85,6 +86,7 @@ class Configuration {
             // Walmart Configuration
             this.walmartEnabled = (config.walmart?.enabled != null) ? config.walmart.enabled : this.walmartEnabled
             this.walmartEmail = config.walmart?.email
+            this.walmartWalmartEmail = config.walmart?.walmart_email
             this.walmartEmailPassword = config.walmart?.email_password
             this.walmartPassword = config.walmart?.password
             this.walmartForwardFromAddress = config.walmart?.forward_from_address
@@ -93,6 +95,15 @@ class Configuration {
             this.walmartBrowserTimeout = (config.walmart?.browser_timeout != null) ? config.walmart.browser_timeout : this.walmartBrowserTimeout
             this.walmartOrdersUrl = config.walmart?.orders_url ?: this.walmartOrdersUrl
             this.walmartBotDetectionHoldTimeMs = (config.walmart?.bot_detection_hold_time_ms != null) ? config.walmart.bot_detection_hold_time_ms : this.walmartBotDetectionHoldTimeMs
+            
+            // Fallback logic: If only one email is specified, use it for both
+            if (this.walmartEmail && !this.walmartWalmartEmail) {
+                this.walmartWalmartEmail = this.walmartEmail
+                logger.debug("walmart.walmart_email not specified, using walmart.email for both IMAP and order lookup")
+            } else if (!this.walmartEmail && this.walmartWalmartEmail) {
+                this.walmartEmail = this.walmartWalmartEmail
+                logger.debug("walmart.email not specified, using walmart.walmart_email for both IMAP and order lookup")
+            }
             
             // Configure SimpleLogger - must be set before any logger instances are created
             System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", this.logLevel)
