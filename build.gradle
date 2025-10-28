@@ -51,7 +51,6 @@ task unitTest(type: Test) {
 
 task integrationTest(type: Test) {
     dependsOn testClasses
-    dependsOn unitTest
     useJUnitPlatform()
     description = 'Runs only the integration tests.'
     group = 'verification'
@@ -66,6 +65,7 @@ task integrationTest(type: Test) {
 
 test {
     description = 'Runs both unit and integration tests (unit tests first).'
+    dependsOn unitTest
     dependsOn integrationTest
     //finalizedBy integrationTest
     // Optional: Disable default test task execution
