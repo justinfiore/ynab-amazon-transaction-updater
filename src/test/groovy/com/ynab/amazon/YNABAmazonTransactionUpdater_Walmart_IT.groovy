@@ -88,11 +88,11 @@ class YNABAmazonTransactionUpdater_Walmart_IT extends Specification {
         def order = new AmazonOrder()
         order.orderId = orderId
         order.orderDate = date
-        order.totalAmount = totalAmount
+        order.totalAmount = -totalAmount  // Negative for expenses
         
         def item = new AmazonOrderItem()
         item.title = productTitle
-        item.price = totalAmount
+        item.price = -totalAmount  // Negative for expenses
         item.quantity = 1
         order.addItem(item)
         

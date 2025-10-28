@@ -104,7 +104,10 @@ Requirements:
 **Email Configuration:**
 - `walmart.email` - Email address to search for Walmart order notifications (IMAP)
 - `walmart.walmart_email` - Actual Walmart account email (used in order lookup form)
-- If you only specify one, it will be used for both purposes
+- `walmart.email_password` - Email app password for IMAP access
+- `walmart.imap_host` - IMAP server (optional, defaults to `amazon.imap_host`)
+- `walmart.imap_port` - IMAP port (optional, defaults to `amazon.imap_port`)
+- If you only specify one email, it will be used for both purposes
 - If Walmart sends notifications to a different email than your account email, specify both
 
 How it works:
@@ -155,6 +158,10 @@ amazon:
   
   # Optional: If Subscribe & Save emails are forwarded from another account
   # forward_from_address: "some.email@example.com"  # Email address that forwards S&S emails to your inbox
+  
+  # IMAP Configuration (optional, defaults shown)
+  # imap_host: "imap.gmail.com"
+  # imap_port: 993
   
   # CSV fallback (optional)
   csv_file_path: "amazon_orders.csv"

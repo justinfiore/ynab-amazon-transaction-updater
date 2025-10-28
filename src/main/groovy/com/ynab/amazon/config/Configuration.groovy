@@ -22,6 +22,8 @@ class Configuration {
     String amazonEmailPassword
     String amazonForwardFromAddress
     String amazonCsvFilePath
+    String imapHost = "imap.gmail.com"
+    int imapPort = 993
     String processedTransactionsFile
     String logLevel = "INFO"
     boolean dryRun = false
@@ -33,6 +35,8 @@ class Configuration {
     String walmartEmailPassword
     String walmartPassword
     String walmartForwardFromAddress
+    String walmartImapHost  // Walmart IMAP host (defaults to amazon.imap_host if not specified)
+    int walmartImapPort = 0  // Walmart IMAP port (defaults to amazon.imap_port if not specified, 0 means not set)
     String walmartMode = WALMART_MODE_GUEST  // "guest" or "login"
     boolean walmartEnabled = false
     boolean walmartHeadless = true
@@ -76,6 +80,8 @@ class Configuration {
             this.amazonEmailPassword = config.amazon.email_password
             this.amazonForwardFromAddress = config.amazon.forward_from_address
             this.amazonCsvFilePath = config.amazon.csv_file_path
+            this.imapHost = config.amazon.imap_host ?: this.imapHost
+            this.imapPort = (config.amazon.imap_port != null) ? config.amazon.imap_port : this.imapPort
             
             // Application Configuration
             this.processedTransactionsFile = config.app.processed_transactions_file
@@ -90,6 +96,8 @@ class Configuration {
             this.walmartEmailPassword = config.walmart?.email_password
             this.walmartPassword = config.walmart?.password
             this.walmartForwardFromAddress = config.walmart?.forward_from_address
+            this.walmartImapHost = config.walmart?.imap_host
+            this.walmartImapPort = (config.walmart?.imap_port != null) ? config.walmart.imap_port : this.walmartImapPort
             this.walmartMode = config.walmart?.mode ?: this.walmartMode
             this.walmartHeadless = (config.walmart?.headless != null) ? config.walmart.headless : this.walmartHeadless
             this.walmartBrowserTimeout = (config.walmart?.browser_timeout != null) ? config.walmart.browser_timeout : this.walmartBrowserTimeout
@@ -103,6 +111,16 @@ class Configuration {
             } else if (!this.walmartEmail && this.walmartWalmartEmail) {
                 this.walmartEmail = this.walmartWalmartEmail
                 logger.debug("walmart.email not specified, using walmart.walmart_email for both IMAP and order lookup")
+            }
+            
+            // Fallback logic: If Walmart IMAP not specified, use Amazon IMAP settings
+            if (!this.walmartImapHost) {
+                this.walmartImapHost = this.imapHost
+                logger.debug("walmart.imap_host not specified, using amazon.imap_host: ${this.imapHost}")
+            }
+            if (this.walmartImapPort == 0) {
+                this.walmartImapPort = this.imapPort
+                logger.debug("walmart.imap_port not specified, using amazon.imap_port: ${this.imapPort}")
             }
             
             // Configure SimpleLogger - must be set before any logger instances are created
