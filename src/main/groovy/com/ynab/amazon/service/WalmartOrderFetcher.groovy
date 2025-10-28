@@ -58,7 +58,7 @@ class WalmartOrderFetcher {
     /**
      * Initialize Playwright browser - tries Firefox first for non-headless, then Chromium with special flags
      */
-    private void initBrowser() {
+    public void initBrowser() {
         String browserMode = config.walmartHeadless ? "headless" : "non-headless"
         logger.info("Initializing ${browserMode} browser for Walmart")
         
@@ -66,18 +66,32 @@ class WalmartOrderFetcher {
         
         // For non-headless mode, try Firefox first as it's more stable on macOS
         if (!config.walmartHeadless) {
-            try {
-                logger.debug("Attempting to launch Firefox in non-headless mode")
-                def firefoxOptions = new BrowserType.LaunchOptions()
-                    .setHeadless(false)
-                    .setSlowMo(100) // Slow down operations slightly for visibility
-                
-                browser = playwright.firefox().launch(firefoxOptions)
-                context = browser.newContext(new Browser.NewContextOptions()
-                    .setViewportSize(1280, 1024))
+        try {
+        logger.debug("Attempting to launch Firefox in non-headless mode with anti-detection")
+        def firefoxOptions = new BrowserType.LaunchOptions()
+        .setHeadless(false)
+        .setSlowMo(150 + (int)(Math.random() * 200)) // Random slow mo
+            .setArgs([
+                "--disable-blink-features=AutomationControlled"
+            ])
+
+        browser = playwright.firefox().launch(firefoxOptions)
+
+        // Create context with realistic browser fingerprint
+        def contextOptions = new Browser.NewContextOptions()
+            .setViewportSize(1920, 1080)
+            .setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+            .setLocale("en-US")
+            .setTimezoneId("America/New_York")
+
+            context = browser.newContext(contextOptions)
                 page = context.newPage()
                 page.setDefaultTimeout(config.walmartBrowserTimeout)
-                logger.info("Firefox browser initialized successfully in non-headless mode")
+
+                // Add human-like browser behavior
+                addHumanBehaviorScripts(page)
+
+                logger.info("Firefox browser initialized successfully in non-headless mode with anti-detection measures")
                 return
             } catch (Exception e) {
                 logger.warn("Firefox initialization failed: ${e.message}, trying Chromium")
@@ -86,31 +100,42 @@ class WalmartOrderFetcher {
             }
         }
         
-        // Try Chromium with special flags
+        // Try Chromium with enhanced anti-detection measures
         try {
-            def launchOptions = new BrowserType.LaunchOptions()
-                .setHeadless(config.walmartHeadless)
-            
-            // Add args to prevent crashes on macOS
-            if (!config.walmartHeadless) {
-                logger.debug("Launching Chromium in non-headless mode with GPU disabled")
-                launchOptions.setArgs([
-                    "--disable-gpu",
-                    "--disable-software-rasterizer",  
-                    "--disable-dev-shm-usage",
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-blink-features=AutomationControlled"
-                ])
-                launchOptions.setSlowMo(100)
-            }
-            
+        def launchOptions = new BrowserType.LaunchOptions()
+        .setHeadless(config.walmartHeadless)
+
+        // Basic anti-detection arguments
+        def args = [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox"
+        ]
+
+        if (!config.walmartHeadless) {
+            logger.debug("Launching Chromium in non-headless mode with enhanced anti-detection")
+            args.add("--disable-background-timer-throttling")
+            args.add("--disable-renderer-backgrounding")
+        launchOptions.setSlowMo(150 + (int)(Math.random() * 200)) // Random slow mo 150-350ms
+        }
+
+        launchOptions.setArgs(args)
             browser = playwright.chromium().launch(launchOptions)
-            context = browser.newContext(new Browser.NewContextOptions()
-                .setViewportSize(1280, 1024))
+
+        // Create context with realistic browser fingerprint
+            def contextOptions = new Browser.NewContextOptions()
+                .setViewportSize(1920, 1080)  // More common resolution
+                .setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+                .setLocale("en-US")
+                .setTimezoneId("America/New_York")
+
+            context = browser.newContext(contextOptions)
             page = context.newPage()
             page.setDefaultTimeout(config.walmartBrowserTimeout)
-            logger.info("Chromium browser initialized successfully in ${browserMode} mode")
+
+            // Add human-like browser behavior
+            addHumanBehaviorScripts(page)
+
+            logger.info("Chromium browser initialized successfully in ${browserMode} mode with anti-detection measures")
         } catch (Exception e) {
             logger.error("Failed to initialize Chromium browser: ${e.message}", e)
             throw new RuntimeException("Browser initialization failed", e)
@@ -141,10 +166,41 @@ class WalmartOrderFetcher {
     }
     
     /**
+    * Add JavaScript to make browser behavior appear more human-like
+    */
+    private void addHumanBehaviorScripts(Page page) {
+        page.addInitScript("""
+            // Override navigator.webdriver to undefined
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+            });
+
+            // Mock plugins and languages to appear more like a real browser
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [
+                    { name: 'Chrome PDF Plugin', description: 'Portable Document Format', filename: 'internal-pdf-viewer' },
+                    { name: 'Chrome PDF Viewer', description: '', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+                    { name: 'Native Client', description: '', filename: 'internal-nacl-plugin' }
+                ],
+            });
+
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en'],
+            });
+
+            // Add some realistic timing variations
+            const originalGetTime = Date.prototype.getTime;
+            Date.prototype.getTime = function() {
+                return originalGetTime.call(this) + Math.floor(Math.random() * 10);
+            };
+        """)
+    }
+
+    /**
      * Close browser and cleanup resources
      * Ensures cleanup happens even if errors occur
      */
-    private void closeBrowser() {
+    public void closeBrowser() {
         try {
             if (page != null) {
                 page.close()
@@ -186,167 +242,434 @@ class WalmartOrderFetcher {
      * Authenticate with Walmart.com
      * Navigates to walmart.com and logs in using configured credentials
      */
-    private void authenticate() {
+    public void authenticate() {
         executeWithRetry("Authentication", MAX_RETRIES) {
-            logger.info("Authenticating with Walmart.com")
-            
-            // Navigate to Walmart homepage
-            page.navigate("https://www.walmart.com")
-            logger.info("Navigated to walmart.com - URL: ${page.url()}")
-            takeDebugScreenshot("01-homepage")
-            
-            // Wait for page to load
-            page.waitForLoadState(LoadState.DOMCONTENTLOADED)
-            
-            // Click "Sign In" button - try multiple selectors
-            try {
-                logger.debug("Looking for Sign In button...")
-                
-                // Log all visible text on page for debugging
-                String pageText = page.content()
-                logger.debug("Page title: ${page.title()}")
-                
-                // Try different selectors for Sign In
-                def signInSelectors = [
-                    "text=Sign In",
-                    "a:has-text('Sign In')",
-                    "button:has-text('Sign In')",
-                    "[data-automation-id='sign-in']",
-                    "span:has-text('Sign In')"
-                ]
-                
-                boolean clicked = false
-                for (String selector : signInSelectors) {
-                    try {
-                        if (page.locator(selector).count() > 0) {
-                            logger.info("Found Sign In button with selector: ${selector}")
-                            page.click(selector, new Page.ClickOptions().setTimeout(5000))
-                            clicked = true
-                            break
-                        }
-                    } catch (Exception ignored) {
-                        logger.debug("Selector '${selector}' didn't work")
+        logger.info("Authenticating with Walmart.com")
+
+        // Navigate to Walmart homepage with random delay
+        page.navigate("https://www.walmart.com")
+        page.waitForLoadState(com.microsoft.playwright.options.LoadState.DOMCONTENTLOADED)
+        randomDelay(1000, 3000)  // Wait like a human would
+
+        // Check for bot detection immediately after page load (Walmart sometimes triggers it here)
+        boolean botDetectionHandled = false
+        if (handleBotDetectionIfPresent()) {
+            botDetectionHandled = true
+            logger.debug("Bot detection was present and handled, page may have changed")
+        // Wait a bit for any redirects or page changes to complete
+        randomDelay(2000, 4000)
+        }
+
+        // If bot detection was handled, we might need to re-navigate to the main page
+        if (botDetectionHandled && !page.url().contains("walmart.com")) {
+        logger.debug("Redirected after bot detection, navigating back to Walmart")
+        page.navigate("https://www.walmart.com")
+        page.waitForLoadState(com.microsoft.playwright.options.LoadState.DOMCONTENTLOADED)
+        randomDelay(1000, 2000)
+        }
+
+        // Do some human-like browsing behavior before signing in
+        performHumanBrowsing()
+
+        // Debug: Check page state before looking for sign in button
+        try {
+        logger.debug("Page URL before sign in: ${page.url()}")
+        logger.debug("Page title before sign in: ${page.title()}")
+        int signInButtonCount = page.locator("text=Sign In").count()
+        logger.debug("Sign In buttons found: ${signInButtonCount}")
+        } catch (Exception e) {
+        logger.debug("Error checking page state: ${e.message}")
+        }
+
+        // Click Sign In button with human-like behavior
+        def signInSelectors = [
+        "text=Sign In",
+        "a:has-text('Sign In')",
+        "button:has-text('Sign In')",
+        "[data-automation-id='sign-in']"
+        ]
+
+        boolean clicked = false
+        for (String selector : signInSelectors) {
+        try {
+            if (page.locator(selector).count() > 0) {
+                humanClick(selector)
+                clicked = true
+                logger.debug("Clicked initial Sign In button")
+                        break
+            }
+        } catch (Exception ignored) {}
+            }
+
+        if (!clicked) {
+                throw new RuntimeException("Could not find initial Sign In button")
+        }
+
+        // Wait for dropdown panel to appear and click the actual sign in button
+        randomDelay(1000, 2000)
+
+        def actualSignInSelectors = [
+                "[data-dca-name='SignIn']",
+        "button:has-text('Sign in or create account')",
+        "a:has-text('Sign in or create account')",
+        "[data-automation-id='sign-in-create-account']"
+        ]
+
+        boolean actualClicked = false
+        for (String selector : actualSignInSelectors) {
+        try {
+        if (page.locator(selector).count() > 0) {
+            humanClick(selector)
+        actualClicked = true
+            logger.debug("Clicked actual sign in button: ${selector}")
+                break
                     }
+        } catch (Exception ignored) {}
+        }
+
+        if (!actualClicked) {
+        throw new RuntimeException("Could not find actual sign in button in dropdown")
+            }
+
+        // Check for bot detection after clicking sign in
+            if (!handleBotDetectionIfPresent()) {
+        throw new RuntimeException("Failed to handle bot detection after clicking sign in")
+        }
+
+        // Wait for the email/phone input field with random delay
+        page.waitForSelector("input[name='Phone number or email']",
+            new Page.WaitForSelectorOptions().setTimeout(10000))
+        randomDelay(500, 1500)
+
+        // Enter email with human-like typing
+        String emailSelector = "input[name='Phone number or email']"
+        humanType(emailSelector, config.walmartEmail)
+
+        // Click Continue button
+        def continueSelectors = [
+        "button:has-text('Continue')",
+        "button[type='submit']",
+        "[data-automation-id='continue']"
+        ]
+
+        boolean continued = false
+        for (String selector : continueSelectors) {
+        try {
+                if (page.locator(selector).count() > 0) {
+                        humanClick(selector)
+                    continued = true
+                    logger.debug("Clicked Continue button")
+                break
+            }
+        } catch (Exception ignored) {}
+        }
+
+        if (!continued) {
+        throw new RuntimeException("Could not find Continue button")
+        }
+
+            // Wait for the sign-in method selection page
+        randomDelay(2000, 4000)
+        page.waitForSelector("input[type='radio']", new Page.WaitForSelectorOptions().setTimeout(10000))
+
+        // Select the "Password" radio button
+        def passwordRadioSelectors = [
+        "input[type='radio'][value*='password']",
+        "input[type='radio']:has-text('Password')",
+        "input[type='radio']",
+                "[data-automation-id='password-radio']"
+        ]
+
+        boolean passwordSelected = false
+        for (String selector : passwordRadioSelectors) {
+        try {
+        if (page.locator(selector).count() > 0) {
+        page.check(selector)
+        passwordSelected = true
+        logger.debug("Selected Password sign-in method")
+            break
+        }
+        } catch (Exception ignored) {}
+        }
+
+        // If no specific password radio found, try to find any radio button near "Password" text
+        if (!passwordSelected) {
+        try {
+            def passwordOption = page.locator("text=Password").locator("xpath=ancestor::label//input[@type='radio']").first()
+                    if (passwordOption.count() > 0) {
+                passwordOption.check()
+                passwordSelected = true
+                    logger.debug("Selected Password sign-in method (via text locator)")
+            }
+        } catch (Exception ignored) {}
+        }
+
+            if (!passwordSelected) {
+            throw new RuntimeException("Could not select Password sign-in method")
+        }
+
+        // Check for bot detection after selecting password method
+        if (!handleBotDetectionIfPresent()) {
+        throw new RuntimeException("Failed to handle bot detection after selecting password method")
+        }
+
+        // Wait for password field to appear
+        page.waitForSelector("input[name='password']", new Page.WaitForSelectorOptions().setTimeout(5000))
+        randomDelay(500, 1000)
+
+        // Enter password with human-like typing
+        String passwordSelector = "input[name='password']"
+        humanType(passwordSelector, config.walmartPassword)
+
+        // Click Sign In button
+        def finalSignInSelectors = [
+        "button:has-text('Sign In')",
+        "button[type='submit']",
+        "[data-automation-id='sign-in-submit']"
+            ]
+
+        boolean submitted = false
+        for (String selector : finalSignInSelectors) {
+        try {
+        if (page.locator(selector).count() > 0) {
+        humanClick(selector)
+        submitted = true
+        logger.debug("Clicked Sign In button")
+        break
+        }
+        } catch (Exception ignored) {}
+        }
+
+            if (!submitted) {
+        throw new RuntimeException("Could not find Sign In button")
+        }
+
+        // Check for bot detection after submitting login form
+        if (!handleBotDetectionIfPresent()) {
+        throw new RuntimeException("Failed to handle bot detection after submitting login")
+        }
+
+        // Wait for login to complete with random delay
+        randomDelay(2000, 5000)
+        page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE,
+        new Page.WaitForLoadStateOptions().setTimeout(15000))
+        }
+    }
+    
+    /**
+     * Detect and handle bot verification page if present
+     * Looks for "Activate and hold the button to confirm that you're human" message
+     * @return true if no bot detection or successfully bypassed, false if failed
+     */
+    private boolean handleBotDetectionIfPresent() {
+    try {
+    // Check if we're on a blocked/verification page or have bot detection elements
+    boolean isBlocked = page.url().contains("/blocked") ||
+                       page.locator("text=Activate and hold the button").count() > 0 ||
+                       page.locator("text=confirm that you're human").count() > 0 ||
+                       page.locator("text=Press & Hold").count() > 0 ||
+                       page.locator("text=Press and hold").count() > 0 ||
+    page.locator("#px-captcha").count() > 0
+
+    if (!isBlocked) {
+    return true
+    }
+
+    logger.info("Bot detection detected, attempting to bypass...")
+
+    // Debug: log page content to understand what's there
+            try {
+        String pageTitle = page.title()
+        String currentUrl = page.url()
+        logger.debug("Page title: ${pageTitle}")
+        logger.debug("Current URL: ${currentUrl}")
+
+    // Look for captcha iframe
+    int captchaFrames = page.locator("#px-captcha").count()
+    logger.debug("Captcha iframes found: ${captchaFrames}")
+
+    // Look for any buttons on the page
+    int totalButtons = page.locator("button").count()
+                logger.debug("Total buttons found: ${totalButtons}")
+
+    // Log text content that might indicate bot detection
+    def pressHoldElements = page.locator("text=Press").all()
+    logger.debug("Elements with 'Press' text: ${pressHoldElements.size()}")
+
+    def holdElements = page.locator("text=Hold").all()
+    logger.debug("Elements with 'Hold' text: ${holdElements.size()}")
+
+    } catch (Exception e) {
+    logger.debug("Error during debug logging: ${e.message}")
+    }
+
+    // Check if the button is inside an iframe
+    FrameLocator captchaFrame = null
+    try {
+                captchaFrame = page.frameLocator("#px-captcha iframe")
+    logger.debug("Found captcha iframe, will search inside it")
+    } catch (Exception e) {
+    logger.debug("No captcha iframe found, searching in main page")
+    }
+
+    // Look for the verification button - prioritize actual clickable elements
+    def buttonSelectors = [
+        "button:has-text('Press')",
+                "button:has-text('Hold')",
+        "[role='button']:has-text('Press')",
+        "[role='button']:has-text('Hold')",
+    "div[role='button']:has-text('Press')",
+    "div[role='button']:has-text('Hold')",
+    "span[role='button']:has-text('Press')",
+    "span[role='button']:has-text('Hold')",
+    "[aria-label*='Press']",
+    "[aria-label*='Hold']",
+    "div:has-text('Press & Hold')",
+    "div:has-text('Press and hold')",
+    "div:has-text('Press')",
+    "div:has-text('Hold')",
+    "text=Press & Hold",
+    "text=Press and hold",
+                "text=Press",
+                "text=Hold",
+                "[data-testid*='press']",
+                "[data-testid*='hold']"
+            ]
+
+            Locator verifyButton = null
+            for (String selector : buttonSelectors) {
+                try {
+                    Locator locator
+                    if (captchaFrame != null) {
+                        // Search inside the iframe
+                        locator = captchaFrame.locator(selector)
+                    } else {
+                        // Search in main page
+                        locator = page.locator(selector)
+                    }
+
+                    int count = locator.count()
+                    logger.debug("Selector '${selector}' found ${count} elements" + (captchaFrame != null ? " (in iframe)" : " (in main page)"))
+                    if (count > 0) {
+                        verifyButton = locator.first()
+                        logger.debug("Using selector: ${selector}" + (captchaFrame != null ? " (in iframe)" : " (in main page)"))
+                        break
+                    }
+                } catch (Exception e) {
+                    logger.debug("Error with selector '${selector}': ${e.message}")
                 }
-                
-                if (!clicked) {
-                    takeDebugScreenshot("02-signin-button-not-found")
-                    logger.error("Could not find Sign In button with any selector")
-                    throw new RuntimeException("Cannot find Sign In button")
+            }
+
+            if (verifyButton == null) {
+                logger.error("Could not find verification button")
+                return false
+            }
+
+            // Ensure the button is visible and scroll it into view
+            try {
+                if (captchaFrame != null) {
+                    // For iframe elements, use scrollIntoViewIfNeeded which works across frames
+                    verifyButton.scrollIntoViewIfNeeded()
+                } else {
+                    // For main page elements, use evaluate
+                    verifyButton.evaluate("element => element.scrollIntoView({block: 'center', inline: 'center'})")
                 }
-                
-                logger.info("Clicked Sign In button")
-                takeDebugScreenshot("03-after-signin-click")
+                randomDelay(500, 1000)  // Wait for scroll to complete
+
+                // Try to make sure the element is visible
+                verifyButton.evaluate("""
+                    element => {
+                        element.style.display = 'block';
+                        element.style.visibility = 'visible';
+                        element.style.opacity = '1';
+                        element.style.pointerEvents = 'auto';
+                    }
+                """)
+                randomDelay(200, 500)
             } catch (Exception e) {
-                takeDebugScreenshot("error-signin-button")
-                logger.error("Failed to find/click Sign In button: ${e.message}")
-                throw new RuntimeException("Authentication failed: Cannot find Sign In button", e)
+                logger.debug("Warning: Could not prepare button for interaction: ${e.message}")
             }
-            
-            // Wait for sign-in form to appear
-            logger.debug("Waiting for email input field...")
+
+            // First, click on the button to activate it, then hold it down
+            logger.debug("Clicking verification button to activate it...")
             try {
-                page.waitForSelector("input[type='email'], input[name='email'], input[id*='email']", 
-                    new Page.WaitForSelectorOptions().setTimeout(10000))
-                logger.info("Email input field appeared")
-                takeDebugScreenshot("04-signin-form")
+                verifyButton.click()
+                randomDelay(500, 1000)
+                logger.debug("Button clicked, now starting hold sequence...")
             } catch (Exception e) {
-                takeDebugScreenshot("error-no-email-field")
-                logger.error("Email input field did not appear: ${e.message}")
-                throw e
+                logger.debug("Warning: Could not click button, trying mouse approach: ${e.message}")
             }
-            
-            // Enter email
-            try {
-                String emailSelector = "input[type='email'], input[name='email'], input[id*='email']"
-                page.fill(emailSelector, config.walmartEmail)
-                logger.info("Entered email address")
-                takeDebugScreenshot("05-email-entered")
-            } catch (Exception e) {
-                takeDebugScreenshot("error-email-entry")
-                logger.error("Failed to enter email: ${e.message}")
-                throw new RuntimeException("Authentication failed: Cannot enter email", e)
+
+            // Since the button moves, we'll try to hold it down for a longer time
+            // and continuously check its position
+            logger.debug("Starting verification button hold sequence...")
+
+            // Initial position - get fresh position after click
+            def box = verifyButton.boundingBox()
+            if (box == null) {
+                logger.error("Could not get initial button bounding box")
+                return false
             }
-            
-            // Enter password
-            try {
-                String passwordSelector = "input[type='password'], input[name='password'], input[id*='password']"
-                page.fill(passwordSelector, config.walmartPassword)
-                logger.info("Entered password")
-                takeDebugScreenshot("06-password-entered")
-            } catch (Exception e) {
-                takeDebugScreenshot("error-password-entry")
-                logger.error("Failed to enter password: ${e.message}")
-                throw new RuntimeException("Authentication failed: Cannot enter password", e)
-            }
-            
-            // Click submit button
-            try {
-                logger.debug("Looking for submit button...")
-                def submitSelectors = [
-                    "button[type='submit']",
-                    "button:has-text('Sign In')",
-                    "button:has-text('Sign in')",
-                    "[data-automation-id='sign-in-submit']"
-                ]
-                
-                boolean submitted = false
-                for (String selector : submitSelectors) {
-                    try {
-                        if (page.locator(selector).count() > 0) {
-                            logger.info("Found submit button with selector: ${selector}")
-                            page.click(selector)
-                            submitted = true
-                            break
+
+            double centerX = box.x + (box.width / 2)
+            double centerY = box.y + (box.height / 2)
+
+            // Move mouse to position and press down
+            page.mouse().move(centerX, centerY)
+            randomDelay(200, 500)
+            page.mouse().down()
+            logger.debug("Mouse button pressed down, holding for extended period...")
+
+            // Hold for the configured time since the button moves
+            long holdTimeMs = config.walmartBotDetectionHoldTimeMs
+            long startTime = System.currentTimeMillis()
+            long checkInterval = 500 // Check position every 500ms
+
+            while (System.currentTimeMillis() - startTime < holdTimeMs) {
+                try {
+                    // Recheck button position and adjust mouse if needed
+                    def currentBox = verifyButton.boundingBox()
+                    if (currentBox != null) {
+                        double currentCenterX = currentBox.x + (currentBox.width / 2)
+                        double currentCenterY = currentBox.y + (currentBox.height / 2)
+
+                        // If position changed significantly, move mouse
+                        if (Math.abs(currentCenterX - centerX) > 10 || Math.abs(currentCenterY - centerY) > 10) {
+                            page.mouse().move(currentCenterX, currentCenterY)
+                            centerX = currentCenterX
+                            centerY = currentCenterY
+                            logger.debug("Adjusted mouse position to follow moving button")
                         }
-                    } catch (Exception ignored) {}
+                    }
+                } catch (Exception e) {
+                    // Button might have disappeared or changed, continue holding
+                    logger.debug("Warning: Could not recheck button position: ${e.message}")
                 }
-                
-                if (!submitted) {
-                    takeDebugScreenshot("error-no-submit-button")
-                    throw new RuntimeException("Cannot find submit button")
-                }
-                
-                logger.info("Clicked submit button")
-                takeDebugScreenshot("07-submit-clicked")
-            } catch (Exception e) {
-                takeDebugScreenshot("error-submit-button")
-                logger.error("Failed to click submit button: ${e.message}")
-                throw new RuntimeException("Authentication failed: Cannot submit login form", e)
+
+                Thread.sleep(checkInterval)
             }
-            
-            // Wait for navigation after login - look for account indicator
-            try {
-                logger.debug("Waiting for login to complete...")
-                page.waitForLoadState(LoadState.NETWORKIDLE, new Page.WaitForLoadStateOptions().setTimeout(15000))
-                logger.info("Page loaded after login - URL: ${page.url()}")
-                takeDebugScreenshot("08-after-login")
-                
-                // Verify successful login by checking for account menu or "My Account" link
-                boolean loggedIn = page.locator("text=Account").count() > 0 ||
-                                   page.locator("text=My Account").count() > 0 ||
-                                   page.url().contains("account") ||
-                                   !page.url().contains("signin")
-                
-                logger.debug("Login verification - Account locator count: ${page.locator('text=Account').count()}")
-                logger.debug("Login verification - URL contains 'account': ${page.url().contains('account')}")
-                logger.debug("Login verification - URL contains 'signin': ${page.url().contains('signin')}")
-                
-                if (!loggedIn) {
-                    takeDebugScreenshot("09-login-verification-failed")
-                    logger.error("Login verification failed - account indicators not found. URL: ${page.url()}")
-                    logger.error("Page title: ${page.title()}")
-                    throw new RuntimeException("Authentication failed: Login verification failed")
-                }
-                
-                logger.info("Successfully authenticated with Walmart.com")
-                takeDebugScreenshot("10-login-success")
-            } catch (TimeoutError e) {
-                takeDebugScreenshot("error-login-timeout")
-                logger.error("Timeout waiting for login to complete: ${e.message}")
-                logger.error("Current URL: ${page.url()}")
-                throw new RuntimeException("Authentication failed: Login timeout", e)
+
+            // Release the mouse button
+            page.mouse().up()
+            logger.info("Mouse button released after ${holdTimeMs}ms hold")
+
+            // Wait for verification to process
+            Thread.sleep(5000)
+            page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE,
+                new Page.WaitForLoadStateOptions().setTimeout(10000))
+
+            // Check if still blocked
+            boolean stillBlocked = page.url().contains("/blocked")
+            if (!stillBlocked) {
+                logger.info("Bot verification appears successful")
+            } else {
+                logger.warn("Still on blocked page after verification attempt")
             }
+            return !stillBlocked
+
+        } catch (Exception e) {
+            logger.error("Error handling bot detection: ${e.message}", e)
+            return false
         }
     }
     
@@ -381,7 +704,7 @@ class WalmartOrderFetcher {
             executeWithRetry("Navigate to orders page", MAX_RETRIES) {
                 logger.info("Navigating to Walmart orders page")
                 page.navigate(config.walmartOrdersUrl)
-                page.waitForLoadState(LoadState.NETWORKIDLE)
+                page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE)
                 logger.debug("Orders page loaded")
                 
                 // Wait for orders to load
@@ -433,7 +756,7 @@ class WalmartOrderFetcher {
                     
                     // Click "View Details" to open order details
                     orderCard.locator("text=View Details, a:has-text('View Details')").first().click()
-                    page.waitForLoadState(LoadState.NETWORKIDLE)
+                    page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE)
                     logger.debug("Opened order details for order ${i + 1}")
                     
                     // Parse order details
@@ -449,7 +772,7 @@ class WalmartOrderFetcher {
                     
                     // Navigate back to orders list
                     page.goBack()
-                    page.waitForLoadState(LoadState.NETWORKIDLE)
+                    page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE)
                     page.waitForSelector(".order-card, [data-automation-id='order-card']", 
                         new Page.WaitForSelectorOptions().setTimeout(5000))
                     logger.debug("Navigated back to orders list")
@@ -462,7 +785,7 @@ class WalmartOrderFetcher {
                     try {
                         if (!page.url().contains("/orders")) {
                             page.navigate(config.walmartOrdersUrl)
-                            page.waitForLoadState(LoadState.NETWORKIDLE)
+                            page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE)
                         }
                     } catch (Exception navError) {
                         logger.error("Failed to recover navigation: ${navError.message}")
@@ -789,5 +1112,82 @@ class WalmartOrderFetcher {
         
         // All retries exhausted
         throw new RuntimeException("${operationName} failed after ${maxRetries} attempts", lastException)
+    }
+
+    private static int getRandomDelay(int min, int max) {
+        return min + (int) (Math.random() * (max - min))
+    }
+
+    private void performHumanBrowsing() {
+        // Simulate human browsing behavior - move mouse around, maybe scroll a bit
+        try {
+            // Random mouse movements
+            def viewport = page.viewportSize()
+            for (int i = 0; i < getRandomDelay(2, 5); i++) {
+                int x = getRandomDelay(100, viewport.width - 100)
+                int y = getRandomDelay(100, viewport.height - 100)
+                page.mouse().move(x, y)
+                randomDelay(200, 800)
+            }
+
+            // Maybe scroll down a bit like a human browsing
+            if (Math.random() > 0.5) {
+                page.mouse().wheel(0, getRandomDelay(200, 500))
+                randomDelay(500, 1000)
+            }
+        } catch (Exception e) {
+            // Ignore errors in human behavior simulation
+        }
+    }
+
+    private void humanClick(String selector) {
+        try {
+            // Move mouse to element naturally
+            def element = page.locator(selector).first()
+            def box = element.boundingBox()
+            if (box != null) {
+                // Move to a random point within the element
+                double targetX = box.x + getRandomDelay(5, (int)box.width - 5)
+                double targetY = box.y + getRandomDelay(5, (int)box.height - 5)
+                page.mouse().move(targetX, targetY)
+                randomDelay(100, 300)
+            }
+
+            // Click with slight delay
+            page.click(selector, new Page.ClickOptions().setDelay(getRandomDelay(50, 150)))
+        } catch (Exception e) {
+            // Fallback to regular click
+            page.click(selector)
+        }
+    }
+
+    private void humanType(String selector, String text) {
+        // Focus on the field first
+        page.focus(selector)
+        randomDelay(100, 300)
+
+        // Type each character with random delay
+        for (char c : text.toCharArray()) {
+            page.type(selector, String.valueOf(c))
+            randomDelay(80, 200)  // Human typing speed
+        }
+    }
+
+    private void randomDelay(int minMs, int maxMs) {
+        try {
+            Thread.sleep(getRandomDelay(minMs, maxMs))
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt()
+        }
+    }
+
+    public void verifyLoginSuccess() {
+        // Verify successful login by checking for account indicators
+        boolean loggedIn = page.locator("text=Account").count() > 0 ||
+                          page.locator("text=My Account").count() > 0 ||
+                          page.url().contains("account") ||
+                          !page.url().contains("signin")
+
+        assert loggedIn : "Login verification failed. URL: ${page.url()}, Title: ${page.title()}"
     }
 }

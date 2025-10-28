@@ -30,6 +30,7 @@ class Configuration {
     boolean walmartHeadless = true
     int walmartBrowserTimeout = 30000
     String walmartOrdersUrl = "https://www.walmart.com/orders"
+    int walmartBotDetectionHoldTimeMs = 15000  // Default 15 seconds
     
     Configuration() {
         // Do not auto-load from file by default to keep tests deterministic.
@@ -81,6 +82,7 @@ class Configuration {
             this.walmartHeadless = (config.walmart?.headless != null) ? config.walmart.headless : this.walmartHeadless
             this.walmartBrowserTimeout = (config.walmart?.browser_timeout != null) ? config.walmart.browser_timeout : this.walmartBrowserTimeout
             this.walmartOrdersUrl = config.walmart?.orders_url ?: this.walmartOrdersUrl
+            this.walmartBotDetectionHoldTimeMs = (config.walmart?.bot_detection_hold_time_ms != null) ? config.walmart.bot_detection_hold_time_ms : this.walmartBotDetectionHoldTimeMs
             
             // Configure SimpleLogger - must be set before any logger instances are created
             System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", this.logLevel)
