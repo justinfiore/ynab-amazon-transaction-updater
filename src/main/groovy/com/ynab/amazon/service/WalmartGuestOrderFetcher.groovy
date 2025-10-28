@@ -864,12 +864,14 @@ class WalmartGuestOrderFetcher {
             // Ensure the button is visible and scroll it into view
             try {
                 if (captchaFrame != null) {
+                    logger.debug("Scrolling into view for captcha frame ...")
                     verifyButton.scrollIntoViewIfNeeded()
                 } else {
+                    logger.debug("Scrolling into view for main page ...")
                     verifyButton.evaluate("element => element.scrollIntoView({block: 'center', inline: 'center'})")
                 }
                 randomDelay(500, 1000)
-
+                logger.debug("Making button visible ...")
                 verifyButton.evaluate("""
                     element => {
                         element.style.display = 'block';
