@@ -52,3 +52,5 @@ logs/
 
 # Sensitive integration tests
 WalmartLogin_IT.groovy
+PR_BODY.md
+COMMIT_MESSAGE.txt

@@ -96,8 +96,8 @@ class AmazonOrderFetcher {
         try {
             Properties props = new Properties()
             props.put("mail.store.protocol", "imaps")
-            props.put("mail.imaps.host", "imap.gmail.com")
-            props.put("mail.imaps.port", "993")
+            props.put("mail.imaps.host", config.imapHost)
+            props.put("mail.imaps.port", String.valueOf(config.imapPort))
             props.put("mail.imaps.ssl.enable", "true")
             
             Session session = Session.getInstance(props, null)

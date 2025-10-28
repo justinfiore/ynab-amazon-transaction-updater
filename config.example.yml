@@ -15,14 +15,25 @@ amazon:
   email_password: "your_amazon_email_app_password"  # App password for your Amazon email (use an app password, not your main password)
   # Optional: If Subscribe & Save emails are forwarded from another account
   # forward_from_address: "some.email@example.com"  # Email address that forwards S&S emails to your inbox
+  # IMAP Configuration (optional, defaults to Gmail)
+  # imap_host: "imap.gmail.com"  # IMAP server hostname (default: imap.gmail.com)
+  # imap_port: 993  # IMAP server port (default: 993)
   # CSV fallback (if email fetching is not used or fails):
   csv_file_path: "amazon_orders.csv"  # Your exported Amazon order history CSV file
 
 # Walmart Configuration (optional)
 walmart:
   enabled: false  # Set to true to enable Walmart order fetching
-  email: "your_walmart_email@example.com"  # Your Walmart account email
-  password: "your_walmart_password"  # Your Walmart account password
+  mode: "guest"  # Mode: "guest" (email lookup) or "login" (requires password) (default: "guest")
+  email: "your_email@example.com"  # Email address to search for Walmart order notifications (IMAP, e.g. Gmail)
+  walmart_email: "your_walmart_account@example.com"  # Actual Walmart account email. Might be same as `email` but might be different. If not specified, defaults to `email`
+  email_password: "your_email_app_password"  # Email app password for IMAP access (required for guest mode)
+  password: "your_walmart_password"  # Your Walmart account password (required only for login mode)
+  # Optional: If Walmart emails are forwarded from another account
+  # forward_from_address: "some.email@example.com"  # Email address that forwards Walmart emails to your inbox (guest mode only)
+  # IMAP Configuration (optional, defaults to Amazon IMAP settings if not specified)
+  # imap_host: "imap.gmail.com"  # IMAP server hostname (defaults to amazon.imap_host)
+  # imap_port: 993  # IMAP server port (defaults to amazon.imap_port)
   headless: true  # Set to false to see browser in action (optional, default: true)
   browser_timeout: 30000  # Browser operation timeout in milliseconds (optional, default: 30000)
   orders_url: "https://www.walmart.com/orders"  # Walmart orders URL (optional, default shown)
@@ -40,10 +51,18 @@ app:
 #               Automatically includes Subscribe & Save delivery notifications
 # amazon.email_password: App password for the above email (never use your main password)
 # amazon.forward_from_address: Optional - Email address you forward S&S emails from (if applicable)
+# amazon.imap_host: IMAP server hostname (optional, default: imap.gmail.com)
+# amazon.imap_port: IMAP server port (optional, default: 993)
 # amazon.csv_file_path: Path to your Amazon order CSV file (used as fallback)
 # walmart.enabled: Enable/disable Walmart order fetching (default: false)
-# walmart.email: Your Walmart account email (required if enabled)
-# walmart.password: Your Walmart account password (required if enabled)
+# walmart.mode: Mode to use - "guest" (email lookup) or "login" (account login) (default: "guest")
+# walmart.email: Email address to search for Walmart order notifications (IMAP). If only one email specified, used for both.
+# walmart.walmart_email: Actual Walmart account email (used in order lookup form). If only one email specified, used for both.
+# walmart.email_password: Email app password for IMAP access (required for guest mode)
+# walmart.password: Your Walmart account password (required only for login mode)
+# walmart.forward_from_address: Optional - Email address you forward Walmart emails from (guest mode only, if applicable)
+# walmart.imap_host: IMAP server hostname (optional, defaults to amazon.imap_host)
+# walmart.imap_port: IMAP server port (optional, defaults to amazon.imap_port)
 # walmart.headless: Run browser in headless mode (default: true, set to false to see browser in action)
 # walmart.browser_timeout: Timeout for browser operations in milliseconds (optional, default: 30000)
 # walmart.orders_url: URL for Walmart orders page (optional, default: https://www.walmart.com/orders)
@@ -60,8 +79,11 @@ app:
 # 
 # walmart:
 #   enabled: true
-#   email: "your.walmart.email@example.com"
-#   password: "your_secure_walmart_password"
+#   mode: "guest"  # Use guest mode for email lookup (no Walmart password needed)
+#   email: "your.email@example.com"  # Email to search for Walmart notifications
+#   walmart_email: "your.walmart.account@example.com"  # Walmart account email (defaults to `email` if not specified)
+#   email_password: "your_email_app_password"  # Email app password for guest mode
+#   # password: "your_secure_walmart_password"  # Only needed if using mode: "login"
 #   headless: false  # Set to false to see browser in action while testing
 # 
 # app:

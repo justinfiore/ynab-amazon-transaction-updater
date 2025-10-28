@@ -92,7 +92,36 @@ Note: CSV export does not include Subscribe & Save orders automatically.
 
 #### Walmart Order Data Source (Optional)
 
-The application can automatically fetch Walmart orders using browser automation:
+The application can automatically fetch Walmart orders using two different modes:
+
+**Mode 1: Guest Mode (Recommended - No Walmart Password Required)**
+
+Requirements:
+- Email account to search for Walmart order notifications (Gmail or other IMAP provider) with app password
+- Walmart account email address (may be the same as above or different)
+- Playwright browser automation library (automatically installed)
+
+**Email Configuration:**
+- `walmart.email` - Email address to search for Walmart order notifications (IMAP)
+- `walmart.walmart_email` - Actual Walmart account email (used in order lookup form)
+- `walmart.email_password` - Email app password for IMAP access
+- `walmart.imap_host` - IMAP server (optional, defaults to `amazon.imap_host`)
+- `walmart.imap_port` - IMAP port (optional, defaults to `amazon.imap_port`)
+- If you only specify one email, it will be used for both purposes
+- If Walmart sends notifications to a different email than your account email, specify both
+
+How it works:
+1. Searches your email for Walmart order notifications (from help@walmart.com or configured forward address)
+2. Extracts order IDs and dates from emails
+3. For each order, uses Walmart's guest order lookup feature
+4. Fills in the Walmart account email and order number to access order details
+5. Extracts order information including:
+   - Order number and date
+   - Final charge amounts (ignores temporary holds)
+   - Product summaries
+   - Order status
+
+**Mode 2: Login Mode (Full Account Access)**
 
 Requirements:
 - Walmart account credentials (email and password)
@@ -103,13 +132,10 @@ How it works:
 2. Logs into your Walmart account
 3. Navigates to your order history
 4. Fetches delivered orders within the lookback period
-5. Extracts order details including:
-   - Order number and date
-   - Final charge amounts (ignores temporary holds)
-   - Product summaries
-   - Order status
+5. Extracts order details
 
 **Important Notes:**
+- Guest mode is recommended as it doesn't require storing your Walmart password
 - Only "Delivered" orders are processed
 - Orders with multiple charges are handled by matching each transaction to individual final charge amounts
 - The application extracts only "Final Order Charges" from the Charge History, ignoring "Temporary Hold" charges
@@ -133,13 +159,21 @@ amazon:
   # Optional: If Subscribe & Save emails are forwarded from another account
   # forward_from_address: "some.email@example.com"  # Email address that forwards S&S emails to your inbox
   
+  # IMAP Configuration (optional, defaults shown)
+  # imap_host: "imap.gmail.com"
+  # imap_port: 993
+  
   # CSV fallback (optional)
   csv_file_path: "amazon_orders.csv"
 
 walmart:
   enabled: true  # Set to true to enable Walmart integration
-  email: "your_walmart_email@example.com"
-  password: "your_walmart_password"
+  mode: "guest"  # Mode: "guest" (email lookup, no Walmart password) or "login" (requires Walmart password)
+  email: "your_email@example.com"  # Email to search for Walmart order notifications (IMAP)
+  walmart_email: "your_walmart_account@example.com"  # Walmart account email (defaults to `email` if not specified)
+  email_password: "your_email_app_password"  # Email app password for IMAP (required for guest mode)
+  # password: "your_walmart_password"  # Walmart account password (only needed for login mode)
+  # forward_from_address: "some.email@example.com"  # Optional: for forwarded Walmart emails (guest mode only)
   headless: true  # Set to false to see browser in action (default: true)
   browser_timeout: 30000  # Optional: timeout in milliseconds (default: 30000)
   orders_url: "https://www.walmart.com/orders"  # Optional: custom orders URL
