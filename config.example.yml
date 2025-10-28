@@ -23,6 +23,7 @@ walmart:
   enabled: false  # Set to true to enable Walmart order fetching
   mode: "guest"  # Mode: "guest" (email lookup) or "login" (requires password) (default: "guest")
   email: "your_walmart_email@example.com"  # Your Walmart account email (required for both modes)
+  email_password: "your_walmart_email_app_password"  # Email app password for IMAP access (required for guest mode)
   password: "your_walmart_password"  # Your Walmart account password (required only for login mode)
   # Optional: If Walmart emails are forwarded from another account
   # forward_from_address: "some.email@example.com"  # Email address that forwards Walmart emails to your inbox (guest mode only)
@@ -45,8 +46,9 @@ app:
 # amazon.forward_from_address: Optional - Email address you forward S&S emails from (if applicable)
 # amazon.csv_file_path: Path to your Amazon order CSV file (used as fallback)
 # walmart.enabled: Enable/disable Walmart order fetching (default: false)
-# walmart.mode: Mode to use - "guest" (email lookup, requires just email) or "login" (requires email + password) (default: "guest")
+# walmart.mode: Mode to use - "guest" (email lookup) or "login" (account login) (default: "guest")
 # walmart.email: Your Walmart account email (required for both modes)
+# walmart.email_password: Email app password for IMAP access (required for guest mode)
 # walmart.password: Your Walmart account password (required only for login mode)
 # walmart.forward_from_address: Optional - Email address you forward Walmart emails from (guest mode only, if applicable)
 # walmart.headless: Run browser in headless mode (default: true, set to false to see browser in action)
@@ -65,8 +67,9 @@ app:
 # 
 # walmart:
 #   enabled: true
-#   mode: "guest"  # Use guest mode for email lookup (no password needed)
+#   mode: "guest"  # Use guest mode for email lookup (no Walmart password needed)
 #   email: "your.walmart.email@example.com"
+#   email_password: "your_walmart_email_app_password"  # Email app password for guest mode
 #   # password: "your_secure_walmart_password"  # Only needed if using mode: "login"
 #   headless: false  # Set to false to see browser in action while testing
 # 

@@ -122,7 +122,7 @@ class WalmartGuestOrderFetcher {
             
             Session session = Session.getInstance(props, null)
             Store store = session.getStore("imaps")
-            store.connect(config.amazonEmail, config.amazonEmailPassword)
+            store.connect(config.walmartEmail, config.walmartEmailPassword)
             
             Folder inbox = store.getFolder("INBOX")
             inbox.open(Folder.READ_ONLY)
@@ -767,18 +767,30 @@ class WalmartGuestOrderFetcher {
             }
 
             logger.warn("Bot detection detected - looking for 'Press & Hold' button...")
+            logger.warn("Current URL: ${page.url()}")
+            logger.warn("Page title: ${page.title()}")
 
             // Check if the button is inside an iframe
             FrameLocator captchaFrame = null
-            try {
-                captchaFrame = page.frameLocator("#px-captcha iframe")
-                logger.debug("Found captcha iframe, will search inside it")
-            } catch (Exception e) {
+            int iframeCount = page.locator("#px-captcha").count()
+            logger.debug("px-captcha elements found: ${iframeCount}")
+            
+            if (iframeCount > 0) {
+                try {
+                    captchaFrame = page.frameLocator("#px-captcha iframe")
+                    logger.debug("Found captcha iframe, will search inside it")
+                } catch (Exception e) {
+                    logger.debug("Error accessing iframe: ${e.message}")
+                }
+            } else {
                 logger.debug("No captcha iframe found, searching in main page")
             }
 
             // Look for the verification button - prioritize actual clickable elements
             def buttonSelectors = [
+                "text=PRESS & HOLD",
+                "button:has-text('PRESS & HOLD')",
+                "div:has-text('PRESS & HOLD')",
                 "button:has-text('Press')",
                 "button:has-text('Hold')",
                 "[role='button']:has-text('Press')",
@@ -814,10 +826,10 @@ class WalmartGuestOrderFetcher {
                     }
 
                     int count = locator.count()
-                    logger.debug("Selector '${selector}' found ${count} elements" + (captchaFrame != null ? " (in iframe)" : " (in main page)"))
                     if (count > 0) {
+                        logger.info("Selector '${selector}' found ${count} elements" + (captchaFrame != null ? " (in iframe)" : " (in main page)"))
                         verifyButton = locator.first()
-                        logger.debug("Using selector: ${selector}" + (captchaFrame != null ? " (in iframe)" : " (in main page)"))
+                        logger.info("Using selector: ${selector}" + (captchaFrame != null ? " (in iframe)" : " (in main page)"))
                         break
                     }
                 } catch (Exception e) {

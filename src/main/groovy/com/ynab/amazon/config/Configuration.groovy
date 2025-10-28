@@ -29,6 +29,7 @@ class Configuration {
     
     // Walmart Configuration
     String walmartEmail
+    String walmartEmailPassword
     String walmartPassword
     String walmartForwardFromAddress
     String walmartMode = WALMART_MODE_GUEST  // "guest" or "login"
@@ -84,6 +85,7 @@ class Configuration {
             // Walmart Configuration
             this.walmartEnabled = (config.walmart?.enabled != null) ? config.walmart.enabled : this.walmartEnabled
             this.walmartEmail = config.walmart?.email
+            this.walmartEmailPassword = config.walmart?.email_password
             this.walmartPassword = config.walmart?.password
             this.walmartForwardFromAddress = config.walmart?.forward_from_address
             this.walmartMode = config.walmart?.mode ?: this.walmartMode
@@ -151,13 +153,17 @@ class Configuration {
             }
             
             // Validate required fields based on mode
-            if (walmartMode == WALMART_MODE_LOGIN) {
+            if (walmartMode == WALMART_MODE_GUEST) {
+                if (!walmartEmailPassword) {
+                    logger.error("Walmart mode is '${WALMART_MODE_GUEST}' but walmartEmailPassword is not configured (needed for IMAP access)")
+                    return false
+                }
+            } else if (walmartMode == WALMART_MODE_LOGIN) {
                 if (!walmartPassword) {
                     logger.error("Walmart mode is '${WALMART_MODE_LOGIN}' but walmartPassword is not configured")
                     return false
                 }
             }
-            // For guest mode, we only need walmartEmail
         }
         
         return true

@@ -18,10 +18,9 @@ class WalmartGuestOrderFetcher_IT extends Specification {
     
     def setup() {
         testConfig = new Configuration()
-        testConfig.amazonEmail = "test@example.com"
-        testConfig.amazonEmailPassword = "password"
         testConfig.walmartEmail = "walmart@example.com"
-        testConfig.walmartMode = "guest"
+        testConfig.walmartEmailPassword = "walmart_email_password"
+        testConfig.walmartMode = Configuration.WALMART_MODE_GUEST
         testConfig.walmartHeadless = true
         testConfig.walmartBrowserTimeout = 30000
         testConfig.walmartOrdersUrl = "https://www.walmart.com/orders"

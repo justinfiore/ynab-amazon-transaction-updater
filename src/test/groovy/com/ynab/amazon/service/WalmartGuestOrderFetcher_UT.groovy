@@ -18,10 +18,9 @@ class WalmartGuestOrderFetcher_UT extends Specification {
     
     def setup() {
         testConfig = new Configuration()
-        testConfig.amazonEmail = "test@example.com"
-        testConfig.amazonEmailPassword = "password"
         testConfig.walmartEmail = "walmart@example.com"
-        testConfig.walmartMode = "guest"
+        testConfig.walmartEmailPassword = "walmart_email_password"
+        testConfig.walmartMode = Configuration.WALMART_MODE_GUEST
         testConfig.walmartHeadless = true
         testConfig.walmartBrowserTimeout = 30000
         testConfig.walmartOrdersUrl = "https://www.walmart.com/orders"
@@ -117,10 +116,9 @@ class WalmartGuestOrderFetcher_UT extends Specification {
     def "WalmartGuestOrderFetcher should be instantiated with valid configuration"() {
         given: "valid configuration"
         Configuration config = new Configuration()
-        config.amazonEmail = "test@example.com"
-        config.amazonEmailPassword = "password"
         config.walmartEmail = "walmart@example.com"
-        config.walmartMode = "guest"
+        config.walmartEmailPassword = "walmart_email_password"
+        config.walmartMode = Configuration.WALMART_MODE_GUEST
         config.lookBackDays = 30
         
         when: "WalmartGuestOrderFetcher is instantiated"
@@ -131,13 +129,14 @@ class WalmartGuestOrderFetcher_UT extends Specification {
         fetcher.config == config
     }
     
-    def "Configuration validation should pass for guest mode with only email"() {
-        given: "Configuration with guest mode and email only"
+    def "Configuration validation should pass for guest mode with email and email_password"() {
+        given: "Configuration with guest mode, email, and email_password"
         Configuration config = new Configuration()
         config.walmartEnabled = true
-        config.walmartMode = "guest"
+        config.walmartMode = Configuration.WALMART_MODE_GUEST
         config.walmartEmail = "test@example.com"
-        config.walmartPassword = null  // Password not required for guest mode
+        config.walmartEmailPassword = "email_app_password"
+        config.walmartPassword = null  // Account password not required for guest mode
         config.ynabApiKey = "test-key"
         config.ynabBudgetId = "test-budget"
         config.amazonEmail = "amazon@example.com"
@@ -150,11 +149,11 @@ class WalmartGuestOrderFetcher_UT extends Specification {
         valid == true
     }
     
-    def "Configuration validation should fail for login mode without password"() {
-        given: "Configuration with login mode but no password"
+    def "Configuration validation should fail for login mode without account password"() {
+        given: "Configuration with login mode but no account password"
         Configuration config = new Configuration()
         config.walmartEnabled = true
-        config.walmartMode = "login"
+        config.walmartMode = Configuration.WALMART_MODE_LOGIN
         config.walmartEmail = "test@example.com"
         config.walmartPassword = null
         config.ynabApiKey = "test-key"
@@ -169,11 +168,11 @@ class WalmartGuestOrderFetcher_UT extends Specification {
         valid == false
     }
     
-    def "Configuration validation should pass for login mode with password"() {
-        given: "Configuration with login mode and password"
+    def "Configuration validation should pass for login mode with account password"() {
+        given: "Configuration with login mode and account password"
         Configuration config = new Configuration()
         config.walmartEnabled = true
-        config.walmartMode = "login"
+        config.walmartMode = Configuration.WALMART_MODE_LOGIN
         config.walmartEmail = "test@example.com"
         config.walmartPassword = "test-password"
         config.ynabApiKey = "test-key"
@@ -194,6 +193,25 @@ class WalmartGuestOrderFetcher_UT extends Specification {
         config.walmartEnabled = true
         config.walmartMode = "invalid_mode"
         config.walmartEmail = "test@example.com"
+        config.ynabApiKey = "test-key"
+        config.ynabBudgetId = "test-budget"
+        config.amazonEmail = "amazon@example.com"
+        config.amazonEmailPassword = "password"
+        
+        when: "isValid is called"
+        boolean valid = config.isValid()
+        
+        then: "configuration should be invalid"
+        valid == false
+    }
+    
+    def "Configuration validation should fail for guest mode without email_password"() {
+        given: "Configuration with guest mode but no email_password"
+        Configuration config = new Configuration()
+        config.walmartEnabled = true
+        config.walmartMode = Configuration.WALMART_MODE_GUEST
+        config.walmartEmail = "test@example.com"
+        config.walmartEmailPassword = null  // Missing email password
         config.ynabApiKey = "test-key"
         config.ynabBudgetId = "test-budget"
         config.amazonEmail = "amazon@example.com"

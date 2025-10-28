@@ -82,12 +82,15 @@ class WalmartService {
         }
         
         // Validate mode-specific requirements
-        if (config.walmartMode == Configuration.WALMART_MODE_LOGIN) {
+        if (config.walmartMode == Configuration.WALMART_MODE_GUEST) {
+            if (!config.walmartEmailPassword) {
+                missingSettings.add("walmart.email_password (required for guest mode IMAP access)")
+            }
+        } else if (config.walmartMode == Configuration.WALMART_MODE_LOGIN) {
             if (!config.walmartPassword) {
                 missingSettings.add("walmart.password (required for login mode)")
             }
         }
-        // For guest mode, only email is required (password is optional)
         
         if (missingSettings) {
             String errorMessage = "Walmart integration is enabled but missing required configuration: ${missingSettings.join(', ')}. " +
