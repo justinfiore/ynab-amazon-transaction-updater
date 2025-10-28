@@ -208,8 +208,9 @@ class Configuration_UT extends Specification {
         configuration.amazonEmail = "test@example.com"
         configuration.amazonEmailPassword = "test-password"
         configuration.walmartEnabled = true
+        configuration.walmartMode = Configuration.WALMART_MODE_GUEST
         configuration.walmartEmail = "walmart@example.com"
-        configuration.walmartPassword = "walmart-password"
+        configuration.walmartEmailPassword = "walmart-email-password"
         
         when: "isValid is called"
         def result = configuration.isValid()
