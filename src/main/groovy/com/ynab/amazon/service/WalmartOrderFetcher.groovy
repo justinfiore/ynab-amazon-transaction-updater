@@ -6,6 +6,7 @@ import com.ynab.amazon.model.WalmartOrder
 import com.ynab.amazon.model.WalmartOrderItem
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.nio.file.Paths
 import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -55,68 +56,88 @@ class WalmartOrderFetcher {
     }
     
     /**
-     * Initialize Playwright browser in headless mode
+     * Initialize Playwright browser - tries Firefox first for non-headless, then Chromium with special flags
      */
     private void initBrowser() {
-        boolean tryHeadlessOnce = false
-        boolean originalHeadlessSetting = config.walmartHeadless
+        String browserMode = config.walmartHeadless ? "headless" : "non-headless"
+        logger.info("Initializing ${browserMode} browser for Walmart")
         
+        playwright = Playwright.create()
+        
+        // For non-headless mode, try Firefox first as it's more stable on macOS
+        if (!config.walmartHeadless) {
+            try {
+                logger.debug("Attempting to launch Firefox in non-headless mode")
+                def firefoxOptions = new BrowserType.LaunchOptions()
+                    .setHeadless(false)
+                    .setSlowMo(100) // Slow down operations slightly for visibility
+                
+                browser = playwright.firefox().launch(firefoxOptions)
+                context = browser.newContext(new Browser.NewContextOptions()
+                    .setViewportSize(1280, 1024))
+                page = context.newPage()
+                page.setDefaultTimeout(config.walmartBrowserTimeout)
+                logger.info("Firefox browser initialized successfully in non-headless mode")
+                return
+            } catch (Exception e) {
+                logger.warn("Firefox initialization failed: ${e.message}, trying Chromium")
+                cleanupBrowser()
+                playwright = Playwright.create()
+            }
+        }
+        
+        // Try Chromium with special flags
         try {
-            String browserMode = config.walmartHeadless ? "headless" : "non-headless"
-            logger.debug("Initializing ${browserMode} Chromium browser")
-            playwright = Playwright.create()
-            
-            // Configure launch options with args to prevent crashes on macOS
             def launchOptions = new BrowserType.LaunchOptions()
                 .setHeadless(config.walmartHeadless)
             
-            // Add args to disable GPU and prevent segmentation faults on macOS
+            // Add args to prevent crashes on macOS
             if (!config.walmartHeadless) {
+                logger.debug("Launching Chromium in non-headless mode with GPU disabled")
                 launchOptions.setArgs([
                     "--disable-gpu",
-                    "--disable-software-rasterizer",
+                    "--disable-software-rasterizer",  
                     "--disable-dev-shm-usage",
                     "--no-sandbox",
-                    "--disable-setuid-sandbox"
+                    "--disable-setuid-sandbox",
+                    "--disable-blink-features=AutomationControlled"
                 ])
+                launchOptions.setSlowMo(100)
             }
             
             browser = playwright.chromium().launch(launchOptions)
-            context = browser.newContext()
+            context = browser.newContext(new Browser.NewContextOptions()
+                .setViewportSize(1280, 1024))
             page = context.newPage()
             page.setDefaultTimeout(config.walmartBrowserTimeout)
-            logger.debug("Browser initialized successfully in ${browserMode} mode")
+            logger.info("Chromium browser initialized successfully in ${browserMode} mode")
         } catch (Exception e) {
-            logger.warn("Failed to initialize browser in ${config.walmartHeadless ? 'headless' : 'non-headless'} mode: ${e.message}")
-            
-            // If non-headless mode failed, try headless mode as fallback
-            if (!config.walmartHeadless && !tryHeadlessOnce) {
-                tryHeadlessOnce = true
-                logger.info("Attempting to initialize browser in headless mode as fallback")
-                
-                try {
-                    // Clean up any partial initialization
-                    if (playwright != null) {
-                        try { playwright.close() } catch (Exception ignored) {}
-                        playwright = null
-                    }
-                    
-                    playwright = Playwright.create()
-                    def fallbackOptions = new BrowserType.LaunchOptions().setHeadless(true)
-                    browser = playwright.chromium().launch(fallbackOptions)
-                    context = browser.newContext()
-                    page = context.newPage()
-                    page.setDefaultTimeout(config.walmartBrowserTimeout)
-                    logger.info("Browser initialized successfully in headless mode (fallback)")
-                } catch (Exception fallbackError) {
-                    logger.error("Failed to initialize browser even in headless mode: ${fallbackError.message}", fallbackError)
-                    throw new RuntimeException("Browser initialization failed in both non-headless and headless modes", fallbackError)
-                }
-            } else {
-                logger.error("Failed to initialize browser: ${e.message}", e)
-                throw new RuntimeException("Browser initialization failed", e)
-            }
+            logger.error("Failed to initialize Chromium browser: ${e.message}", e)
+            throw new RuntimeException("Browser initialization failed", e)
         }
+    }
+    
+    /**
+     * Helper method to clean up browser resources
+     */
+    private void cleanupBrowser() {
+        try {
+            if (page != null) page.close()
+        } catch (Exception ignored) {}
+        try {
+            if (context != null) context.close()
+        } catch (Exception ignored) {}
+        try {
+            if (browser != null) browser.close()
+        } catch (Exception ignored) {}
+        try {
+            if (playwright != null) playwright.close()
+        } catch (Exception ignored) {}
+        
+        page = null
+        context = null
+        browser = null
+        playwright = null
     }
     
     /**
@@ -171,67 +192,180 @@ class WalmartOrderFetcher {
             
             // Navigate to Walmart homepage
             page.navigate("https://www.walmart.com")
-            logger.debug("Navigated to walmart.com")
+            logger.info("Navigated to walmart.com - URL: ${page.url()}")
+            takeDebugScreenshot("01-homepage")
             
-            // Click "Sign In" button
+            // Wait for page to load
+            page.waitForLoadState(LoadState.DOMCONTENTLOADED)
+            
+            // Click "Sign In" button - try multiple selectors
             try {
-                page.click("text=Sign In", new Page.ClickOptions().setTimeout(10000))
-                logger.debug("Clicked Sign In button")
+                logger.debug("Looking for Sign In button...")
+                
+                // Log all visible text on page for debugging
+                String pageText = page.content()
+                logger.debug("Page title: ${page.title()}")
+                
+                // Try different selectors for Sign In
+                def signInSelectors = [
+                    "text=Sign In",
+                    "a:has-text('Sign In')",
+                    "button:has-text('Sign In')",
+                    "[data-automation-id='sign-in']",
+                    "span:has-text('Sign In')"
+                ]
+                
+                boolean clicked = false
+                for (String selector : signInSelectors) {
+                    try {
+                        if (page.locator(selector).count() > 0) {
+                            logger.info("Found Sign In button with selector: ${selector}")
+                            page.click(selector, new Page.ClickOptions().setTimeout(5000))
+                            clicked = true
+                            break
+                        }
+                    } catch (Exception ignored) {
+                        logger.debug("Selector '${selector}' didn't work")
+                    }
+                }
+                
+                if (!clicked) {
+                    takeDebugScreenshot("02-signin-button-not-found")
+                    logger.error("Could not find Sign In button with any selector")
+                    throw new RuntimeException("Cannot find Sign In button")
+                }
+                
+                logger.info("Clicked Sign In button")
+                takeDebugScreenshot("03-after-signin-click")
             } catch (Exception e) {
-                logger.error("Failed to find Sign In button: ${e.message}")
+                takeDebugScreenshot("error-signin-button")
+                logger.error("Failed to find/click Sign In button: ${e.message}")
                 throw new RuntimeException("Authentication failed: Cannot find Sign In button", e)
             }
             
             // Wait for sign-in form to appear
-            page.waitForSelector("input[type='email'], input[name='email']", new Page.WaitForSelectorOptions().setTimeout(10000))
+            logger.debug("Waiting for email input field...")
+            try {
+                page.waitForSelector("input[type='email'], input[name='email'], input[id*='email']", 
+                    new Page.WaitForSelectorOptions().setTimeout(10000))
+                logger.info("Email input field appeared")
+                takeDebugScreenshot("04-signin-form")
+            } catch (Exception e) {
+                takeDebugScreenshot("error-no-email-field")
+                logger.error("Email input field did not appear: ${e.message}")
+                throw e
+            }
             
             // Enter email
             try {
-                page.fill("input[type='email'], input[name='email']", config.walmartEmail)
-                logger.debug("Entered email address")
+                String emailSelector = "input[type='email'], input[name='email'], input[id*='email']"
+                page.fill(emailSelector, config.walmartEmail)
+                logger.info("Entered email address")
+                takeDebugScreenshot("05-email-entered")
             } catch (Exception e) {
+                takeDebugScreenshot("error-email-entry")
                 logger.error("Failed to enter email: ${e.message}")
                 throw new RuntimeException("Authentication failed: Cannot enter email", e)
             }
             
             // Enter password
             try {
-                page.fill("input[type='password'], input[name='password']", config.walmartPassword)
-                logger.debug("Entered password")
+                String passwordSelector = "input[type='password'], input[name='password'], input[id*='password']"
+                page.fill(passwordSelector, config.walmartPassword)
+                logger.info("Entered password")
+                takeDebugScreenshot("06-password-entered")
             } catch (Exception e) {
+                takeDebugScreenshot("error-password-entry")
                 logger.error("Failed to enter password: ${e.message}")
                 throw new RuntimeException("Authentication failed: Cannot enter password", e)
             }
             
             // Click submit button
             try {
-                page.click("button[type='submit'], button:has-text('Sign In')")
-                logger.debug("Clicked submit button")
+                logger.debug("Looking for submit button...")
+                def submitSelectors = [
+                    "button[type='submit']",
+                    "button:has-text('Sign In')",
+                    "button:has-text('Sign in')",
+                    "[data-automation-id='sign-in-submit']"
+                ]
+                
+                boolean submitted = false
+                for (String selector : submitSelectors) {
+                    try {
+                        if (page.locator(selector).count() > 0) {
+                            logger.info("Found submit button with selector: ${selector}")
+                            page.click(selector)
+                            submitted = true
+                            break
+                        }
+                    } catch (Exception ignored) {}
+                }
+                
+                if (!submitted) {
+                    takeDebugScreenshot("error-no-submit-button")
+                    throw new RuntimeException("Cannot find submit button")
+                }
+                
+                logger.info("Clicked submit button")
+                takeDebugScreenshot("07-submit-clicked")
             } catch (Exception e) {
+                takeDebugScreenshot("error-submit-button")
                 logger.error("Failed to click submit button: ${e.message}")
                 throw new RuntimeException("Authentication failed: Cannot submit login form", e)
             }
             
             // Wait for navigation after login - look for account indicator
             try {
+                logger.debug("Waiting for login to complete...")
                 page.waitForLoadState(LoadState.NETWORKIDLE, new Page.WaitForLoadStateOptions().setTimeout(15000))
-                logger.debug("Page loaded after login")
+                logger.info("Page loaded after login - URL: ${page.url()}")
+                takeDebugScreenshot("08-after-login")
                 
                 // Verify successful login by checking for account menu or "My Account" link
-                boolean loggedIn = page.locator("text=Account, text=My Account").count() > 0 ||
+                boolean loggedIn = page.locator("text=Account").count() > 0 ||
+                                   page.locator("text=My Account").count() > 0 ||
                                    page.url().contains("account") ||
                                    !page.url().contains("signin")
                 
+                logger.debug("Login verification - Account locator count: ${page.locator('text=Account').count()}")
+                logger.debug("Login verification - URL contains 'account': ${page.url().contains('account')}")
+                logger.debug("Login verification - URL contains 'signin': ${page.url().contains('signin')}")
+                
                 if (!loggedIn) {
-                    logger.error("Login verification failed - account indicators not found")
+                    takeDebugScreenshot("09-login-verification-failed")
+                    logger.error("Login verification failed - account indicators not found. URL: ${page.url()}")
+                    logger.error("Page title: ${page.title()}")
                     throw new RuntimeException("Authentication failed: Login verification failed")
                 }
                 
                 logger.info("Successfully authenticated with Walmart.com")
+                takeDebugScreenshot("10-login-success")
             } catch (TimeoutError e) {
+                takeDebugScreenshot("error-login-timeout")
                 logger.error("Timeout waiting for login to complete: ${e.message}")
+                logger.error("Current URL: ${page.url()}")
                 throw new RuntimeException("Authentication failed: Login timeout", e)
             }
+        }
+    }
+    
+    /**
+     * Take a debug screenshot for troubleshooting
+     */
+    private void takeDebugScreenshot(String step) {
+        try {
+            String timestamp = new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date())
+            String filename = "walmart-debug-${step}-${timestamp}.png"
+            String screenshotPath = new File("logs/${filename}").absolutePath
+            
+            // Ensure logs directory exists
+            new File("logs").mkdirs()
+            
+            page.screenshot(new Page.ScreenshotOptions().setPath(Paths.get(screenshotPath)).setFullPage(true))
+            logger.debug("Screenshot saved: ${screenshotPath}")
+        } catch (Exception e) {
+            logger.warn("Failed to take screenshot: ${e.message}")
         }
     }
     
