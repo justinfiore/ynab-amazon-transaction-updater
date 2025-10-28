@@ -10,6 +10,10 @@ import org.slf4j.LoggerFactory
 class Configuration {
     private static final Logger logger = LoggerFactory.getLogger(Configuration.class)
     
+    // Walmart Mode Constants
+    public static final String WALMART_MODE_GUEST = "guest"
+    public static final String WALMART_MODE_LOGIN = "login"
+    
     String ynabApiKey
     String ynabAccountId
     String ynabBudgetId
@@ -26,6 +30,8 @@ class Configuration {
     // Walmart Configuration
     String walmartEmail
     String walmartPassword
+    String walmartForwardFromAddress
+    String walmartMode = WALMART_MODE_GUEST  // "guest" or "login"
     boolean walmartEnabled = false
     boolean walmartHeadless = true
     int walmartBrowserTimeout = 30000
@@ -79,6 +85,8 @@ class Configuration {
             this.walmartEnabled = (config.walmart?.enabled != null) ? config.walmart.enabled : this.walmartEnabled
             this.walmartEmail = config.walmart?.email
             this.walmartPassword = config.walmart?.password
+            this.walmartForwardFromAddress = config.walmart?.forward_from_address
+            this.walmartMode = config.walmart?.mode ?: this.walmartMode
             this.walmartHeadless = (config.walmart?.headless != null) ? config.walmart.headless : this.walmartHeadless
             this.walmartBrowserTimeout = (config.walmart?.browser_timeout != null) ? config.walmart.browser_timeout : this.walmartBrowserTimeout
             this.walmartOrdersUrl = config.walmart?.orders_url ?: this.walmartOrdersUrl
@@ -135,10 +143,21 @@ class Configuration {
                 logger.error("Walmart is enabled but walmartEmail is not configured")
                 return false
             }
-            if (!walmartPassword) {
-                logger.error("Walmart is enabled but walmartPassword is not configured")
+            
+            // Validate mode
+            if (walmartMode && ![WALMART_MODE_GUEST, WALMART_MODE_LOGIN].contains(walmartMode)) {
+                logger.error("Invalid walmart.mode: ${walmartMode}. Must be '${WALMART_MODE_GUEST}' or '${WALMART_MODE_LOGIN}'")
                 return false
             }
+            
+            // Validate required fields based on mode
+            if (walmartMode == WALMART_MODE_LOGIN) {
+                if (!walmartPassword) {
+                    logger.error("Walmart mode is '${WALMART_MODE_LOGIN}' but walmartPassword is not configured")
+                    return false
+                }
+            }
+            // For guest mode, we only need walmartEmail
         }
         
         return true

@@ -92,7 +92,27 @@ Note: CSV export does not include Subscribe & Save orders automatically.
 
 #### Walmart Order Data Source (Optional)
 
-The application can automatically fetch Walmart orders using browser automation:
+The application can automatically fetch Walmart orders using two different modes:
+
+**Mode 1: Guest Mode (Recommended - No Password Required)**
+
+Requirements:
+- Walmart account email address
+- Email credentials (Gmail or other IMAP provider) - same as used for Amazon
+- Playwright browser automation library (automatically installed)
+
+How it works:
+1. Searches your email for Walmart order notifications (from help@walmart.com or configured forward address)
+2. Extracts order IDs and dates from emails
+3. For each order, uses Walmart's guest order lookup feature
+4. Fills in email and order number to access order details
+5. Extracts order information including:
+   - Order number and date
+   - Final charge amounts (ignores temporary holds)
+   - Product summaries
+   - Order status
+
+**Mode 2: Login Mode (Full Account Access)**
 
 Requirements:
 - Walmart account credentials (email and password)
@@ -103,13 +123,10 @@ How it works:
 2. Logs into your Walmart account
 3. Navigates to your order history
 4. Fetches delivered orders within the lookback period
-5. Extracts order details including:
-   - Order number and date
-   - Final charge amounts (ignores temporary holds)
-   - Product summaries
-   - Order status
+5. Extracts order details
 
 **Important Notes:**
+- Guest mode is recommended as it doesn't require storing your Walmart password
 - Only "Delivered" orders are processed
 - Orders with multiple charges are handled by matching each transaction to individual final charge amounts
 - The application extracts only "Final Order Charges" from the Charge History, ignoring "Temporary Hold" charges
@@ -138,8 +155,10 @@ amazon:
 
 walmart:
   enabled: true  # Set to true to enable Walmart integration
+  mode: "guest"  # Mode: "guest" (email lookup, no password) or "login" (requires password)
   email: "your_walmart_email@example.com"
-  password: "your_walmart_password"
+  # password: "your_walmart_password"  # Only needed for login mode
+  # forward_from_address: "some.email@example.com"  # Optional: for forwarded Walmart emails (guest mode only)
   headless: true  # Set to false to see browser in action (default: true)
   browser_timeout: 30000  # Optional: timeout in milliseconds (default: 30000)
   orders_url: "https://www.walmart.com/orders"  # Optional: custom orders URL

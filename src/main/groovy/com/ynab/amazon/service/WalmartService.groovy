@@ -7,17 +7,25 @@ import org.slf4j.LoggerFactory
 
 /**
  * Service class for handling Walmart order data
- * Uses browser automation via WalmartOrderFetcher to fetch orders from walmart.com
+ * Uses browser automation via WalmartOrderFetcher (login mode) or WalmartGuestOrderFetcher (guest mode)
  */
 class WalmartService {
     private static final Logger logger = LoggerFactory.getLogger(WalmartService.class)
     
     private final Configuration config
-    private final WalmartOrderFetcher orderFetcher
+    private final Object orderFetcher  // Can be WalmartOrderFetcher or WalmartGuestOrderFetcher
     
     WalmartService(Configuration config) {
         this.config = config
-        this.orderFetcher = new WalmartOrderFetcher(config)
+        
+        // Select fetcher based on mode
+        if (config.walmartMode == Configuration.WALMART_MODE_GUEST) {
+            logger.info("Using Walmart Guest Order Fetcher (email lookup mode)")
+            this.orderFetcher = new WalmartGuestOrderFetcher(config)
+        } else {
+            logger.info("Using Walmart Order Fetcher (login mode)")
+            this.orderFetcher = new WalmartOrderFetcher(config)
+        }
     }
     
     /**
@@ -73,9 +81,13 @@ class WalmartService {
             missingSettings.add("walmart.email")
         }
         
-        if (!config.walmartPassword) {
-            missingSettings.add("walmart.password")
+        // Validate mode-specific requirements
+        if (config.walmartMode == Configuration.WALMART_MODE_LOGIN) {
+            if (!config.walmartPassword) {
+                missingSettings.add("walmart.password (required for login mode)")
+            }
         }
+        // For guest mode, only email is required (password is optional)
         
         if (missingSettings) {
             String errorMessage = "Walmart integration is enabled but missing required configuration: ${missingSettings.join(', ')}. " +
@@ -84,7 +96,7 @@ class WalmartService {
             throw new IllegalStateException(errorMessage)
         }
         
-        logger.debug("Walmart configuration validated successfully")
+        logger.debug("Walmart configuration validated successfully for mode: ${config.walmartMode}")
     }
     
     /**
