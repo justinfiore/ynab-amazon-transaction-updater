@@ -2,6 +2,7 @@ package com.ynab.amazon.service
 
 import com.ynab.amazon.model.YNABTransaction
 import com.ynab.amazon.model.AmazonOrder
+import com.ynab.amazon.model.WalmartOrder
 import com.ynab.amazon.model.TransactionMatch
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -23,6 +24,14 @@ class TransactionMatcher {
         "AMAZON MKTPLACE",
         "AMAZON MARKETPLACE",
         "AMAZON RETAIL"
+    ]
+    
+    // Walmart-related payee names to look for
+    private static final List<String> WALMART_PAYEE_NAMES = [
+        "WALMART",
+        "WAL-MART",
+        "WALMART.COM",
+        "WALMART ONLINE"
     ]
 
     private static final List<String> PAYEE_NAMES_BLACKLIST = [
@@ -95,6 +104,29 @@ class TransactionMatcher {
     }
     
     /**
+     * Check if transaction could be a Walmart transaction
+     */
+    private boolean isPotentialWalmartTransaction(YNABTransaction transaction) {
+        // Check payee name
+        if (transaction.payee_name) {
+            String payee = transaction.payee_name.toUpperCase().trim()
+            if (WALMART_PAYEE_NAMES.any { payee.contains(it) } && !PAYEE_NAMES_BLACKLIST.any { payee.contains(it) }) {
+                return true
+            }
+        }
+        
+        // Check memo for Walmart references
+        if (transaction.memo) {
+            String memo = transaction.memo.toUpperCase()
+            if (memo.contains("WALMART") || memo.contains("WAL-MART")) {
+                return true
+            }
+        }
+        
+        return false
+    }
+    
+    /**
      * Find the best matching Amazon order for a transaction
      */
     private TransactionMatch findBestMatch(YNABTransaction transaction, List<AmazonOrder> orders) {
@@ -120,7 +152,20 @@ class TransactionMatcher {
         
         // Amount must match exactly for high confidence
         if (transaction.getAmountInDollars() && order.totalAmount) {
-            if (Math.abs(transaction.getAmountInDollars() - order.totalAmount) > 0.01) {
+            // Both YNAB transactions and Amazon orders should have same sign:
+            // - Returns: both positive (YNAB inflow, Amazon return)
+            // - Orders: both negative (YNAB expense, Amazon order)
+            double transactionAmount = transaction.getAmountInDollars()
+            double orderAmount = order.totalAmount
+            
+            // Check if signs match (both positive or both negative)
+            if ((transactionAmount > 0) != (orderAmount > 0)) {
+                logger.debug("Amount sign mismatch: transaction=${transactionAmount}, order=${orderAmount}")
+                return 0.0  // No match if signs don't match (return vs order)
+            }
+            
+            // Check if amounts match within tolerance
+            if (Math.abs(transactionAmount - orderAmount) > 0.01) {
                 return 0.0  // No match if amounts don't match exactly
             }
             score += 0.7  // Full points for amount match
@@ -243,6 +288,16 @@ class TransactionMatcher {
     }
     
     /**
+     * Check if payee name is Walmart-related
+     */
+    private boolean isWalmartPayee(String payeeName) {
+        if (!payeeName) return false
+        
+        String payee = payeeName.toUpperCase().trim()
+        return WALMART_PAYEE_NAMES.any { payee.contains(it) }
+    }
+    
+    /**
      * Create a TransactionMatch object
      */
     private TransactionMatch createMatch(YNABTransaction transaction, AmazonOrder order, double score) {
@@ -326,11 +381,20 @@ class TransactionMatcher {
         List<String> reasons = []
         
         if (transaction.amount && order.totalAmount) {
-            double amountDiff = Math.abs(transaction.getAmountInDollars() - order.totalAmount)
-            if (amountDiff < 0.01) {
+            double transactionAmount = transaction.getAmountInDollars()
+            double orderAmount = order.totalAmount
+            
+            // Round to 2 decimal places (cents) for comparison
+            BigDecimal txRounded = new BigDecimal(transactionAmount).setScale(2, BigDecimal.ROUND_HALF_UP)
+            BigDecimal orderRounded = new BigDecimal(orderAmount).setScale(2, BigDecimal.ROUND_HALF_UP)
+            
+            if (txRounded.compareTo(orderRounded) == 0) {
                 reasons.add("exact amount match")
-            } else if (amountDiff < 1.0) {
-                reasons.add("close amount match")
+            } else {
+                double amountDiff = Math.abs(transactionAmount - orderAmount)
+                if (amountDiff < 1.0) {
+                    reasons.add("close amount match")
+                }
             }
         }
         
@@ -349,4 +413,201 @@ class TransactionMatcher {
         
         return reasons.join(", ")
     }
-} 
+    
+    /**
+     * Find matches between YNAB transactions and Walmart orders
+     */
+    List<TransactionMatch> findWalmartMatches(List<YNABTransaction> transactions, List<WalmartOrder> orders) {
+        List<TransactionMatch> matches = []
+        List<YNABTransaction> ynabTransactionsToMatch = transactions.findAll { 
+            !isAlreadyProcessed(it) && isPotentialWalmartTransaction(it) 
+        }
+        
+        // Filter to only delivered orders
+        List<WalmartOrder> deliveredOrders = orders.findAll { it.isDelivered() }
+        
+        logger.info("Found ${ynabTransactionsToMatch.size()} Walmart transactions to match")
+        logger.info("Found ${deliveredOrders.size()} delivered Walmart orders")
+        
+        // Match each transaction to individual final charges only
+        Set<String> matchedTransactionIds = new HashSet<>()
+        
+        ynabTransactionsToMatch.each { transaction ->
+            if (matchedTransactionIds.contains(transaction.id)) {
+                return // Skip already matched transactions
+            }
+            
+            TransactionMatch match = findIndividualChargeMatch(transaction, deliveredOrders)
+            if (match) {
+                matches.add(match)
+                matchedTransactionIds.add(transaction.id)
+            }
+        }
+        
+        logger.info("Found ${matches.size()} individual charge Walmart matches")
+        return matches
+    }
+    
+    /**
+     * Find the best matching Walmart order for a single transaction
+     */
+    private TransactionMatch findIndividualChargeMatch(YNABTransaction transaction, List<WalmartOrder> orders) {
+        TransactionMatch bestMatch = null
+        double bestScore = 0.0
+        
+        orders.each { order ->
+            // Check if transaction matches any individual final charge
+            if (order.finalChargeAmounts && !order.finalChargeAmounts.isEmpty()) {
+                order.finalChargeAmounts.each { chargeAmount ->
+                    double chargeScore = calculateIndividualChargeMatchScore(transaction, order, chargeAmount)
+                    if (chargeScore > bestScore && chargeScore >= 0.5) {
+                        bestScore = chargeScore
+                        bestMatch = createWalmartMatch(transaction, order, chargeScore)
+                    }
+                }
+            } else {
+                // For orders without final charge amounts, match against total amount
+                double totalScore = calculateIndividualChargeMatchScore(transaction, order, order.totalAmount)
+                if (totalScore > bestScore && totalScore >= 0.5) {
+                    bestScore = totalScore
+                    bestMatch = createWalmartMatch(transaction, order, totalScore)
+                }
+            }
+        }
+        
+        return bestMatch
+    }
+    
+
+    
+    /**
+     * Calculate a confidence score for matching a transaction with a specific Walmart final charge
+     */
+    private double calculateIndividualChargeMatchScore(YNABTransaction transaction, WalmartOrder order, BigDecimal chargeAmount) {
+        double score = 0.0
+        
+        // Amount must match exactly for high confidence (70% weight)
+        // YNAB stores expenses as negative, Walmart final charges are now also negative (same format)
+        if (transaction.getAmountInDollars() && chargeAmount) {
+            double transactionAmount = transaction.getAmountInDollars()
+            double amountDiff = Math.abs(transactionAmount - chargeAmount)
+            if (amountDiff > 0.01) {
+                return 0.0  // No match if amounts don't match exactly
+            }
+            score += 0.7  // Full points for exact amount match
+        } else {
+            return 0.0  // No match if amount is missing
+        }
+        
+        // Date matching (20% weight)
+        if (transaction.date && order.orderDate) {
+            int daysDiff = calculateDaysDifference(transaction.date, order.orderDate)
+            if (daysDiff > MAX_MATCH_DAYS_DIFFERENCE) {
+                return 0.0
+            }
+            double dateScore = Math.max(0.0, 1.0 - (daysDiff / 7.0))  // Within 7 days
+            score += dateScore * 0.2
+        }
+        
+        // Payee name matching (10% weight)
+        if (transaction.payee_name && isWalmartPayee(transaction.payee_name)) {
+            score += 0.1
+        }
+        
+        return Math.min(1.0, score)
+    }
+    
+    /**
+     * Create a TransactionMatch object for Walmart
+     */
+    private TransactionMatch createWalmartMatch(YNABTransaction transaction, WalmartOrder order, double score) {
+        String proposedMemo = generateWalmartProposedMemo(transaction, order)
+        String matchReason = generateWalmartMatchReason(transaction, order, score)
+        
+        return new TransactionMatch(transaction, order, proposedMemo, score, matchReason)
+    }
+    
+    /**
+     * Generate a sanitized and truncated memo for a Walmart transaction
+     */
+    private String generateWalmartProposedMemo(YNABTransaction transaction, WalmartOrder order) {
+        String summary = order.getProductSummary()
+        
+        // Format as single transaction memo
+        summary = "Walmart Order: ${order.orderId} - ${summary}"
+        
+        // Combine with existing memo if it exists
+        String proposedMemo = summary
+        if (transaction.memo != null && !transaction.memo.isEmpty() && !transaction.memo.equals("null")) {
+            proposedMemo = "${transaction.memo} | ${summary}"
+        }
+        
+        // Sanitize the memo to only allow certain characters
+        proposedMemo = proposedMemo.replaceAll(/[^a-zA-Z0-9 _\-\+:'\|\.,&\(\)]/, " ")
+        
+        // Collapse 3+ spaces to exactly 2 spaces
+        proposedMemo = proposedMemo.replaceAll(/ {3,}/, "  ")
+        
+        // Enforce length limit
+        return proposedMemo.length() > 500 ? proposedMemo.substring(0, 500) : proposedMemo
+    }
+    
+    /**
+     * Generate a reason for the Walmart match
+     */
+    private String generateWalmartMatchReason(YNABTransaction transaction, WalmartOrder order, double score) {
+        List<String> reasons = []
+        
+        // Check if transaction matches order total or any final charge amount
+        if (transaction.amount) {
+            double transactionAmount = transaction.getAmountInDollars()
+            
+            // Check order total match
+            if (order.totalAmount) {
+                // Round to 2 decimal places (cents) for comparison
+                BigDecimal txRounded = new BigDecimal(transactionAmount).setScale(2, BigDecimal.ROUND_HALF_UP)
+                BigDecimal orderRounded = new BigDecimal(order.totalAmount).setScale(2, BigDecimal.ROUND_HALF_UP)
+                
+                if (txRounded.compareTo(orderRounded) == 0) {
+                    reasons.add("exact amount match")
+                } else {
+                    double amountDiff = Math.abs(transactionAmount - order.totalAmount)
+                    if (amountDiff < 1.0) {
+                        reasons.add("close amount match")
+                    }
+                }
+            } else if (order.finalChargeAmounts) {
+                // Check if it matches any final charge amount
+                def matchedCharge = order.finalChargeAmounts.find { charge ->
+                    Math.abs(transactionAmount - charge) <= 0.01
+                }
+                if (matchedCharge) {
+                    // Round to 2 decimal places (cents) for comparison
+                    BigDecimal txRounded = new BigDecimal(transactionAmount).setScale(2, BigDecimal.ROUND_HALF_UP)
+                    BigDecimal chargeRounded = new BigDecimal(matchedCharge).setScale(2, BigDecimal.ROUND_HALF_UP)
+                    
+                    if (txRounded.compareTo(chargeRounded) == 0) {
+                        reasons.add("matches charge amount")
+                    } else {
+                        reasons.add("close charge match")
+                    }
+                }
+            }
+        }
+        
+        if (transaction.date && order.orderDate) {
+            int daysDiff = calculateDaysDifference(transaction.date, order.orderDate)
+            if (daysDiff == 0) {
+                reasons.add("same date")
+            } else if (daysDiff <= 3) {
+                reasons.add("close date match")
+            }
+        }
+        
+        if (isWalmartPayee(transaction.payee_name)) {
+            reasons.add("Walmart payee")
+        }
+        
+        return reasons.join(", ")
+    }
+}

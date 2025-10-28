@@ -1,4 +1,4 @@
-# Setup Guide for YNAB Amazon Transaction Updater
+# Setup Guide for YNAB Transaction Updater
 
 ## Prerequisites
 
@@ -86,6 +86,11 @@ chmod +x gradlew
 
    amazon:
      csv_file_path: "your_amazon_orders.csv"
+
+   walmart:
+     enabled: false  # Set to true to enable Walmart integration
+     email: "your_walmart_email@example.com"
+     password: "your_walmart_password"
 
    app:
      dry_run: true  # Set to false when ready

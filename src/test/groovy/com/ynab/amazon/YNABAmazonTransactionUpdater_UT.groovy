@@ -6,6 +6,7 @@ import com.ynab.amazon.model.AmazonOrderItem
 import com.ynab.amazon.model.TransactionMatch
 import com.ynab.amazon.model.YNABTransaction
 import com.ynab.amazon.service.AmazonService
+import com.ynab.amazon.service.WalmartService
 import com.ynab.amazon.service.TransactionMatcher
 import com.ynab.amazon.service.TransactionProcessor
 import com.ynab.amazon.service.YNABService
@@ -20,6 +21,7 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
     Configuration mockConfig
     YNABService mockYnabService
     AmazonService mockAmazonService
+    WalmartService mockWalmartService
     TransactionMatcher mockMatcher
     TransactionProcessor mockProcessor
     
@@ -28,9 +30,11 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         mockConfig = Stub(Configuration) {
             isValid() >> true
             isDryRun() >> false
+            walmartEnabled >> false
         }
         mockYnabService = Mock(YNABService)
         mockAmazonService = Mock(AmazonService)
+        mockWalmartService = Mock(WalmartService)
         mockMatcher = Mock(TransactionMatcher)
         mockProcessor = Mock(TransactionProcessor)
     }
@@ -66,13 +70,14 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         def method = YNABAmazonTransactionUpdater.class.getDeclaredMethod(
             "executeWorkflow", 
             YNABService.class, 
-            AmazonService.class, 
+            AmazonService.class,
+            WalmartService.class,
             TransactionMatcher.class, 
             TransactionProcessor.class,
             Configuration.class
         )
         method.setAccessible(true)
-        method.invoke(null, mockYnabService, mockAmazonService, mockMatcher, mockProcessor, mockConfig)
+        method.invoke(null, mockYnabService, mockAmazonService, mockWalmartService, mockMatcher, mockProcessor, mockConfig)
         
         then: "all expected service methods should be called in the correct order"
         1 * mockYnabService.getTransactions()
@@ -98,6 +103,7 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         def dryConfig = Stub(Configuration) {
             isValid() >> true
             isDryRun() >> true
+            walmartEnabled >> false
         }
         mockYnabService.getTransactions() >> ynabTransactions
         mockAmazonService.getOrders() >> amazonOrders
@@ -108,13 +114,14 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         def method = YNABAmazonTransactionUpdater.class.getDeclaredMethod(
             "executeWorkflow", 
             YNABService.class, 
-            AmazonService.class, 
+            AmazonService.class,
+            WalmartService.class,
             TransactionMatcher.class, 
             TransactionProcessor.class,
             Configuration.class
         )
         method.setAccessible(true)
-        method.invoke(null, mockYnabService, mockAmazonService, mockMatcher, mockProcessor, dryConfig)
+        method.invoke(null, mockYnabService, mockAmazonService, mockWalmartService, mockMatcher, mockProcessor, dryConfig)
         
         then: "updateTransactions should be called with dry run mode"
         1 * mockProcessor.updateTransactions(_ as List, mockYnabService, true)
@@ -148,11 +155,12 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         def services = method.invoke(null, mockConfig)
         
         then: "all services should be initialized correctly"
-        services.size() == 4
+        services.size() == 5
         services[0] instanceof YNABService
         services[1] instanceof AmazonService
-        services[2] instanceof TransactionMatcher
-        services[3] instanceof TransactionProcessor
+        services[2] == null  // WalmartService is null when walmartEnabled is false
+        services[3] instanceof TransactionMatcher
+        services[4] instanceof TransactionProcessor
     }
     
     // Helper methods to create test data

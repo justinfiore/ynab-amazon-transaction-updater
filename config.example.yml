@@ -1,4 +1,4 @@
-# Example configuration file for YNAB Amazon Transaction Updater
+# Example configuration file for YNAB Transaction Updater
 # Copy this file to config.yml and update with your actual values
 
 # YNAB Configuration
@@ -18,6 +18,15 @@ amazon:
   # CSV fallback (if email fetching is not used or fails):
   csv_file_path: "amazon_orders.csv"  # Your exported Amazon order history CSV file
 
+# Walmart Configuration (optional)
+walmart:
+  enabled: false  # Set to true to enable Walmart order fetching
+  email: "your_walmart_email@example.com"  # Your Walmart account email
+  password: "your_walmart_password"  # Your Walmart account password
+  headless: true  # Set to false to see browser in action (optional, default: true)
+  browser_timeout: 30000  # Browser operation timeout in milliseconds (optional, default: 30000)
+  orders_url: "https://www.walmart.com/orders"  # Walmart orders URL (optional, default shown)
+
 # Application Configuration
 app:
   look_back_days: 30  # Number of days to look back for transactions
@@ -32,6 +41,12 @@ app:
 # amazon.email_password: App password for the above email (never use your main password)
 # amazon.forward_from_address: Optional - Email address you forward S&S emails from (if applicable)
 # amazon.csv_file_path: Path to your Amazon order CSV file (used as fallback)
+# walmart.enabled: Enable/disable Walmart order fetching (default: false)
+# walmart.email: Your Walmart account email (required if enabled)
+# walmart.password: Your Walmart account password (required if enabled)
+# walmart.headless: Run browser in headless mode (default: true, set to false to see browser in action)
+# walmart.browser_timeout: Timeout for browser operations in milliseconds (optional, default: 30000)
+# walmart.orders_url: URL for Walmart orders page (optional, default: https://www.walmart.com/orders)
 
 # Example of what your actual config.yml should look like:
 # ynab:
@@ -42,6 +57,12 @@ app:
 # amazon:
 #   email: "your.email@example.com"
 #   csv_file_path: "my_amazon_orders.csv"
+# 
+# walmart:
+#   enabled: true
+#   email: "your.walmart.email@example.com"
+#   password: "your_secure_walmart_password"
+#   headless: false  # Set to false to see browser in action while testing
 # 
 # app:
 #   processed_transactions_file: "processed_transactions.json"

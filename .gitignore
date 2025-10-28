@@ -49,3 +49,6 @@ processed_transactions.json
 *.tmp
 *.temp
 logs/
+
+# Sensitive integration tests
+WalmartLogin_IT.groovy

@@ -3,6 +3,7 @@ package com.ynab.amazon.service
 import com.ynab.amazon.config.Configuration
 import com.ynab.amazon.model.YNABTransaction
 import com.ynab.amazon.model.TransactionMatch
+import com.ynab.amazon.model.WalmartOrder
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -53,6 +54,7 @@ class TransactionProcessor {
         // Check if memo already contains product information
         if (transaction.memo && (transaction.memo.contains("items:") || 
                                 transaction.memo.contains("Amazon Order") ||
+                                transaction.memo.contains("Walmart Order") ||
                                 transaction.memo.length() > 50)) {
             if (logger.isDebugEnabled()) {
                 logger.debug("""
@@ -135,13 +137,159 @@ class TransactionProcessor {
     }
     
     /**
+     * Process Walmart matches and update YNAB transactions
+     * @param matches List of Walmart transaction matches to process
+     * @param ynabService YNAB service for making API calls
+     * @param dryRun If true, only log what would be done without making changes
+     * @return Map containing update statistics
+     */
+    Map<String, Object> processWalmartMatches(List<TransactionMatch> matches, YNABService ynabService, boolean dryRun = false) {
+        int updatedCount = 0
+        int highConfidenceCount = matches.count { it.isHighConfidence() }
+        int mediumConfidenceCount = matches.count { it.isMediumConfidence() }
+        int lowConfidenceCount = matches.count { it.isLowConfidence() }
+
+        if (dryRun) {
+            logger.info("DRY RUN MODE - No changes will be made to Walmart transactions")
+            logger.info("Found ${highConfidenceCount} high confidence Walmart matches")
+        } else {
+            logger.info("Updating YNAB transactions with Walmart order information...")
+        }
+
+        matches.each { match ->
+            try {
+                if (match.isHighConfidence()) {
+                    if (match.isMultiTransaction) {
+                        // Handle multi-transaction matches
+                        updatedCount += processMultiTransactionMatch(match, ynabService, dryRun)
+                    } else {
+                        // Handle single transaction matches
+                        updatedCount += processSingleTransactionMatch(match, ynabService, dryRun)
+                    }
+                } else {
+                    logTransactionDetails(match, "Skipping low or medium confidence Walmart match")
+                }
+                
+            } catch (Exception e) {
+                logger.error("Error processing Walmart transaction ${match.ynabTransaction.id}", e)
+            }
+        }
+        
+        if (!dryRun) {
+            saveProcessedTransactions()
+        }
+        
+        return [
+            updated: updatedCount,
+            high_confidence: highConfidenceCount,
+            medium_confidence: mediumConfidenceCount,
+            low_confidence: lowConfidenceCount
+        ]
+    }
+    
+    /**
+     * Process a single transaction match
+     */
+    private int processSingleTransactionMatch(TransactionMatch match, YNABService ynabService, boolean dryRun) {
+        def ynabTxn = match.ynabTransaction
+        def order = match.walmartOrder
+        
+        String memo = generateWalmartMemo(ynabTxn, order, false, 1, 1)
+        
+        logTransactionDetails(match, dryRun ? "Would update" : "Updating")
+        
+        if (!dryRun) {
+            boolean success = ynabService.updateTransactionMemo(ynabTxn.id, memo)
+            
+            if (success) {
+                markAsProcessed(ynabTxn.id)
+                logger.info("Successfully updated Walmart transaction ${ynabTxn.id}")
+                return 1
+            } else {
+                logger.error("Failed to update Walmart transaction ${ynabTxn.id}")
+                return 0
+            }
+        } else {
+            return 1
+        }
+    }
+    
+    /**
+     * Process a multi-transaction match
+     */
+    private int processMultiTransactionMatch(TransactionMatch match, YNABService ynabService, boolean dryRun) {
+        def order = match.walmartOrder
+        def transactions = match.transactions
+        int updatedCount = 0
+        int totalCharges = transactions.size()
+        
+        transactions.eachWithIndex { ynabTxn, index ->
+            int chargeNumber = index + 1
+            String memo = generateWalmartMemo(ynabTxn, order, true, chargeNumber, totalCharges)
+            
+            // Create a temporary match for logging
+            def tempMatch = new TransactionMatch(ynabTxn, order, memo, match.confidenceScore, match.matchReason)
+            logTransactionDetails(tempMatch, dryRun ? "Would update" : "Updating")
+            
+            if (!dryRun) {
+                boolean success = ynabService.updateTransactionMemo(ynabTxn.id, memo)
+                
+                if (success) {
+                    markAsProcessed(ynabTxn.id)
+                    updatedCount++
+                    logger.info("Successfully updated Walmart transaction ${ynabTxn.id} (charge ${chargeNumber} of ${totalCharges})")
+                } else {
+                    logger.error("Failed to update Walmart transaction ${ynabTxn.id}")
+                }
+            } else {
+                updatedCount++
+            }
+        }
+        
+        return updatedCount
+    }
+    
+    /**
+     * Generate memo for Walmart transaction
+     * @param transaction The YNAB transaction
+     * @param order The Walmart order
+     * @param isMultiTransaction Whether this is part of a multi-transaction order
+     * @param chargeNumber The charge number (for multi-transaction orders)
+     * @param totalCharges The total number of charges (for multi-transaction orders)
+     * @return The formatted memo string
+     */
+    private String generateWalmartMemo(YNABTransaction transaction, WalmartOrder order, 
+                                       boolean isMultiTransaction, int chargeNumber, int totalCharges) {
+        String existingMemo = transaction.memo ?: ""
+        String productSummary = order.getProductSummary()
+        String orderNumber = order.orderId
+        String orderUrl = order.orderUrl ?: order.getOrderLink()
+        
+        // Build the Walmart order information with URL
+        String walmartInfo
+        if (isMultiTransaction) {
+            walmartInfo = "Walmart Order: ${orderNumber} (Charge ${chargeNumber} of ${totalCharges}) - ${productSummary} - ${orderUrl}"
+        } else {
+            walmartInfo = "Walmart Order: ${orderNumber} - ${productSummary} - ${orderUrl}"
+        }
+        
+        // Preserve existing memo content
+        if (existingMemo && !existingMemo.trim().isEmpty()) {
+            return "${existingMemo} | ${walmartInfo}"
+        } else {
+            return walmartInfo
+        }
+    }
+    
+    /**
      * Log transaction details with consistent formatting
      * @param match The transaction match to log
      * @param action The action being performed (e.g., "Updating", "Would update", "Skipping")
      */
     private void logTransactionDetails(TransactionMatch match, String action) {
         def ynabTxn = match.ynabTransaction
-        def order = match.amazonOrder
+        def order = match.amazonOrder ?: match.walmartOrder
+        String retailer = match.amazonOrder ? "Amazon" : "Walmart"
         
         if (logger.isDebugEnabled()) {
             String confidence = match.isHighConfidence() ? "High" : 
@@ -149,6 +297,7 @@ class TransactionProcessor {
             
             logger.debug("""
                 |${action} Transaction:
+                |  Retailer: ${retailer}
                 |  YNAB ID: ${ynabTxn.id}
                 |  Payee: ${ynabTxn.payee_name}
                 |  Current Memo: ${ynabTxn.memo}
@@ -159,10 +308,11 @@ class TransactionProcessor {
                 |  New Memo: ${match.proposedMemo}
                 |  Confidence: ${String.format('%.2f', match.confidenceScore * 100)}% (${confidence})
                 |  Match Reason: ${match.matchReason}
-                |  Order ID: ${order?.orderId ?: 'N/A'}""".stripMargin())
+                |  Order ID: ${order?.orderId ?: 'N/A'}
+                |  Multi-Transaction: ${match.isMultiTransaction}""".stripMargin())
         } else if (!action.toLowerCase().contains("skip")) {
             // Only log non-skipped transactions in info mode
-            logger.info("${action} transaction: ${ynabTxn.id} - ${ynabTxn.payee_name} (${ynabTxn.getDisplayAmount()}) - ${match.proposedMemo}")
+            logger.info("${action} ${retailer} transaction: ${ynabTxn.id} - ${ynabTxn.payee_name} (${ynabTxn.getDisplayAmount()}) - ${match.proposedMemo}")
         }
     }
     
@@ -205,6 +355,11 @@ class TransactionProcessor {
      * Save list of processed transaction IDs
      */
     private void saveProcessedTransactions() {
+        if (!config.processedTransactionsFile) {
+            logger.debug("No processed transactions file configured, skipping save")
+            return
+        }
+        
         try {
             def data = [
                 processed_transaction_ids: processedTransactionIds.toList(),
