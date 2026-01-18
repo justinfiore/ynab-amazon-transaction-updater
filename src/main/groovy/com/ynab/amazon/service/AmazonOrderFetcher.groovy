@@ -34,7 +34,9 @@ class AmazonOrderFetcher {
         "order-confirmation@amazon.com",
         "shipment-tracking@amazon.com",
         "digital-orders@amazon.com",
-        "no-reply@amazon.com"
+        "no-reply@amazon.com",
+        "digital-no-reply@amazon.com",
+        "donotreply@audible.com"
     ]
     
     // Email patterns for Amazon Subscribe and Save notifications
