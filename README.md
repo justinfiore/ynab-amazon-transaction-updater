@@ -1,5 +1,7 @@
 # YNAB Transaction Updater
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/justinfiore/ynab-amazon-transaction-updater)
+
 A Groovy application that automatically updates YNAB (You Need A Budget) transactions with retailer order details by matching transactions and updating the memo field with product summaries. Supports Amazon and Walmart orders.
 
 ## Features
