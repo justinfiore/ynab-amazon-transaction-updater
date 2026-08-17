@@ -6,8 +6,8 @@ The project currently targets Java 11, Gradle 7.6, and Groovy 3.0.19, which prev
 
 - **BREAKING**: Raise the supported build and runtime baseline from Java 11 to Java 25.
 - Upgrade the Gradle wrapper from 7.6 to the latest Gradle 9 release used by the reference modernization pattern.
-- Upgrade application Groovy dependencies to Groovy 5.0.6 and align Spock/JUnit Platform with Groovy 5.
-- Upgrade direct dependencies where required for Java 25, Groovy 5, or Gradle 9 compatibility, keeping versions pinned and documenting any intentional retention.
+- Upgrade application Groovy dependencies to Groovy 5.1.0 and align the latest stable Spock/JUnit Platform releases with Groovy 5.
+- Upgrade all direct runtime and test dependencies to their latest stable releases, migrate legacy HTTP and mail artifact families, remove obsolete test support libraries, and keep every committed version pinned.
 - Modernize Gradle test-task wiring so the full verification command runs unit tests before integration tests and emits JUnit XML and HTML reports.
 - Update repository test helpers and operator documentation for the Java 25 baseline and current script locations.
 - Preserve application behavior and prove compatibility with the complete unit and integration suite plus build/distribution verification.

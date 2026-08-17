@@ -3,9 +3,9 @@ package com.ynab.amazon.service
 import com.ynab.amazon.config.Configuration
 import com.ynab.amazon.model.WalmartOrder
 import spock.lang.Specification
-import javax.mail.Message
-import javax.mail.Session
-import javax.mail.internet.MimeMessage
+import jakarta.mail.Message
+import jakarta.mail.Session
+import jakarta.mail.internet.MimeMessage
 import java.text.SimpleDateFormat
 
 /**

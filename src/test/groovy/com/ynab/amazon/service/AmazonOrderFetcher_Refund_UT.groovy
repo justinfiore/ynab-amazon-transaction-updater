@@ -4,7 +4,7 @@ import com.ynab.amazon.config.Configuration
 import com.ynab.amazon.model.AmazonOrder
 import spock.lang.Specification
 import spock.lang.Unroll
-import javax.mail.Message
+import jakarta.mail.Message
 import java.text.SimpleDateFormat
 
 /**

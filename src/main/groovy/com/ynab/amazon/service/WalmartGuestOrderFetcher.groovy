@@ -9,15 +9,15 @@ import org.slf4j.LoggerFactory
 import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import javax.mail.*
-import javax.mail.internet.InternetAddress
-import javax.mail.internet.MimeMultipart
-import javax.mail.search.AndTerm
-import javax.mail.search.OrTerm
-import javax.mail.search.FromTerm
-import javax.mail.search.ReceivedDateTerm
-import javax.mail.search.ComparisonTerm
-import javax.mail.search.BodyTerm
+import jakarta.mail.*
+import jakarta.mail.internet.InternetAddress
+import jakarta.mail.internet.MimeMultipart
+import jakarta.mail.search.AndTerm
+import jakarta.mail.search.OrTerm
+import jakarta.mail.search.FromTerm
+import jakarta.mail.search.ReceivedDateTerm
+import jakarta.mail.search.ComparisonTerm
+import jakarta.mail.search.BodyTerm
 import java.util.regex.Pattern
 import java.util.regex.Matcher
 

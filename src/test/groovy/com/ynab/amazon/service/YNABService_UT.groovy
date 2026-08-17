@@ -6,16 +6,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.ynab.amazon.config.Configuration
 import com.ynab.amazon.model.YNABTransaction
-import org.apache.http.HttpEntity
-import org.apache.http.StatusLine
-import org.apache.http.client.methods.CloseableHttpResponse
-import org.apache.http.client.methods.HttpGet
-import org.apache.http.client.methods.HttpPatch
-import org.apache.http.client.methods.HttpUriRequest
-import org.apache.http.impl.client.CloseableHttpClient
-import org.apache.http.util.EntityUtils
-import org.junit.Rule
-import org.junit.rules.TemporaryFolder
+import org.apache.hc.client5.http.classic.methods.HttpUriRequest
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient
+import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse
+import org.apache.hc.core5.http.HttpEntity
 import spock.lang.Specification
 
 /**
@@ -76,12 +70,10 @@ class YNABService_UT extends Specification {
         
         and: "the HTTP client is set up to return the response"
         def response = Mock(CloseableHttpResponse)
-        def statusLine = Mock(StatusLine)
         def entity = Mock(HttpEntity)
         
-        statusLine.getStatusCode() >> 200
+        response.getCode() >> 200
         entity.getContent() >> new ByteArrayInputStream(jsonResponse.bytes)
-        response.getStatusLine() >> statusLine
         response.getEntity() >> entity
         httpClient.execute(_ as HttpUriRequest) >> response
         
@@ -110,12 +102,10 @@ class YNABService_UT extends Specification {
         
         and: "the HTTP client is set up to return the response"
         def response = Mock(CloseableHttpResponse)
-        def statusLine = Mock(StatusLine)
         def entity = Mock(HttpEntity)
         
-        statusLine.getStatusCode() >> 200
+        response.getCode() >> 200
         entity.getContent() >> new ByteArrayInputStream(jsonResponse.bytes)
-        response.getStatusLine() >> statusLine
         response.getEntity() >> entity
         httpClient.execute(_ as HttpUriRequest) >> response
         

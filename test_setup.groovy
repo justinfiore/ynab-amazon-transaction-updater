@@ -5,8 +5,7 @@
  * Run with: groovy test_setup.groovy
  */
 
-@Grab('org.yaml:snakeyaml:2.0')
-@Grab('org.slf4j:slf4j-simple:2.0.7')
+@Grab('org.yaml:snakeyaml:2.6')
 
 import org.yaml.snakeyaml.Yaml
 
@@ -111,13 +110,13 @@ try {
     def javaVendor = System.getProperty("java.vendor")
     println "   ✓ Java ${javaVersion} (${javaVendor})"
     
-    // Check if Java version is 11 or higher
+    // Check for the supported Java 25 runtime
     def versionParts = javaVersion.split("\\.")
     def majorVersion = versionParts[0].toInteger()
-    if (majorVersion >= 11) {
-        println "   ✓ Java version is compatible (11+)"
+    if (majorVersion == 25) {
+        println "   ✓ Java version is compatible (25)"
     } else {
-        println "   ⚠ Java version may be too old (need 11+)"
+        println "   ⚠ Unsupported Java version (need 25)"
     }
 } catch (Exception e) {
     println "   ✗ Could not determine Java version"

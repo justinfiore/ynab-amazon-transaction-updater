@@ -3,8 +3,8 @@
 - [x] 1.1 Run the pre-upgrade Java 11 full suite and record discovery/results (214 unit, 51 integration, 0 failures/errors, 16 skipped)
 - [x] 1.2 Regenerate the complete wrapper at Gradle 9.6.1
 - [x] 1.3 Configure the Java 25 toolchain and update Gradle DSL for Gradle 9
-- [x] 1.4 Replace Groovy 3 with Groovy 5.0.6 modules and align Spock/JUnit Platform
-- [x] 1.5 Upgrade and pin direct dependencies needed for Java 25/Groovy 5 compatibility
+- [x] 1.4 Replace Groovy 3 with Groovy 5.1.0 modules and align the latest stable Spock/JUnit Platform
+- [x] 1.5 Upgrade and pin all direct runtime/test dependencies, migrate HttpClient 4 and JavaMail, and remove obsolete test support libraries
 
 ## 2. Test and Helper Modernization
 
@@ -21,7 +21,7 @@
 ## 4. Verification
 
 - [x] 4.1 Confirm `./gradlew --version` reports Gradle 9.6.1 on Java 25
-- [x] 4.2 Confirm resolved Groovy 5.0.6 and Spock Groovy-5 variants with dependency insight
+- [x] 4.2 Confirm resolved Groovy 5.1.0, Spock Groovy-5, JUnit Platform 6, and upgraded core dependency versions with dependency insight
 - [x] 4.3 Run a clean full unit/integration suite and verify report counts, failures, errors, and skips
 - [x] 4.4 Run `build` and `installDist` and verify generated archives/launchers
 - [x] 4.5 Run OpenSpec validation, inspect the final diff/status, and confirm no dynamic dependency selectors or unrelated files

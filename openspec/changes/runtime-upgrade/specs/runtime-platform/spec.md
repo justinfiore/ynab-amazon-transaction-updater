@@ -15,14 +15,16 @@ The repository SHALL include a complete, regenerated Gradle 9 wrapper with a pin
 - **THEN** the checked-in wrapper starts the pinned Gradle 9 distribution without requiring a separately installed Gradle
 
 ### Requirement: Groovy 5 application stack
-The build SHALL use Groovy 5.0.6 from the `org.apache.groovy` module family and SHALL align the test framework with the Groovy 5 runtime.
+The build SHALL use Groovy 5.1.0 from the `org.apache.groovy` module family and SHALL align the latest stable test framework with the Groovy 5 runtime.
 
 #### Scenario: Dependency resolution is aligned
 - **WHEN** Gradle resolves main and test runtime classpaths
-- **THEN** application Groovy resolves to 5.0.6 and Spock resolves to a Groovy 5-compatible variant without mixed Groovy generations
+- **THEN** application Groovy resolves to 5.1.0 and Spock resolves to a Groovy 5-compatible variant without mixed Groovy generations
 
 ### Requirement: Compatible pinned dependencies
-All direct dependencies SHALL use pinned versions that resolve and execute on Java 25, Groovy 5.0.6, and Gradle 9; dynamic selectors SHALL NOT be committed.
+All direct runtime and test dependencies SHALL use pinned latest-stable versions that resolve and execute on Java 25, Groovy 5.1.0, and Gradle 9; dynamic selectors SHALL NOT be committed.
+
+Legacy JavaMail and Apache HttpClient 4 artifact families SHALL be replaced by Jakarta Mail with Angus Mail and Apache HttpClient 5 respectively. Unused JUnit 4, CGLIB, and direct Objenesis test support SHALL NOT remain declared.
 
 #### Scenario: Clean dependency resolution
 - **WHEN** the project builds from an empty build directory

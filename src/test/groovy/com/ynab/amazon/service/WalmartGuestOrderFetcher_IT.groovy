@@ -3,8 +3,8 @@ package com.ynab.amazon.service
 import com.ynab.amazon.config.Configuration
 import spock.lang.Specification
 import spock.lang.Ignore
-import javax.mail.Session
-import javax.mail.internet.MimeMessage
+import jakarta.mail.Session
+import jakarta.mail.internet.MimeMessage
 import java.util.Properties
 
 /**

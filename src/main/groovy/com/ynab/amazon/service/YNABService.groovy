@@ -3,13 +3,12 @@ package com.ynab.amazon.service
 import com.ynab.amazon.config.Configuration
 import com.ynab.amazon.model.YNABTransaction
 import com.fasterxml.jackson.databind.ObjectMapper
-import org.apache.http.HttpEntity
-import org.apache.http.client.methods.HttpGet
-import org.apache.http.client.methods.HttpPatch
-import org.apache.http.entity.StringEntity
-import org.apache.http.impl.client.CloseableHttpClient
-import org.apache.http.impl.client.HttpClients
-import org.apache.http.util.EntityUtils
+import org.apache.hc.client5.http.classic.methods.HttpGet
+import org.apache.hc.client5.http.classic.methods.HttpPatch
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient
+import org.apache.hc.client5.http.impl.classic.HttpClients
+import org.apache.hc.core5.http.io.entity.EntityUtils
+import org.apache.hc.core5.http.io.entity.StringEntity
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.time.LocalDate
@@ -50,8 +49,8 @@ class YNABService {
             def entity = response.getEntity()
             def responseBody = EntityUtils.toString(entity)
             
-            if (response.getStatusLine().getStatusCode() != 200) {
-                logger.error("Failed to fetch YNAB transactions. Status: ${response.getStatusLine().getStatusCode()}, Response: ${responseBody}")
+            if (response.getCode() != 200) {
+                logger.error("Failed to fetch YNAB transactions. Status: ${response.getCode()}, Response: ${responseBody}")
                 return []
             }
             logger.trace("YNAB Response Body: ${responseBody}")
@@ -114,8 +113,8 @@ class YNABService {
             def entity = response.getEntity()
             def responseBody = EntityUtils.toString(entity)
             
-            if (response.getStatusLine().getStatusCode() != 200) {
-                logger.error("Failed to update YNAB transaction. Status: ${response.getStatusLine().getStatusCode()}, Response: ${responseBody}")
+            if (response.getCode() != 200) {
+                logger.error("Failed to update YNAB transaction. Status: ${response.getCode()}, Response: ${responseBody}")
                 return false
             }
             

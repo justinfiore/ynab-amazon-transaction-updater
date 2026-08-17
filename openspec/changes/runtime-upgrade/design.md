@@ -2,15 +2,15 @@
 
 The repository is a single-project Groovy application built with Gradle 7.6. It compiles for Java 11, depends on the legacy `org.codehaus.groovy:groovy-all:3.0.19` aggregate, and tests with Spock 2.3 for Groovy 3. The default `test` task is disabled but depends on custom `unitTest` and `integrationTest` tasks. Repository helper scripts also hard-code a Java 11 guard, and the agent rule still names obsolete `.windsurf/scripts` paths even though the scripts now live under `.agents/scripts`.
 
-A Java 11 baseline run completed before migration: 214 unit tests and 51 integration tests were discovered, with zero failures/errors and 16 intentionally skipped tests. Java 25 is already installed on the host. The requested target and the reference modernization commit establish Java 25, Groovy 5.0.6, and Gradle 9 as fixed decisions.
+A Java 11 baseline run completed before migration: 214 unit tests and 51 integration tests were discovered, with zero failures/errors and 16 intentionally skipped tests. Java 25 is already installed on the host. The final target is Java 25, Groovy 5.1.0, Gradle 9, and latest-stable pinned direct dependencies.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
 - Build and run the project on Java 25 using a Gradle 9 wrapper and Java toolchain declaration.
-- Use Groovy 5.0.6 with the matching Spock variant and explicit JUnit Platform launcher.
-- Upgrade dependencies only as needed to preserve compatibility and remove avoidable legacy risk.
+- Use Groovy 5.1.0 with the latest stable matching Spock variant and explicit JUnit Platform launcher.
+- Upgrade direct runtime and test dependencies to latest stable releases, including successor artifact families where the old coordinates are frozen.
 - Preserve the existing unit/integration split while making the full verification task deterministic, report-producing, and failure-safe.
 - Keep repository scripts and documentation aligned with the actual Java and command requirements.
 - Prove the migrated source, tests, application distribution, and wrapper are functional.
@@ -38,19 +38,30 @@ Alternative considered: compile for Java 11 while running Gradle on Java 25. Rej
 
 ### Replace the Groovy aggregate with the Groovy 5 BOM/module
 
-Use the `org.apache.groovy` group and Groovy 5.0.6. The application currently relies on core Groovy language features only, so use the core module/BOM rather than the oversized legacy `groovy-all` aggregate.
+Use the `org.apache.groovy` group and Groovy 5.1.0. The application currently relies on core Groovy language features only, so use the core module/BOM rather than the oversized legacy `groovy-all` aggregate.
 
 ### Align Spock and JUnit Platform
 
-Use `org.spockframework:spock-core:2.4-groovy-5.0`, add the pinned JUnit Platform launcher, and retain explicit JUnit 4 support only if the existing `@Rule`-based tests require it. All Gradle `Test` tasks will use JUnit Platform and produce XML/HTML reports.
+Use `org.spockframework:spock-core:2.4-groovy-5.0` with JUnit Platform 6.1.3. Remove unused JUnit 4 rules and the `spock-junit4` bridge rather than carrying legacy test-engine support. All Gradle `Test` tasks use JUnit Platform and produce XML/HTML reports.
 
 ### Preserve custom unit and integration tasks behind a real lifecycle task
 
 Keep `_UT` and `_IT` class-pattern tasks because they encode the existing suite split. Configure `test` as the unit suite and make `integrationTest` run after successful unit tests through task dependencies/order, rather than disabling `test` or using `finalizedBy`. The full helper command will invoke a composed `testAll` lifecycle task so downstream integration tests do not run after unit failures.
 
-### Upgrade direct dependencies conservatively and pin every version
+### Upgrade direct dependencies to latest stable releases and pin every version
 
-Probe current supported releases, then upgrade direct dependencies needed for Java 25/Groovy 5/Gradle 9 compatibility. Do not commit dynamic versions. Retain a dependency when the newer major line would require application-level API migration outside this runtime-only scope and the current version passes the complete suite on Java 25.
+Resolve Maven Central metadata to identify stable releases, then commit only concrete versions. Migrate Apache HttpClient 4 to HttpClient 5 and JavaMail to Jakarta Mail with Angus Mail, including application and test import/API updates. Remove unused direct CGLIB and Objenesis declarations rather than retaining redundant test support libraries.
+
+Pinned direct targets discovered from Maven Central metadata:
+
+- Groovy BOM 5.1.0 and Spock 2.4-groovy-5.0
+- SnakeYAML 2.6
+- Apache HttpClient 5.6.4 (resolving HttpCore 5.4.3)
+- Jackson Databind 2.22.2
+- Logback Classic 1.6.3
+- Jakarta Mail API 2.1.5 with Angus Mail 2.0.5
+- Playwright 1.62.0
+- Mockito 5.23.0 and JUnit Platform launcher 6.1.3
 
 ### Update all operator and agent entry points together
 
@@ -66,7 +77,7 @@ Update `README.md`, `QUICKSTART.md`, `SETUP.md`, `.agents/rules/build-and-test.m
 
 ## Migration Plan
 
-1. Regenerate the wrapper at Gradle 9.6.1 and update build DSL/dependencies for Java 25 and Groovy 5.0.6.
+1. Regenerate the wrapper at Gradle 9.6.1 and update build DSL/dependencies for Java 25 and Groovy 5.1.0.
 2. Compile and resolve compatibility failures iteratively.
 3. Correct test orchestration and repository helper scripts.
 4. Update Java/Gradle documentation.
