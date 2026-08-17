@@ -18,7 +18,12 @@ class AmazonService {
     
     AmazonService(Configuration config) {
         this.config = config
-        this.orderFetcher = new AmazonOrderFetcher(config)
+        this.orderFetcher = selectOrderFetcher(config)
+    }
+
+    AmazonService(Configuration config, AmazonOrderFetcher orderFetcher) {
+        this.config = config
+        this.orderFetcher = orderFetcher
     }
     
     /**
@@ -29,23 +34,17 @@ class AmazonService {
     List<AmazonOrder> getOrders() {
         List<AmazonOrder> allOrders = []
         
-        // Check if email credentials are configured
-        boolean hasEmailConfig = config.amazonEmail && config.amazonEmailPassword
-        
         // Check if CSV file path is configured
         boolean hasCsvConfig = config.amazonCsvFilePath
         
-        if (!hasEmailConfig && !hasCsvConfig) {
+        if (!orderFetcher && !hasCsvConfig) {
             throw new IllegalStateException(
-                "Neither email credentials nor CSV file path are configured. " +
-                "Please specify either amazon.email and amazon.email_password " +
-                "or amazon.csv_file_path in your config.yml file."
+                "Neither a configured Amazon order fetcher nor CSV file path is available."
             )
         }
         
-        // Try email fetching first if configured (includes Subscribe & Save emails now)
-        if (hasEmailConfig) {
-            logger.info("Attempting to fetch Amazon orders from email...")
+        if (orderFetcher) {
+            logger.info("Attempting to fetch Amazon orders using ${orderFetcher.class.simpleName}...")
             List<AmazonOrder> emailOrders = orderFetcher.fetchOrders()
             
             if (emailOrders) {
@@ -65,6 +64,13 @@ class AmazonService {
         
         logger.info("Total orders loaded: ${allOrders.size()}")
         return allOrders
+    }
+
+    private static AmazonOrderFetcher selectOrderFetcher(Configuration config) {
+        String mode = config.amazonOrderFetcher ?: Configuration.AMAZON_FETCHER_EMAIL
+        if (mode == Configuration.AMAZON_FETCHER_PYTHON) return new PythonAmazonOrderFetcher(config)
+        if (config.amazonEmail && config.amazonEmailPassword) return new EmailAmazonOrderFetcher(config)
+        return null
     }
     
     /**
@@ -225,4 +231,4 @@ class AmazonService {
             logger.error("Error creating sample CSV file", e)
         }
     }
-} 
+}

@@ -13,11 +13,11 @@ import java.text.SimpleDateFormat
 class AmazonOrderFetcher_Refund_UT extends Specification {
     
     Configuration mockConfig
-    AmazonOrderFetcher orderFetcher
+    EmailAmazonOrderFetcher orderFetcher
     
     def setup() {
         mockConfig = Mock(Configuration)
-        orderFetcher = new AmazonOrderFetcher(mockConfig)
+        orderFetcher = new EmailAmazonOrderFetcher(mockConfig)
     }
     
     // Test fixtures - refund email file names

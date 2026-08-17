@@ -75,6 +75,32 @@ separately or download wrapper files by hand. Verify it with:
 
 2. Place your Amazon orders CSV file in the project directory
 
+### Optional: Python Amazon Order History
+
+Python mode requires Python 3.9+ on Windows, macOS, or Linux, but is not needed
+for email or CSV mode. Create an isolated environment and install the tested pin:
+
+```bash
+python3 -m venv .venv-amazon-orders
+.venv-amazon-orders/bin/python -m pip install -r requirements-amazon-orders.txt
+.venv-amazon-orders/bin/amazon-orders --config-path ~/.config/amazonorders/config.yml login
+.venv-amazon-orders/bin/python scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight
+```
+
+Use the equivalent `Scripts\\python.exe` paths on Windows. Configure
+`amazon.order_fetcher: "python"` and all `amazon.python` paths from
+`config.example.yml`; set a positive timeout and output bound. The upstream
+config/cookies should be owner-readable only. Its supported `AMAZON_USERNAME`,
+`AMAZON_PASSWORD`, and optional `AMAZON_OTP_SECRET_KEY` environment variables
+may be inherited, but must never be written to YAML or logs. Browser challenges
+can require `amazon-orders[browser]` and `playwright install chromium`.
+
+`amazon-orders` is an unofficial English amazon.com website parser and may fail
+when Amazon changes. A failed Python fetch returns no Python orders; refresh the
+session, increase the timeout only when needed, or roll back by selecting email
+or CSV. Python history does not reproduce email-specific refund or Subscribe &
+Save notification dates.
+
 ### 3. Build and Run
 
 #### Windows:
@@ -149,7 +175,12 @@ docker run -v $(pwd):/app ynab-amazon-updater
 
 5. **"Amazon CSV file not found"**
    - Check the file path in `config.yml`
-   - Ensure the CSV file exists in the specified location
+    - Ensure the CSV file exists in the specified location
+
+6. **Python bridge errors**
+    - Run the documented `--preflight` command to verify interpreter/package/schema.
+    - Re-authenticate with the stock `amazon-orders ... login` command if the session is stale.
+    - Do not paste stderr containing account data into issue reports.
 
 ### Getting Help
 
@@ -164,4 +195,4 @@ If you encounter issues:
 1. Start with `dry_run: true` to test the application
 2. Review the proposed changes in the logs
 3. Set `dry_run: false` when ready to make actual updates
-4. Monitor the processed transactions file to track what's been updated 
+4. Monitor the processed transactions file to track what's been updated

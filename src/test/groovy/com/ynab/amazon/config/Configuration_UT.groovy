@@ -124,6 +124,35 @@ class Configuration_UT extends Specification {
         then: "validation should pass"
         result
     }
+
+    def "should validate supported Amazon fetcher modes and Python process bounds"() {
+        given:
+        def configuration = new Configuration(ynabApiKey: 'test-api-key', ynabBudgetId: 'test-budget-id')
+        configuration.amazonOrderFetcher = mode
+        configuration.amazonPythonExecutable = executable
+        configuration.amazonPythonBridgeScript = bridge
+        configuration.amazonPythonConfigPath = configPath
+        configuration.amazonPythonTimeoutSeconds = timeout
+        configuration.amazonPythonMaxOutputBytes = outputLimit
+
+        expect:
+        configuration.isValid() == valid
+
+        where:
+        mode                           | executable | bridge      | configPath     | timeout | outputLimit || valid
+        Configuration.AMAZON_FETCHER_PYTHON | 'python'   | 'bridge.py' | 'upstream.yml' | 1       | 1           || true
+        Configuration.AMAZON_FETCHER_PYTHON | null       | 'bridge.py' | 'upstream.yml' | 1       | 1           || false
+        Configuration.AMAZON_FETCHER_PYTHON | 'python'   | null        | 'upstream.yml' | 1       | 1           || false
+        Configuration.AMAZON_FETCHER_PYTHON | 'python'   | 'bridge.py' | null           | 1       | 1           || false
+        Configuration.AMAZON_FETCHER_PYTHON | 'python'   | 'bridge.py' | 'upstream.yml' | 0       | 1           || false
+        Configuration.AMAZON_FETCHER_PYTHON | 'python'   | 'bridge.py' | 'upstream.yml' | 1       | 0           || false
+        'unsupported'                  | 'python'   | 'bridge.py' | 'upstream.yml' | 1       | 1           || false
+    }
+
+    def "should keep email as the backward-compatible automatic source default"() {
+        expect:
+        new Configuration().amazonOrderFetcher == Configuration.AMAZON_FETCHER_EMAIL
+    }
     
     def "should use default Walmart values when not configured"() {
         given: "a configuration without Walmart settings"

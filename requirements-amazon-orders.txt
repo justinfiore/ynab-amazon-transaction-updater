@@ -1,0 +1,2 @@
+# Optional Python bridge runtime. Keep this pin synchronized with bridge tests.
+amazon-orders==4.4.7
