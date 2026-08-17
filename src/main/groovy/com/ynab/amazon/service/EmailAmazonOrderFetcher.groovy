@@ -113,9 +113,7 @@ class EmailAmazonOrderFetcher implements AmazonOrderFetcher {
             Map<String, AmazonOrder> orderMap = [:]
 
             // Search for Amazon order emails from the configured look-back period + 2 days
-            Calendar cal = Calendar.getInstance()
-            cal.add(Calendar.DAY_OF_MONTH, -(config.lookBackDays + 2))
-            Date fromDate = cal.getTime()
+            Date fromDate = emailSearchStartDate()
             logger.info("Looking back ${config.lookBackDays + 2} days (${config.lookBackDays} configured + 2 buffer) for Amazon orders")
 
             // Search for messages first - including Subscribe and Save emails
@@ -188,15 +186,7 @@ class EmailAmazonOrderFetcher implements AmazonOrderFetcher {
                             // Merge with existing order if same order ID
                             AmazonOrder existingOrder = orderMap.get(order.orderId)
                             if (existingOrder) {
-                                if(existingOrder.items == null && order.items != null && order.items.size() > 0) {
-                                    existingOrder.items = order.items
-                                }
-                                if(existingOrder.totalAmount == null) {
-                                    existingOrder.totalAmount = order.totalAmount
-                                }
-                                if(existingOrder.orderDate == null) {
-                                    existingOrder.orderDate = order.orderDate
-                                }
+                                mergeOrder(existingOrder, order)
                             } else {
                                 orderMap[order.orderId] = order
                                 orders.add(order)
@@ -216,6 +206,24 @@ class EmailAmazonOrderFetcher implements AmazonOrderFetcher {
         } catch (Exception e) {
             logger.error("Error fetching orders from email: ${e.message}", e)
             return []
+        }
+    }
+
+    Date emailSearchStartDate() {
+        Calendar cal = Calendar.getInstance()
+        cal.add(Calendar.DAY_OF_MONTH, -(config.lookBackDays + 2))
+        cal.getTime()
+    }
+
+    static void mergeOrder(AmazonOrder existingOrder, AmazonOrder order) {
+        if(existingOrder.items == null && order.items != null && order.items.size() > 0) {
+            existingOrder.items = order.items
+        }
+        if(existingOrder.totalAmount == null) {
+            existingOrder.totalAmount = order.totalAmount
+        }
+        if(existingOrder.orderDate == null) {
+            existingOrder.orderDate = order.orderDate
         }
     }
 

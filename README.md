@@ -427,6 +427,8 @@ Confidence thresholds:
 - **Transaction Tracking**: Prevents duplicate processing
 - **Confidence Thresholds**: Only updates high-confidence matches
 - **Error Handling**: Graceful handling of API errors and invalid data
+- **Python isolation**: Python mode runs an argument-list child process with a timeout, bounded stdout/stderr, process-tree cleanup, and redacted diagnostics. It never logs bridge JSON or passes Amazon secrets as arguments.
+- **Source semantics**: Select one automatic source (`email` or `python`); an optional CSV is appended after it. A failed Python source returns no Python orders rather than silently falling back to another credential source.
 
 ## Troubleshooting
 
@@ -482,7 +484,13 @@ Confidence thresholds:
 
 11. **API Rate Limits**
    - YNAB has rate limits; the application includes delays between requests
-   - If you get rate limit errors, wait a few minutes and try again
+    - If you get rate limit errors, wait a few minutes and try again
+
+12. **Python bridge preflight or fetch failure**
+    - Verify the isolated interpreter and tested dependency: `.venv-amazon-orders/bin/python scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight`
+    - Re-run the stock `amazon-orders --config-path ~/.config/amazonorders/config.yml login` command if the persisted session is stale.
+    - Check that `amazon.python.executable`, `bridge_script`, and `config_path` are absolute/resolved paths and that timeout/output bounds are positive.
+    - Do not paste cookies, passwords, OTP values, stderr payloads, or order JSON into logs or issue reports. Select `email` or CSV if an upstream Amazon challenge cannot run unattended.
 
 ### Debug Mode
 
@@ -505,6 +513,8 @@ app:
 ```
 YNABAmazonTransactionUpdater/
 ├── build.gradle                          # Gradle build configuration
+├── requirements-amazon-orders.txt         # Optional pinned Python bridge dependency
+├── scripts/amazon_orders_bridge.py        # Schema-v1 Python bridge (run with configured interpreter)
 ├── config.yml                            # Application configuration
 ├── config.example.yml                    # Configuration template
 ├── README.md                             # This file
@@ -515,6 +525,7 @@ YNABAmazonTransactionUpdater/
 │   │   │   ├── YNABAmazonTransactionUpdater.groovy  # Main application
 │   │   │   ├── config/
 │   │   │   │   └── Configuration.groovy             # Configuration loader
+│   │   │   ├── service/                            # Email/Python fetchers and bounded runner
 │   │   │   ├── model/
 │   │   │   │   ├── YNABTransaction.groovy          # YNAB transaction model
 │   │   │   │   ├── AmazonOrder.groovy              # Amazon order model
@@ -535,6 +546,8 @@ YNABAmazonTransactionUpdater/
 │       └── resources/                              # Test email samples
 └── .agents/scripts/                                # Build and test scripts
 ```
+
+`./gradlew installDist` packages the bridge and requirement file under the distribution root. Python remains optional for email and CSV users; Java 25 is sufficient for those modes. The bridge uses an unofficial English amazon.com website parser, so Amazon page changes, authentication challenges, and its history-only model can require recovery or a switch back to email/CSV. Python history does not reproduce email refund-event dates or Subscribe & Save synthetic deliveries.
 
 ## Contributing
 

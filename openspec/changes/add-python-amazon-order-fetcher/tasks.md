@@ -1,10 +1,10 @@
 ## 1. Interface Extraction and Email Compatibility
 
-- [ ] 1.1 Add characterization tests for the current `AmazonOrderFetcher.fetchOrders()` regular-order, Subscribe & Save, refund, lookback, merge, sign, and error behavior before moving code
+- [x] 1.1 Add characterization tests for the current `AmazonOrderFetcher.fetchOrders()` regular-order, Subscribe & Save, refund, lookback, merge, sign, and error behavior before moving code
 - [x] 1.2 Replace `AmazonOrderFetcher` with the minimal `List<AmazonOrder> fetchOrders()` interface
-- [ ] 1.3 Move the existing IMAP implementation into `EmailAmazonOrderFetcher` and update class-specific unit/integration test names without changing behavior
+- [x] 1.3 Move the existing IMAP implementation into `EmailAmazonOrderFetcher` and update class-specific unit/integration test names without changing behavior
 - [x] 1.4 Add constructor/factory injection to `AmazonService` so tests and runtime selection use the interface rather than directly constructing the email class
-- [ ] 1.5 Run focused email fetcher and Amazon service unit/integration tests and compare behavior with the characterization baseline
+- [x] 1.5 Run focused email fetcher and Amazon service unit/integration tests and compare behavior with the characterization baseline
 
 ## 2. Configuration and Source Selection
 
@@ -37,7 +37,7 @@
 ## 5. Python Fetcher and Transformation
 
 - [x] 5.1 Implement `PythonAmazonOrderFetcher` to build the configured bridge invocation, inherit supported upstream environment safely, and consume the process-runner result
-- [ ] 5.2 Add Jackson DTOs/parser validation for schema version 1 and the required orders array
+- [x] 5.2 Add Jackson DTOs/parser validation for schema version 1 and the required orders array
 - [x] 5.3 Map order number, ISO date, negative expense total, payment metadata, and item title/ASIN/price/quantity into existing `AmazonOrder`/`AmazonOrderItem` objects
 - [x] 5.4 Exclude canceled or required-field-invalid records, default absent item quantity to 1, and deterministically collapse duplicate order numbers with bounded warnings
 - [x] 5.5 Return `[]` for launch, timeout, output-limit, non-zero-exit, envelope, schema, malformed JSON, and transformation-level failures while distinguishing a successful empty result in logs
@@ -47,7 +47,7 @@
 ## 6. Documentation and Example Configuration
 
 - [x] 6.1 Update `config.example.yml` with commented email, Python, and CSV-only configurations plus timeout/output defaults and secret-safe guidance
-- [ ] 6.2 Update `README.md` feature, prerequisite, setup, configuration, operation, file-structure, safety, limitation, and troubleshooting sections for selectable fetchers
+- [x] 6.2 Update `README.md` feature, prerequisite, setup, configuration, operation, file-structure, safety, limitation, and troubleshooting sections for selectable fetchers
 - [x] 6.3 Update `QUICKSTART.md` with an end-to-end Python 3.9+ virtual-environment install, pinned requirements install, stock `amazon-orders login`/session setup, bridge preflight, YAML selection, and dry-run verification path
 - [x] 6.4 Update `SETUP.md` with platform-specific Python guidance, upstream config/cookie permissions, supported environment variables, optional browser/challenge extras, timeout tuning, and rollback to email/CSV
 - [x] 6.5 Update any other Amazon data-source or runtime guidance affected by the interface rename and Python asset paths
@@ -62,4 +62,4 @@
 - [x] 7.4 Run `./gradlew clean build installDist` and verify the Java distribution plus required Python bridge/requirement assets are packaged or located as documented
 - [x] 7.5 Run bridge preflight with the documented minimum Python version and pinned `amazon-orders` package, then verify a fixture success and each bounded failure path
 - [x] 7.6 Run a secret scan/diff inspection to confirm no credentials, cookies, raw order payloads, virtual environments, or generated upstream configuration files are tracked
-- [ ] 7.7 Run `openspec validate add-python-amazon-order-fetcher`, inspect final status/diff, and confirm all acceptance scenarios have automated or explicitly credential-gated coverage
+- [x] 7.7 Run `openspec validate add-python-amazon-order-fetcher`, inspect final status/diff, and confirm all acceptance scenarios have automated or explicitly credential-gated coverage
