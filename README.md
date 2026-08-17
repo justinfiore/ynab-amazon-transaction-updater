@@ -29,8 +29,8 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 
 ## Prerequisites
 
-- Java 11 or higher
-- Gradle (for building)
+- Java 25 (the supported build and runtime baseline)
+- No system Gradle installation is required; the checked-in wrapper uses Gradle 9.6.1
 - YNAB API key
 - YNAB Budget ID
 - **For Amazon:** Order history (via email or CSV export)
@@ -194,6 +194,16 @@ app:
 ```bash
 ./gradlew build
 ```
+
+### Run the Tests
+
+```bash
+# Unit tests followed by integration tests
+.agents/scripts/run-tests.sh
+```
+
+The helper copies the generated HTML reports to `test-results/test/index.html`
+and `test-results/integrationTest/index.html`.
 
 ### Run the Application
 

@@ -1,7 +1,5 @@
 package com.ynab.amazon.config
 
-import org.junit.Rule
-import org.junit.rules.TemporaryFolder
 import spock.lang.Specification
 
 /**
@@ -9,9 +7,7 @@ import spock.lang.Specification
  */
 class Configuration_UT extends Specification {
     
-    @Rule
-    TemporaryFolder tempFolder = new TemporaryFolder()
-    
+
     def "should load valid configuration"() {
         given: "a valid configuration file"
         def configuration = new Configuration()

@@ -2,49 +2,57 @@
 trigger: always_on
 ---
 
-# Building and running Tests
+# Building and Running Tests
 
-I have made your life easier by writing scripts for you to build, run unit tests and run integration tests.
+The repository includes scripts for cleaning, building, and running unit and integration tests. Java 25 is required; the checked-in Gradle wrapper supplies Gradle 9.6.1.
 
-# Cleaning the project
+## Cleaning the project
 
-Clean the project with:
-```
-.windsurf/scripts/clean.sh
-```
-
-# Building the code
-
-Build the code with:
-```
-.windsurf/scripts/build.sh
+```bash
+.agents/scripts/clean.sh
 ```
 
-# Running the Unit Tests with Gradle
-```
-.windsurf/scripts/run-unit-tests.sh
-```
-The test output will be in `test-results/`
+## Building the code and test classes
 
-You can run specific tests with:
-```
-.windsurf/scripts/run-unit-tests.sh --tests <fully qualified test class or test method or wildcards>;
-```
-The test output will be in `test-results/`
-
-# Running the Integration Tests with Gradle
-```
-.windsurf/scripts/run-integration-tests.sh
-```
-The test output will be in `test-results/`
-
-You can run specific tests with:
-```
-.windsurf/scripts/run-integration-tests.sh --tests <fully qualified test class or test method or wildcards>
+```bash
+.agents/scripts/build.sh
 ```
 
-# Run all of the Tests with Gradle
+## Running unit tests
+
+```bash
+.agents/scripts/run-unit-tests.sh
 ```
-.windsurf/scripts/run-tests.sh
+
+To run specific unit tests:
+
+```bash
+.agents/scripts/run-unit-tests.sh --tests '<fully.qualified.TestClass-or-pattern>'
 ```
-The test output will be in `test-results/`
+
+The HTML report is copied to `test-results/test/index.html`.
+
+## Running integration tests
+
+```bash
+.agents/scripts/run-integration-tests.sh
+```
+
+To run specific integration tests:
+
+```bash
+.agents/scripts/run-integration-tests.sh --tests '<fully.qualified.TestClass-or-pattern>'
+```
+
+The HTML report is copied to `test-results/integrationTest/index.html`.
+
+## Running all tests
+
+```bash
+.agents/scripts/run-tests.sh
+```
+
+The full command runs unit tests first and integration tests only after the unit task succeeds. Reports are copied to:
+
+- `test-results/test/index.html`
+- `test-results/integrationTest/index.html`

@@ -1,7 +1,7 @@
 package com.ynab.amazon.service
 
-import javax.mail.*
-import javax.mail.internet.MimeMessage
+import jakarta.mail.*
+import jakarta.mail.internet.MimeMessage
 import java.util.Properties
 
 /**

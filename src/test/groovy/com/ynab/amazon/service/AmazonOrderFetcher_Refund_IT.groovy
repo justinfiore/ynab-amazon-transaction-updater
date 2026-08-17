@@ -3,9 +3,9 @@ package com.ynab.amazon.service
 import com.ynab.amazon.config.Configuration
 import com.ynab.amazon.model.AmazonOrder
 import spock.lang.Specification
-import javax.mail.Message
-import javax.mail.Session
-import javax.mail.internet.MimeMessage
+import jakarta.mail.Message
+import jakarta.mail.Session
+import jakarta.mail.internet.MimeMessage
 import java.util.Properties
 
 /**
@@ -138,7 +138,7 @@ class AmazonOrderFetcher_Refund_IT extends Specification {
         // Create a mock regular order email
         Message mockOrderEmail = Mock(Message)
         mockOrderEmail.getSubject() >> "Your Amazon.com order of 'Test Product' has shipped"
-        mockOrderEmail.getFrom() >> [new javax.mail.internet.InternetAddress("order-confirmation@amazon.com")]
+        mockOrderEmail.getFrom() >> [new jakarta.mail.internet.InternetAddress("order-confirmation@amazon.com")]
         mockOrderEmail.getSentDate() >> new Date()
         mockOrderEmail.getContent() >> """
 Order #123-4567890-1234567
@@ -176,7 +176,7 @@ Total Amount: \$29.99
         given: "a mock regular order email from order-confirmation@amazon.com"
         Message mockOrderEmail = Mock(Message)
         mockOrderEmail.getSubject() >> "Your Amazon.com order has shipped"
-        mockOrderEmail.getFrom() >> [new javax.mail.internet.InternetAddress("order-confirmation@amazon.com")]
+        mockOrderEmail.getFrom() >> [new jakarta.mail.internet.InternetAddress("order-confirmation@amazon.com")]
         mockOrderEmail.getSentDate() >> new Date()
         mockOrderEmail.getContent() >> """
 Order #123-4567890-1234567
@@ -269,7 +269,7 @@ Total Amount: \$29.99
         // Create mock regular order emails
         Message mockOrder1 = Mock(Message)
         mockOrder1.getSubject() >> "Your Amazon.com order has shipped"
-        mockOrder1.getFrom() >> [new javax.mail.internet.InternetAddress("order-confirmation@amazon.com")]
+        mockOrder1.getFrom() >> [new jakarta.mail.internet.InternetAddress("order-confirmation@amazon.com")]
         mockOrder1.getSentDate() >> new Date()
         mockOrder1.getContent() >> """
 Order #111-1111111-1111111
@@ -282,7 +282,7 @@ Total Amount: \$19.99
         
         Message mockOrder2 = Mock(Message)
         mockOrder2.getSubject() >> "Your Amazon.com order has shipped"
-        mockOrder2.getFrom() >> [new javax.mail.internet.InternetAddress("order-confirmation@amazon.com")]
+        mockOrder2.getFrom() >> [new jakarta.mail.internet.InternetAddress("order-confirmation@amazon.com")]
         mockOrder2.getSentDate() >> new Date()
         mockOrder2.getContent() >> """
 Order #222-2222222-2222222
