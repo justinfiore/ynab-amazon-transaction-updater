@@ -1,4 +1,9 @@
-script_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-source "${script_dir}"/init-tools.sh
+#!/usr/bin/env bash
+set -euo pipefail
 
-./gradlew compileJava compileTestJava $*;
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
+repo_root=$(cd -- "${script_dir}/../.." && pwd)
+source "${script_dir}/init-tools.sh"
+cd "$repo_root"
+
+./gradlew classes testClasses "$@"

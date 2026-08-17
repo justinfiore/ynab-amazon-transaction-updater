@@ -10,67 +10,81 @@ repositories {
     mavenCentral()
 }
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
 dependencies {
-    implementation 'org.codehaus.groovy:groovy-all:3.0.19'
+    implementation platform('org.apache.groovy:groovy-bom:5.0.6')
+    implementation 'org.apache.groovy:groovy'
     implementation 'org.yaml:snakeyaml:2.0'
     implementation 'org.apache.httpcomponents:httpclient:4.5.14'
     implementation 'org.apache.httpcomponents:httpcore:4.4.16'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
-    
+
     // Logging
-    implementation 'ch.qos.logback:logback-classic:1.4.7'  // Logback with SLF4J binding
-    
+    implementation 'ch.qos.logback:logback-classic:1.4.7'
+
     // JavaMail dependencies for email functionality
     implementation 'javax.mail:javax.mail-api:1.6.2'
     implementation 'com.sun.mail:javax.mail:1.6.2'
-    
+
     // Playwright for browser automation
     implementation 'com.microsoft.playwright:playwright:1.40.0'
-    
-    testImplementation 'org.spockframework:spock-core:2.3-groovy-3.0'
+
+    testImplementation 'org.spockframework:spock-core:2.4-groovy-5.0'
+    testImplementation 'org.spockframework:spock-junit4:2.4-groovy-5.0'
+    testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.mockito:mockito-core:5.3.1'
-    testImplementation 'cglib:cglib-nodep:3.3.0'    // For mocking classes
-    testImplementation 'org.objenesis:objenesis:3.3'  // For mocking classes
+    testImplementation 'cglib:cglib-nodep:3.3.0'
+    testImplementation 'org.objenesis:objenesis:3.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.14.1'
 }
 
 application {
     mainClass = 'com.ynab.amazon.YNABAmazonTransactionUpdater'
 }
 
-java {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    reports {
+        junitXml.required = true
+        html.required = true
+    }
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+    }
 }
 
-task unitTest(type: Test) {
-    dependsOn testClasses
-    useJUnitPlatform()
+tasks.named('test', Test) {
     description = 'Runs only the unit tests.'
-    group = 'verification'
-    testClassesDirs = sourceSets.test.output.classesDirs
-    classpath = sourceSets.test.runtimeClasspath
     include '**/*_UT*'
 }
 
-task integrationTest(type: Test) {
-    dependsOn testClasses
-    useJUnitPlatform()
+tasks.register('unitTest') {
+    description = 'Runs only the unit tests.'
+    group = 'verification'
+    dependsOn tasks.named('test')
+}
+
+def integrationTest = tasks.register('integrationTest', Test) {
     description = 'Runs only the integration tests.'
     group = 'verification'
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     include '**/*_IT*'
-    testLogging {
-        events "passed", "skipped", "failed" // Show output for all tests
-        showStandardStreams = true          // Enable standard out/err output
-    }
+    mustRunAfter tasks.named('test')
 }
 
-test {
-    description = 'Runs both unit and integration tests (unit tests first).'
-    dependsOn unitTest
+tasks.register('testAll') {
+    description = 'Runs unit tests first, followed by integration tests.'
+    group = 'verification'
+    dependsOn tasks.named('test')
     dependsOn integrationTest
-    //finalizedBy integrationTest
-    // Optional: Disable default test task execution
-    onlyIf { false }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('testAll')
 }

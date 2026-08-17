@@ -1,7 +1,7 @@
 # Quick Start Guide
 
 ## Prerequisites
-- Java 11 or higher installed
+- Java 25 installed
 - YNAB API key
 - YNAB Account ID
 - Amazon order history CSV export (or email credentials)
@@ -10,9 +10,9 @@
 ## 5-Minute Setup
 
 ### 1. Install Java (if not already installed)
-- **Windows**: Download from [Adoptium](https://adoptium.net/)
-- **macOS**: `brew install openjdk@11`
-- **Linux**: `sudo apt install openjdk-11-jdk`
+- **Windows**: Download JDK 25 from [Adoptium](https://adoptium.net/)
+- **macOS**: `brew install openjdk@25`
+- **Linux**: Install a JDK 25 distribution such as [Adoptium Temurin](https://adoptium.net/)
 
 ### 2. Get Your YNAB Credentials
 1. Go to [YNAB Developer Settings](https://app.youneedabudget.com/settings/developer)
@@ -98,7 +98,7 @@ YNAB Amazon Transaction Updater completed successfully
 
 ## Troubleshooting
 
-- **"Java not found"**: Install Java 11+ and add to PATH
+- **"Java not found"**: Install Java 25 and add it to PATH
 - **"Config error"**: Check your `config.yml` format
 - **"No matches"**: Verify your CSV file format and dates
 - **"API errors"**: Check your YNAB API key and account ID

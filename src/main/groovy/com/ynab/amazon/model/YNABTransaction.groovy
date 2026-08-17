@@ -54,7 +54,7 @@ class YNABTransaction {
      */
     float getAmountInDollars() {
         if (amount == null) return 0.0f
-        return amount / 1000.0f
+        return (float) (amount.doubleValue() / 1000.0d)
     }
     
     String getDisplayDate() {

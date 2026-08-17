@@ -2,20 +2,20 @@
 
 ## Prerequisites
 
-### 1. Install Java 11 or Higher
+### 1. Install Java 25
 
 #### Windows:
-1. Download OpenJDK 11 or higher from [Adoptium](https://adoptium.net/)
+1. Download JDK 25 from [Adoptium](https://adoptium.net/)
 2. Run the installer and follow the setup wizard
 3. Add Java to your PATH environment variable:
    - Open System Properties → Advanced → Environment Variables
-   - Add `C:\Program Files\Eclipse Adoptium\jdk-11.x.x-hotspot\bin` to your PATH
+   - Add `C:\Program Files\Eclipse Adoptium\jdk-25.x.x-hotspot\bin` to your PATH
    - Replace `x.x` with your actual version number
 
 #### macOS:
 ```bash
 # Using Homebrew
-brew install openjdk@11
+brew install openjdk@25
 
 # Or download from Adoptium
 # https://adoptium.net/
@@ -23,8 +23,8 @@ brew install openjdk@11
 
 #### Linux (Ubuntu/Debian):
 ```bash
-sudo apt update
-sudo apt install openjdk-11-jdk
+# Install a JDK 25 distribution, such as Adoptium Temurin:
+# https://adoptium.net/
 ```
 
 ### 2. Verify Java Installation
@@ -36,43 +36,20 @@ java -version
 
 You should see output like:
 ```
-openjdk version "11.0.12" 2021-07-20
-OpenJDK Runtime Environment 18.9 (build 11.0.12+7)
-OpenJDK 64-Bit Server VM 18.9 (build 11.0.12+7, mixed mode)
+openjdk version "25"
+OpenJDK Runtime Environment (...)
+OpenJDK 64-Bit Server VM (...)
 ```
 
 ## Project Setup
 
-### 1. Download Gradle Wrapper (if needed)
+### 1. Use the Checked-in Gradle Wrapper
 
-If the gradle wrapper files are missing, download them:
+The repository includes a complete Gradle 9.6.1 wrapper. Do not install Gradle
+separately or download wrapper files by hand. Verify it with:
 
-#### Windows (PowerShell):
-```powershell
-# Create wrapper directory
-mkdir -p gradle/wrapper
-
-# Download gradle-wrapper.jar
-Invoke-WebRequest -Uri "https://github.com/gradle/gradle/raw/v7.6.0/gradle/wrapper/gradle-wrapper.jar" -OutFile "gradle/wrapper/gradle-wrapper.jar"
-
-# Download gradlew script
-Invoke-WebRequest -Uri "https://github.com/gradle/gradle/raw/v7.6.0/gradlew" -OutFile "gradlew"
-
-# Download gradlew.bat
-Invoke-WebRequest -Uri "https://github.com/gradle/gradle/raw/v7.6.0/gradlew.bat" -OutFile "gradlew.bat"
-```
-
-#### Unix/Linux/macOS:
 ```bash
-# Create wrapper directory
-mkdir -p gradle/wrapper
-
-# Download gradle-wrapper.jar
-curl -o gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v7.6.0/gradle/wrapper/gradle-wrapper.jar
-
-# Download gradlew script
-curl -o gradlew https://github.com/gradle/gradle/raw/v7.6.0/gradlew
-chmod +x gradlew
+./gradlew --version
 ```
 
 ### 2. Configure the Application
@@ -129,7 +106,7 @@ java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
 If you prefer to use Docker, create a `Dockerfile`:
 
 ```dockerfile
-FROM openjdk:11-jre-slim
+FROM eclipse-temurin:25-jre
 
 WORKDIR /app
 
@@ -161,10 +138,10 @@ docker run -v $(pwd):/app ynab-amazon-updater
    - Or set JAVA_HOME environment variable
 
 2. **"Gradle wrapper not found"**
-   - Download the gradle wrapper files as shown above
+   - Restore the checked-in wrapper files from Git
 
 3. **"Build failed"**
-   - Check that Java 11+ is installed
+   - Check that Java 25 is installed
    - Verify all source files are in the correct directory structure
 
 4. **"YNAB API key not configured"**

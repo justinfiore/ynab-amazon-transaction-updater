@@ -1,8 +1,14 @@
-script_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-source "${script_dir}"/init-tools.sh
+#!/usr/bin/env bash
+set -euo pipefail
 
-rm -rf test-results/;
-./gradlew test $*;
-cp -r build/reports/tests test-results/;
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
+repo_root=$(cd -- "${script_dir}/../.." && pwd)
+source "${script_dir}/init-tools.sh"
+cd "$repo_root"
 
-echo "Inspect the results in test-results/";
+rm -rf test-results/
+./gradlew testAll "$@"
+cp -r build/reports/tests test-results/
+
+echo "Unit report: test-results/test/index.html"
+echo "Integration report: test-results/integrationTest/index.html"
