@@ -9,6 +9,8 @@ ynab:
 
 # Amazon Configuration
 amazon:
+  # Select exactly one automatic source: "email" (the default) or "python".
+  order_fetcher: "email"
   # Email-based order fetching (recommended if you want automatic import):
   # Note: Email fetching now automatically includes Subscribe & Save delivery notifications
   email: "your_amazon_email@example.com"  # Your Amazon email address (IMAP, e.g. Gmail)
@@ -18,8 +20,16 @@ amazon:
   # IMAP Configuration (optional, defaults to Gmail)
   # imap_host: "imap.gmail.com"  # IMAP server hostname (default: imap.gmail.com)
   # imap_port: 993  # IMAP server port (default: 993)
-  # CSV fallback (if email fetching is not used or fails):
+  # Optional and additive: CSV orders are appended after the selected automatic source.
+  # For CSV-only use, leave email blank and retain order_fetcher: "email".
   csv_file_path: "amazon_orders.csv"  # Your exported Amazon order history CSV file
+  # Optional Python 3.9+ history source. Do not put Amazon credentials here.
+  # python:
+  #   executable: ".venv-amazon-orders/bin/python"
+  #   bridge_script: "scripts/amazon_orders_bridge.py"
+  #   config_path: "~/.config/amazonorders/config.yml"
+  #   timeout_seconds: 300
+  #   max_output_bytes: 10485760
 
 # Walmart Configuration (optional)
 walmart:
@@ -54,6 +64,8 @@ app:
 # amazon.imap_host: IMAP server hostname (optional, default: imap.gmail.com)
 # amazon.imap_port: IMAP server port (optional, default: 993)
 # amazon.csv_file_path: Path to your Amazon order CSV file (used as fallback)
+# amazon.order_fetcher: "email" (default) or "python"; CSV remains additive in either mode
+# amazon.python.*: Optional bridge paths/bounds. Sessions and cookies stay in the upstream config.
 # walmart.enabled: Enable/disable Walmart order fetching (default: false)
 # walmart.mode: Mode to use - "guest" (email lookup) or "login" (account login) (default: "guest")
 # walmart.email: Email address to search for Walmart order notifications (IMAP). If only one email specified, used for both.
@@ -89,4 +101,4 @@ app:
 # app:
 #   processed_transactions_file: "processed_transactions.json"
 #   log_level: "INFO"
-#   dry_run: false 
+#   dry_run: false

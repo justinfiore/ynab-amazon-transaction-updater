@@ -11,7 +11,8 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
   - Email parsing (automatic order confirmation emails)
   - Amazon Subscribe & Save delivery notifications
   - Amazon refund notifications
-  - CSV export files
+   - CSV export files
+   - Optional Python order-history fetcher using `amazon-orders==4.4.7`
   - Special handling for Subscribe & Save orders with "S&S:" prefix
   - Automatic refund detection and processing with positive amounts
 - **Walmart Integration:**
@@ -33,7 +34,7 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 - No system Gradle installation is required; the checked-in wrapper uses Gradle 9.6.1
 - YNAB API key
 - YNAB Budget ID
-- **For Amazon:** Order history (via email or CSV export)
+- **For Amazon:** Order history (via email, optional Python history, or CSV export)
 - **For Walmart:** Walmart account credentials (email and password)
 - (Optional) Email credentials for automatic Amazon order fetching
 
@@ -57,7 +58,7 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 
 #### Amazon Order Data Source
 
-You have two options for providing Amazon order data:
+You have three options for providing Amazon order data:
 
 **Option A: Email Parsing (Recommended)**
 
@@ -91,6 +92,27 @@ If email parsing is not available or you prefer manual control:
 4. Configure the path in `config.yml`
 
 Note: CSV export does not include Subscribe & Save orders automatically.
+
+**Option C: Python order history (optional)**
+
+Python 3.9+ can fetch account history through the unofficial `amazon-orders`
+website-parsing package. It officially supports English amazon.com and can
+break when Amazon changes its site. It is deliberately opt-in: email remains
+the default and retains its refund and Subscribe & Save notification semantics.
+
+```bash
+python3 -m venv .venv-amazon-orders
+.venv-amazon-orders/bin/python -m pip install --upgrade pip
+.venv-amazon-orders/bin/python -m pip install -r requirements-amazon-orders.txt
+.venv-amazon-orders/bin/amazon-orders --config-path ~/.config/amazonorders/config.yml login
+.venv-amazon-orders/bin/python scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight
+```
+
+The stock login persists its session outside this project. Do not commit its
+config/cookies or place passwords, OTP secrets, or cookies in YAML. Supported
+upstream environment credentials are inherited without being printed. Use
+restrictive permissions for the upstream configuration. Browser challenges may
+need `amazon-orders[browser]` and `playwright install chromium`.
 
 #### Walmart Order Data Source (Optional)
 
@@ -154,6 +176,7 @@ ynab:
   base_url: "https://api.ynab.com/v1"
 
 amazon:
+  order_fetcher: "email" # use "python" for the optional bridge
   # Email parsing (recommended - automatically includes Subscribe & Save)
   email: "your_amazon_email@example.com"
   email_password: "your_app_password"  # Use app-specific password, not main password
@@ -167,6 +190,12 @@ amazon:
   
   # CSV fallback (optional)
   csv_file_path: "amazon_orders.csv"
+  # python:
+  #   executable: ".venv-amazon-orders/bin/python"
+  #   bridge_script: "scripts/amazon_orders_bridge.py"
+  #   config_path: "~/.config/amazonorders/config.yml"
+  #   timeout_seconds: 300
+  #   max_output_bytes: 10485760
 
 walmart:
   enabled: true  # Set to true to enable Walmart integration
@@ -204,6 +233,18 @@ app:
 
 The helper copies the generated HTML reports to `test-results/test/index.html`
 and `test-results/integrationTest/index.html`.
+
+Python bridge fixture tests need no account or credentials:
+
+```bash
+python3 -m unittest scripts/test_amazon_orders_bridge.py
+```
+
+If Python fetching times out, returns a non-zero exit, cannot import the
+package, or emits malformed output, the updater logs bounded redacted context
+and safely imports no Python orders. Re-run preflight, refresh the persisted
+session, or select email/CSV; live Amazon verification is never part of the
+default test suite.
 
 ### Run the Application
 

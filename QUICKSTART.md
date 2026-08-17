@@ -5,6 +5,7 @@
 - YNAB API key
 - YNAB Account ID
 - Amazon order history CSV export (or email credentials)
+- Optional: Python 3.9+ for Amazon account-history fetching
 - (Optional) Walmart account credentials for Walmart integration
 
 ## 5-Minute Setup
@@ -57,7 +58,25 @@
      csv_file_path: "your_amazon_orders.csv"
    app:
      dry_run: true  # Start with true for testing
-   ```
+    ```
+
+### Optional: Python Amazon History
+
+This is opt-in and uses the unofficial `amazon-orders` website parser. It
+supports English amazon.com, may need updates when Amazon changes, and does not
+recreate email refund or Subscribe & Save notification semantics.
+
+```bash
+python3 -m venv .venv-amazon-orders
+.venv-amazon-orders/bin/python -m pip install -r requirements-amazon-orders.txt
+.venv-amazon-orders/bin/amazon-orders --config-path ~/.config/amazonorders/config.yml login
+.venv-amazon-orders/bin/python scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight
+```
+
+Then set `amazon.order_fetcher: "python"` and the commented `amazon.python`
+paths from `config.example.yml`. Keep `dry_run: true` for the first updater run.
+Credentials and cookies belong only to the upstream session/configuration, not
+to this repository or command arguments.
 
 ### 5. Test and Run
 ```bash
@@ -108,4 +127,4 @@ YNAB Amazon Transaction Updater completed successfully
 
 - See `SETUP.md` for detailed instructions
 - Run `groovy test_setup.groovy` to diagnose issues
-- Check the logs for specific error messages 
+- Check the logs for specific error messages

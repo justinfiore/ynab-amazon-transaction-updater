@@ -13,11 +13,11 @@ import java.util.regex.Pattern
 class AmazonOrderFetcher_SubscribeAndSave_UT extends Specification {
     
     Configuration mockConfig
-    AmazonOrderFetcher orderFetcher
+    EmailAmazonOrderFetcher orderFetcher
     
     def setup() {
         mockConfig = Mock(Configuration)
-        orderFetcher = new AmazonOrderFetcher(mockConfig)
+        orderFetcher = new EmailAmazonOrderFetcher(mockConfig)
     }
     
     def "should extract text/plain content from real Subscribe and Save emails"() {
