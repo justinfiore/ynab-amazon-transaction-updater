@@ -25,3 +25,9 @@
 - [x] 4.3 Run a clean full unit/integration suite and verify report counts, failures, errors, and skips
 - [x] 4.4 Run `build` and `installDist` and verify generated archives/launchers
 - [x] 4.5 Run OpenSpec validation, inspect the final diff/status, and confirm no dynamic dependency selectors or unrelated files
+
+## 5. Continuous Integration
+
+- [x] 5.1 Add a Java 25 GitHub Actions workflow that runs the complete unit/integration suite on pushes and pull requests targeting `master`
+- [x] 5.2 Publish JUnit totals and failing test names in the check summary while retaining XML, HTML, and Gradle-log artifacts
+- [x] 5.3 Locally validate the summary parser against passing reports and a synthetic failing report before pushing

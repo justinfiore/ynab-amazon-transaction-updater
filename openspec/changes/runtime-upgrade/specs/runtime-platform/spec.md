@@ -54,3 +54,14 @@ Operator and agent documentation SHALL identify Java 25 as required and SHALL re
 #### Scenario: New contributor follows documentation
 - **WHEN** a contributor reads `README.md`, `QUICKSTART.md`, `SETUP.md`, or `AGENTS.md`-delegated build instructions
 - **THEN** the documented Java requirement and build/test commands match the verified upgraded repository behavior
+
+### Requirement: Pull request test visibility
+GitHub Actions SHALL run the complete Java 25 unit and integration suite for pull requests and pushes targeting `master`, preserve reports as downloadable artifacts, and publish totals plus failing test names directly in the GitHub Actions check summary.
+
+#### Scenario: Pull request tests pass
+- **WHEN** a pull request targets `master` and the complete Gradle suite succeeds
+- **THEN** the check reports success, displays unit/integration totals and skips in its summary, and retains JUnit XML, HTML reports, and Gradle output
+
+#### Scenario: Pull request tests fail
+- **WHEN** a unit or integration test fails in GitHub Actions
+- **THEN** summary and artifact publication still run, the summary identifies failing test cases, and the job concludes with failure
