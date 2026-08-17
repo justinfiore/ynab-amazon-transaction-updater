@@ -52,6 +52,67 @@ class PythonAmazonOrderFetcher_UT extends Specification {
         new PythonAmazonOrderFetcher(config, runner).fetchOrders().empty
     }
 
+    def "contains every typed process failure"() {
+        given:
+        def runner = Stub(ProcessRunner) { run(_, _, _) >> new ProcessResult(status, 2, completeEnvelope(), 'password=private') }
+
+        expect:
+        new PythonAmazonOrderFetcher(config, runner).fetchOrders().empty
+
+        where:
+        status << [ProcessResult.Status.START_FAILED, ProcessResult.Status.NON_ZERO_EXIT,
+                   ProcessResult.Status.TIMED_OUT, ProcessResult.Status.INTERRUPTED,
+                   ProcessResult.Status.OUTPUT_LIMIT_EXCEEDED]
+    }
+
+    def "handles complete minimal and invalid records independently"() {
+        expect:
+        new PythonAmazonOrderFetcher(config, Stub(ProcessRunner)).mapEnvelope(payload)*.orderId == expected
+
+        where:
+        payload                                                                                                                                            || expected
+        completeEnvelope()                                                                                                                                 || ['complete']
+        '{"schema_version":1,"orders":[{"order_number":"minimal","order_placed_date":"2026-01-01","grand_total":1,"items":[{}]}]}'                 || ['minimal']
+        '{"schema_version":1,"orders":[]}'                                                                                                               || []
+        '{"schema_version":1,"orders":[{"order_placed_date":"2026-01-01","grand_total":1}]}'                                                       || []
+        '{"schema_version":1,"orders":[{"order_number":"missing-date","grand_total":1}]}'                                                         || []
+        '{"schema_version":1,"orders":[{"order_number":"missing-total","order_placed_date":"2026-01-01"}]}'                                      || []
+        '{"schema_version":1,"orders":[{"order_number":"cancelled","order_placed_date":"2026-01-01","grand_total":1,"cancelled":true}]}'        || []
+        '{"schema_version":1,"orders":[{"order_number":"bad-total","order_placed_date":"2026-01-01","grand_total":-1}]}'                         || []
+        '{"schema_version":1,"orders":[{"order_number":"bad-date","order_placed_date":"bad","grand_total":1}]}'                                  || []
+    }
+
+    def "maps minimal item fields with quantity default and optional payment"() {
+        when:
+        def order = new PythonAmazonOrderFetcher(config, Stub(ProcessRunner)).mapEnvelope(
+            '{"schema_version":1,"orders":[{"order_number":"minimal","order_placed_date":"2026-01-01","grand_total":1,"items":[{}]}]}')[0]
+
+        then:
+        order.totalAmount == -1G
+        !order.paymentMethod
+        order.items[0].quantity == 1
+        !order.items[0].title
+        !order.items[0].asin
+    }
+
+    def "bounds and redacts diagnostics"() {
+        when:
+        def method = PythonAmazonOrderFetcher.getDeclaredMethod('sanitize', String)
+        method.accessible = true
+        String diagnostic = method.invoke(null, "password=private token:secret " + ('x' * 600))
+
+        then:
+        diagnostic.contains('password=[redacted]')
+        diagnostic.contains('token=[redacted]')
+        !diagnostic.contains('private')
+        !diagnostic.contains('secret')
+        diagnostic.size() <= 500
+    }
+
+    private static String completeEnvelope() {
+        '{"schema_version":1,"orders":[{"order_number":"complete","order_placed_date":"2026-01-01","grand_total":2.50,"payment_method":"Visa","payment_method_last_4":1234,"items":[{"title":"item","asin":"ASIN","price":2.50}]}]}'
+    }
+
     private static String resource(String name) {
         PythonAmazonOrderFetcher_UT.getResource("/${name}").text
     }

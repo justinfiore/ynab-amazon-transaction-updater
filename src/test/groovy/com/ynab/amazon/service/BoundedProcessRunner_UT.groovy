@@ -1,11 +1,13 @@
 package com.ynab.amazon.service
 
 import spock.lang.Specification
+import spock.lang.TempDir
 
 import java.time.Duration
 
 class BoundedProcessRunner_UT extends Specification {
     private final BoundedProcessRunner runner = new BoundedProcessRunner()
+    @TempDir File tempDir
 
     def "captures stdout and stderr concurrently for a successful argument-list process"() {
         when:
@@ -47,6 +49,22 @@ class BoundedProcessRunner_UT extends Specification {
         elapsedMillis < 2500
     }
 
+    def "forcibly cleans up a descendant that ignores graceful termination"() {
+        given:
+        File pidFile = new File(tempDir, 'descendant.pid')
+        String command = "(trap '' TERM; while :; do sleep 1; done) & child=\$!; printf '%s' \$child > '${pidFile.absolutePath}'; wait \$child"
+
+        when:
+        def result = runner.run(['/bin/sh', '-c', command], Duration.ofMillis(150), 1024)
+        long pid = pidFile.text.trim().toLong()
+        boolean exited = waitForExit(pid)
+
+        then:
+        result.status == ProcessResult.Status.TIMED_OUT
+        exited
+        !alive(pid)
+    }
+
     def "returns typed failures for launch and non-zero exit errors"() {
         expect:
         runner.run(['/definitely/not/a/program'], Duration.ofSeconds(1), 1024).status == ProcessResult.Status.START_FAILED
@@ -73,5 +91,15 @@ class BoundedProcessRunner_UT extends Specification {
         !worker.alive
         result.status == ProcessResult.Status.INTERRUPTED
         interrupted
+    }
+
+    private static boolean waitForExit(long pid) {
+        long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos()
+        while (alive(pid) && System.nanoTime() < deadline) sleep 10
+        !alive(pid)
+    }
+
+    private static boolean alive(long pid) {
+        ProcessHandle.of(pid).map { it.isAlive() }.orElse(false)
     }
 }

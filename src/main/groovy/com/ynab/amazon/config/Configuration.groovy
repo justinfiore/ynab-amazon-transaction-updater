@@ -37,6 +37,7 @@ class Configuration {
     String logLevel = "INFO"
     boolean dryRun = false
     int lookBackDays = 30
+    String lastValidationError
     
     // Walmart Configuration
     String walmartEmail  // Email address to search for order notifications (IMAP)
@@ -59,9 +60,12 @@ class Configuration {
     }
     
     public void loadConfiguration() {
+        loadConfiguration(new File("config.yml"))
+    }
+
+    public void loadConfiguration(File configFile) {
         try {
             def yaml = new Yaml()
-            def configFile = new File("config.yml")
             
             if (!configFile.exists()) {
                 // Keep defaults when no config file
@@ -164,6 +168,7 @@ class Configuration {
     }
     
     boolean isValid() {
+        lastValidationError = null
         if (!ynabApiKey || ynabApiKey == "YOUR_YNAB_API_KEY_HERE") {
             logger.error("YNAB API key not configured")
             return false
@@ -175,8 +180,7 @@ class Configuration {
         }
         
         if (![AMAZON_FETCHER_EMAIL, AMAZON_FETCHER_PYTHON].contains(amazonOrderFetcher)) {
-            logger.error("Invalid amazon.order_fetcher: ${amazonOrderFetcher}. Must be '${AMAZON_FETCHER_EMAIL}' or '${AMAZON_FETCHER_PYTHON}'")
-            return false
+            return invalidAmazon("Invalid amazon.order_fetcher: ${amazonOrderFetcher}. Must be '${AMAZON_FETCHER_EMAIL}' or '${AMAZON_FETCHER_PYTHON}'")
         }
 
         // Check if either the selected automatic source or CSV file path is configured.
@@ -186,17 +190,15 @@ class Configuration {
             amazonPythonTimeoutSeconds > 0 && amazonPythonMaxOutputBytes > 0
 
         if (amazonOrderFetcher == AMAZON_FETCHER_PYTHON && !hasPythonConfig) {
-            if (!amazonPythonExecutable) logger.error('amazon.python.executable is required for Python fetching')
-            else if (!amazonPythonBridgeScript) logger.error('amazon.python.bridge_script is required for Python fetching')
-            else if (!amazonPythonConfigPath) logger.error('amazon.python.config_path is required for Python fetching')
-            else if (amazonPythonTimeoutSeconds <= 0) logger.error('amazon.python.timeout_seconds must be positive')
-            else logger.error('amazon.python.max_output_bytes must be positive')
-            return false
+            if (!amazonPythonExecutable) return invalidAmazon('amazon.python.executable is required for Python fetching')
+            if (!amazonPythonBridgeScript) return invalidAmazon('amazon.python.bridge_script is required for Python fetching')
+            if (!amazonPythonConfigPath) return invalidAmazon('amazon.python.config_path is required for Python fetching')
+            if (amazonPythonTimeoutSeconds <= 0) return invalidAmazon('amazon.python.timeout_seconds must be positive')
+            return invalidAmazon('amazon.python.max_output_bytes must be positive')
         }
         
         if (amazonOrderFetcher == AMAZON_FETCHER_EMAIL && !hasEmailConfig && !hasCsvConfig) {
-            logger.error("Neither Amazon email credentials nor CSV file path are configured")
-            return false
+            return invalidAmazon("Neither Amazon email credentials nor CSV file path are configured")
         }
         
         // Validate Walmart configuration if enabled
@@ -238,5 +240,11 @@ class Configuration {
         String path = value.toString().trim()
         if (path == '~' || path.startsWith('~/')) path = System.getProperty('user.home') + path.substring(1)
         return Paths.get(path).toAbsolutePath().normalize().toString()
+    }
+
+    private boolean invalidAmazon(String message) {
+        lastValidationError = message
+        logger.error(message)
+        return false
     }
 }
