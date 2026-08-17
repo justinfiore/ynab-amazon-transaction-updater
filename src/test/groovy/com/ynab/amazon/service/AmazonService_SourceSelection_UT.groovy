@@ -31,4 +31,34 @@ class AmazonService_SourceSelection_UT extends Specification {
         expect:
         new AmazonService(new Configuration(amazonCsvFilePath: csv.path)).getOrders()*.orderId == ['csv']
     }
+
+    def "selects the email implementation by default"() {
+        expect:
+        selected(new AmazonService(new Configuration(amazonEmail: 'email@example.com', amazonEmailPassword: 'app-password'))) instanceof EmailAmazonOrderFetcher
+    }
+
+    def "selects the Python implementation only when configured"() {
+        given:
+        def config = new Configuration(amazonOrderFetcher: Configuration.AMAZON_FETCHER_PYTHON,
+            amazonPythonExecutable: 'python3', amazonPythonBridgeScript: 'bridge.py', amazonPythonConfigPath: 'session.yml')
+
+        expect:
+        selected(new AmazonService(config)) instanceof PythonAmazonOrderFetcher
+    }
+
+    def "returns an empty aggregate without downstream error when all sources are empty"() {
+        given:
+        File csv = new File(tempDir, 'empty.csv')
+        csv.text = 'Order ID,Order Date,Title,Price,Quantity\n'
+        def fetcher = Stub(AmazonOrderFetcher) { fetchOrders() >> [] }
+
+        expect:
+        new AmazonService(new Configuration(amazonCsvFilePath: csv.path), fetcher).getOrders().empty
+    }
+
+    private static AmazonOrderFetcher selected(AmazonService service) {
+        def field = AmazonService.getDeclaredField('orderFetcher')
+        field.accessible = true
+        field.get(service) as AmazonOrderFetcher
+    }
 }

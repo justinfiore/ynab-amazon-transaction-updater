@@ -1,11 +1,13 @@
 package com.ynab.amazon.config
 
 import spock.lang.Specification
+import spock.lang.TempDir
 
 /**
  * Test class for the Configuration class
  */
 class Configuration_UT extends Specification {
+    @TempDir File tempDir
     
 
     def "should load valid configuration"() {
@@ -152,6 +154,72 @@ class Configuration_UT extends Specification {
     def "should keep email as the backward-compatible automatic source default"() {
         expect:
         new Configuration().amazonOrderFetcher == Configuration.AMAZON_FETCHER_EMAIL
+    }
+
+    def "loads and normalizes nested Python YAML paths"() {
+        given:
+        File yaml = new File(tempDir, 'config.yml')
+        yaml.text = '''ynab:
+  api_key: test-key
+  budget_id: test-budget
+amazon:
+  order_fetcher: python
+  python:
+    executable: ./bin/python
+    bridge_script: ./scripts/bridge.py
+    config_path: ~/amazonorders/config.yml
+    timeout_seconds: 12
+    max_output_bytes: 1234
+app: {}
+walmart: {}
+'''
+        def configuration = new Configuration()
+
+        when:
+        configuration.loadConfiguration(yaml)
+
+        then:
+        configuration.amazonOrderFetcher == Configuration.AMAZON_FETCHER_PYTHON
+        configuration.amazonPythonExecutable.endsWith('/bin/python')
+        configuration.amazonPythonBridgeScript.endsWith('/scripts/bridge.py')
+        configuration.amazonPythonConfigPath == System.getProperty('user.home') + '/amazonorders/config.yml'
+        configuration.amazonPythonTimeoutSeconds == 12
+        configuration.amazonPythonMaxOutputBytes == 1234
+    }
+
+    def "reports the exact invalid Amazon configuration key"() {
+        given:
+        def configuration = new Configuration(ynabApiKey: 'key', ynabBudgetId: 'budget', amazonOrderFetcher: mode,
+            amazonPythonExecutable: executable, amazonPythonBridgeScript: bridge, amazonPythonConfigPath: configPath,
+            amazonPythonTimeoutSeconds: timeout, amazonPythonMaxOutputBytes: outputLimit)
+
+        expect:
+        !configuration.isValid()
+        configuration.lastValidationError.contains(expectedKey)
+
+        where:
+        mode                                  | executable | bridge      | configPath     | timeout | outputLimit || expectedKey
+        'unknown'                             | 'python'   | 'bridge.py' | 'session.yml'  | 1       | 1           || 'amazon.order_fetcher'
+        Configuration.AMAZON_FETCHER_PYTHON   | null       | 'bridge.py' | 'session.yml'  | 1       | 1           || 'amazon.python.executable'
+        Configuration.AMAZON_FETCHER_PYTHON   | 'python'   | null        | 'session.yml'  | 1       | 1           || 'amazon.python.bridge_script'
+        Configuration.AMAZON_FETCHER_PYTHON   | 'python'   | 'bridge.py' | null           | 1       | 1           || 'amazon.python.config_path'
+        Configuration.AMAZON_FETCHER_PYTHON   | 'python'   | 'bridge.py' | 'session.yml'  | 0       | 1           || 'amazon.python.timeout_seconds'
+        Configuration.AMAZON_FETCHER_PYTHON   | 'python'   | 'bridge.py' | 'session.yml'  | 1       | 0           || 'amazon.python.max_output_bytes'
+        Configuration.AMAZON_FETCHER_EMAIL    | null       | null        | null           | 300     | 10485760     || 'Neither Amazon email credentials'
+    }
+
+    def "accepts email default Python without email CSV-only and automatic plus CSV"() {
+        expect:
+        configuration.isValid()
+
+        where:
+        configuration << [
+            new Configuration(ynabApiKey: 'key', ynabBudgetId: 'budget', amazonEmail: 'email', amazonEmailPassword: 'password'),
+            new Configuration(ynabApiKey: 'key', ynabBudgetId: 'budget', amazonOrderFetcher: Configuration.AMAZON_FETCHER_PYTHON,
+                amazonPythonExecutable: 'python', amazonPythonBridgeScript: 'bridge.py', amazonPythonConfigPath: 'session.yml'),
+            new Configuration(ynabApiKey: 'key', ynabBudgetId: 'budget', amazonCsvFilePath: 'orders.csv'),
+            new Configuration(ynabApiKey: 'key', ynabBudgetId: 'budget', amazonEmail: 'email', amazonEmailPassword: 'password', amazonCsvFilePath: 'orders.csv')
+        ]
     }
     
     def "should use default Walmart values when not configured"() {
