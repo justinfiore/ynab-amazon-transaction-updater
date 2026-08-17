@@ -1,6 +1,5 @@
 package com.ynab.amazon.service
 
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.ynab.amazon.config.Configuration
 import com.ynab.amazon.model.AmazonOrder
@@ -38,13 +37,13 @@ class PythonAmazonOrderFetcher implements AmazonOrderFetcher {
 
     List<AmazonOrder> mapEnvelope(String output) {
         try {
-            JsonNode envelope = objectMapper.readTree(output)
-            if (envelope == null || envelope.path('schema_version').asInt(-1) != 1 || !envelope.path('orders').isArray()) {
+            PythonBridgeEnvelope envelope = objectMapper.readValue(output, PythonBridgeEnvelope)
+            if (envelope == null || envelope.schemaVersion != 1 || envelope.orders == null) {
                 logger.error('Python Amazon bridge returned an unsupported or malformed schema-v1 envelope')
                 return []
             }
             Map<String, AmazonOrder> orders = new LinkedHashMap<>()
-            envelope.path('orders').eachWithIndex { JsonNode record, int index ->
+            envelope.orders.eachWithIndex { PythonBridgeOrder record, int index ->
                 AmazonOrder order = mapOrder(record, index)
                 if (order != null) {
                     if (orders.containsKey(order.orderId)) logger.warn("Skipping duplicate Python Amazon order ${order.orderId}")
@@ -58,23 +57,22 @@ class PythonAmazonOrderFetcher implements AmazonOrderFetcher {
         }
     }
 
-    private AmazonOrder mapOrder(JsonNode record, int index) {
-        String orderNumber = text(record, 'order_number')
-        String orderDate = text(record, 'order_placed_date')
-        JsonNode grandTotal = record.path('grand_total')
-        if (record.path('cancelled').asBoolean(false) || !orderNumber || !orderDate || !grandTotal.isNumber()) {
+    private AmazonOrder mapOrder(PythonBridgeOrder record, int index) {
+        String orderNumber = text(record.orderNumber)
+        String orderDate = text(record.orderPlacedDate)
+        if (record.cancelled || !orderNumber || !orderDate || record.grandTotal == null) {
             logger.warn("Skipping invalid or cancelled Python Amazon order at index ${index}${orderNumber ? " (${orderNumber})" : ''}")
             return null
         }
         try {
             LocalDate.parse(orderDate)
-            BigDecimal total = grandTotal.decimalValue()
+            BigDecimal total = record.grandTotal
             if (total <= 0) throw new IllegalArgumentException('grand_total must be positive')
             AmazonOrder order = new AmazonOrder(orderId: orderNumber, orderDate: orderDate, totalAmount: total.negate(), isReturn: false)
-            String payment = text(record, 'payment_method')
-            String lastFour = record.path('payment_method_last_4').isMissingNode() || record.path('payment_method_last_4').isNull() ? null : record.path('payment_method_last_4').asText()
+            String payment = text(record.paymentMethod)
+            String lastFour = text(record.paymentMethodLast4)
             order.paymentMethod = payment && lastFour ? "${payment} (${lastFour})" : payment
-            if (record.path('items').isArray()) record.path('items').each { JsonNode item -> order.addItem(mapItem(item)) }
+            record.items?.each { PythonBridgeItem item -> order.addItem(mapItem(item)) }
             return order
         } catch (Exception e) {
             logger.warn("Skipping invalid Python Amazon order at index ${index}${orderNumber ? " (${orderNumber})" : ''}")
@@ -82,15 +80,13 @@ class PythonAmazonOrderFetcher implements AmazonOrderFetcher {
         }
     }
 
-    private static AmazonOrderItem mapItem(JsonNode item) {
-        new AmazonOrderItem(title: text(item, 'title'), asin: text(item, 'asin'),
-            price: item.path('price').isNumber() ? item.path('price').decimalValue() : null,
-            quantity: item.path('quantity').isInt() && item.path('quantity').asInt() > 0 ? item.path('quantity').asInt() : 1)
+    private static AmazonOrderItem mapItem(PythonBridgeItem item) {
+        new AmazonOrderItem(title: text(item.title), asin: text(item.asin), price: item.price,
+            quantity: item.quantity != null && item.quantity > 0 ? item.quantity : 1)
     }
 
-    private static String text(JsonNode node, String field) {
-        JsonNode value = node.path(field)
-        value.isTextual() && value.asText().trim() ? value.asText().trim() : null
+    private static String text(String value) {
+        value?.trim() ?: null
     }
 
     private static String sanitize(String value) {

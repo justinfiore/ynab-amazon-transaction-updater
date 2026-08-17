@@ -9,10 +9,10 @@ import jakarta.mail.internet.MimeMessage
 import java.util.Properties
 
 /**
- * Integration test class for refund email fetching functionality in AmazonOrderFetcher
+ * Integration test class for refund email fetching functionality in EmailAmazonOrderFetcher
  * Tests the complete flow of detecting, routing, and parsing refund emails
  */
-class AmazonOrderFetcher_Refund_IT extends Specification {
+class EmailAmazonOrderFetcher_Refund_IT extends Specification {
     
     Configuration mockConfig
     EmailAmazonOrderFetcher orderFetcher

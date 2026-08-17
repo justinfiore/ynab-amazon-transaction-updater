@@ -8,9 +8,9 @@ import java.text.SimpleDateFormat
 import java.util.regex.Pattern
 
 /**
- * Test class for Subscribe and Save functionality in AmazonOrderFetcher
+ * Test class for Subscribe and Save functionality in EmailAmazonOrderFetcher
  */
-class AmazonOrderFetcher_SubscribeAndSave_UT extends Specification {
+class EmailAmazonOrderFetcher_SubscribeAndSave_UT extends Specification {
     
     Configuration mockConfig
     EmailAmazonOrderFetcher orderFetcher
