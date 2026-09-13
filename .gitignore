@@ -54,6 +54,7 @@ processed_transactions.json
 *.tmp
 *.temp
 logs/
+.amp/portals/*
 
 # Sensitive integration tests
 WalmartLogin_IT.groovy

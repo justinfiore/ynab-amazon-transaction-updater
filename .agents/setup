@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly java_home="$HOME/.local/share/jdks/temurin-25"
+readonly profile_marker="# ynab-amazon-transaction-updater Java 25"
+
+java_major_version() {
+  "$1" -version 2>&1 | awk -F '"' '/version/ { split($2, version, "."); print version[1]; exit }'
+}
+
+if [[ ! -x "$java_home/bin/java" ]] || [[ "$(java_major_version "$java_home/bin/java")" != "25" ]]; then
+  case "$(uname -m)" in
+    x86_64) adoptium_arch="x64" ;;
+    aarch64|arm64) adoptium_arch="aarch64" ;;
+    *)
+      echo "Unsupported architecture for Temurin 25: $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+
+  echo "Installing Temurin JDK 25..."
+  download_dir=$(mktemp -d)
+  trap 'rm -rf "$download_dir"' EXIT
+
+  curl --fail --location --retry 3 --output "$download_dir/jdk.tar.gz" \
+    "https://api.adoptium.net/v3/binary/latest/25/ga/linux/${adoptium_arch}/jdk/hotspot/normal/eclipse"
+  mkdir "$download_dir/jdk"
+  tar -xzf "$download_dir/jdk.tar.gz" --strip-components=1 -C "$download_dir/jdk"
+  mkdir -p "$(dirname "$java_home")"
+  rm -rf "$java_home"
+  mv "$download_dir/jdk" "$java_home"
+fi
+
+export JAVA_HOME="$java_home"
+export PATH="$JAVA_HOME/bin:$PATH"
+
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<'EOF'
+
+# ynab-amazon-transaction-updater Java 25
+export JAVA_HOME="$HOME/.local/share/jdks/temurin-25"
+case ":$PATH:" in
+  *":$JAVA_HOME/bin:"*) ;;
+  *) export PATH="$JAVA_HOME/bin:$PATH" ;;
+esac
+EOF
+fi
+
+echo "Java version: $(java_major_version "$JAVA_HOME/bin/java")"
+echo "Warming the Gradle distribution and dependency cache..."
+./gradlew --no-daemon classes testClasses
