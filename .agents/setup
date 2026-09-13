@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+readonly repo_root=$(cd -- "$script_dir/.." && pwd)
+readonly java_home="$HOME/.local/share/jdks/temurin-25"
+readonly profile_marker="# ynab-amazon-transaction-updater Java 25"
+readonly temurin_release="25.0.4.1+1"
+readonly temurin_release_tag="jdk-25.0.4.1%2B1"
+readonly checksum_file="$script_dir/checksums/temurin-${temurin_release}.sha256"
+
+installed_temurin_release() {
+  sed -n 's/^IMPLEMENTOR_VERSION="Temurin-\([^"]*\)"$/\1/p' "$1/release" 2>/dev/null
+}
+
+if [[ ! -x "$java_home/bin/java" ]] || [[ "$(installed_temurin_release "$java_home")" != "$temurin_release" ]]; then
+  case "$(uname -m)" in
+    x86_64) archive_name="OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz" ;;
+    aarch64|arm64) archive_name="OpenJDK25U-jdk_aarch64_linux_hotspot_25.0.4.1_1.tar.gz" ;;
+    *)
+      echo "Unsupported architecture for Temurin 25: $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+
+  expected_checksum=$(awk -v archive="$archive_name" '$2 == archive { print $1 }' "$checksum_file")
+  if [[ ! "$expected_checksum" =~ ^[[:xdigit:]]{64}$ ]]; then
+    echo "Missing or invalid SHA-256 checksum for $archive_name" >&2
+    exit 1
+  fi
+
+  echo "Installing Temurin JDK ${temurin_release}..."
+  download_dir=$(mktemp -d)
+  trap 'rm -rf "$download_dir"' EXIT
+
+  archive_path="$download_dir/$archive_name"
+  curl --fail --location --retry 3 --output "$archive_path" \
+    "https://github.com/adoptium/temurin25-binaries/releases/download/${temurin_release_tag}/${archive_name}"
+
+  echo "Verifying Temurin archive SHA-256 checksum..."
+  printf '%s  %s\n' "$expected_checksum" "$archive_path" | sha256sum --check --strict -
+
+  mkdir "$download_dir/jdk"
+  tar -xzf "$archive_path" --strip-components=1 -C "$download_dir/jdk"
+  mkdir -p "$(dirname "$java_home")"
+  rm -rf "$java_home"
+  mv "$download_dir/jdk" "$java_home"
+
+  if [[ "$(installed_temurin_release "$java_home")" != "$temurin_release" ]]; then
+    echo "Installed JDK does not report the expected Temurin release: $temurin_release" >&2
+    exit 1
+  fi
+fi
+
+export JAVA_HOME="$java_home"
+export PATH="$JAVA_HOME/bin:$PATH"
+
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<'EOF'
+
+# ynab-amazon-transaction-updater Java 25
+export JAVA_HOME="$HOME/.local/share/jdks/temurin-25"
+case ":$PATH:" in
+  *":$JAVA_HOME/bin:"*) ;;
+  *) export PATH="$JAVA_HOME/bin:$PATH" ;;
+esac
+EOF
+fi
+
+echo "Temurin release: $(installed_temurin_release "$JAVA_HOME")"
+echo "Warming the Gradle distribution and dependency cache..."
+cd "$repo_root"
+./gradlew --no-daemon classes testClasses
