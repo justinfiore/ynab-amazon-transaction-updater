@@ -42,6 +42,15 @@ application {
     mainClass = 'com.ynab.amazon.YNABAmazonTransactionUpdater'
 }
 
+distributions {
+    main {
+        contents {
+            from('scripts') { into 'scripts' }
+            from('requirements-amazon-orders.txt')
+        }
+    }
+}
+
 tasks.withType(Test).configureEach {
     useJUnitPlatform()
     reports {

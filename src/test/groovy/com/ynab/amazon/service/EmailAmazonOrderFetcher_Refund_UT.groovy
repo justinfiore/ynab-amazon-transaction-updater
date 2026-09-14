@@ -8,16 +8,16 @@ import jakarta.mail.Message
 import java.text.SimpleDateFormat
 
 /**
- * Unit tests for refund parsing functionality in AmazonOrderFetcher
+ * Unit tests for refund parsing functionality in EmailAmazonOrderFetcher
  */
-class AmazonOrderFetcher_Refund_UT extends Specification {
+class EmailAmazonOrderFetcher_Refund_UT extends Specification {
     
     Configuration mockConfig
-    AmazonOrderFetcher orderFetcher
+    EmailAmazonOrderFetcher orderFetcher
     
     def setup() {
         mockConfig = Mock(Configuration)
-        orderFetcher = new AmazonOrderFetcher(mockConfig)
+        orderFetcher = new EmailAmazonOrderFetcher(mockConfig)
     }
     
     // Test fixtures - refund email file names

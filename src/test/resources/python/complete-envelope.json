@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "orders": [
+    {
+      "order_number": "123-4567890-1234567",
+      "order_placed_date": "2026-08-01",
+      "grand_total": 42.17,
+      "payment_method": "Visa",
+      "payment_method_last_4": 1234,
+      "cancelled": false,
+      "items": [
+        {"title": "Example", "asin": "B000000000", "price": 42.17}
+      ]
+    }
+  ]
+}
