@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "orders": [
+    {"order_number": "one", "order_placed_date": "2026-08-01", "grand_total": 10, "items": []},
+    {"order_number": "one", "order_placed_date": "2026-08-01", "grand_total": 20, "items": []},
+    {"order_number": "cancelled", "order_placed_date": "2026-08-01", "grand_total": 10, "cancelled": true},
+    {"order_number": "missing-total", "order_placed_date": "2026-08-01"}
+  ]
+}

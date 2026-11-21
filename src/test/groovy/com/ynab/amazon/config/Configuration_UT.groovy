@@ -1,11 +1,13 @@
 package com.ynab.amazon.config
 
 import spock.lang.Specification
+import spock.lang.TempDir
 
 /**
  * Test class for the Configuration class
  */
 class Configuration_UT extends Specification {
+    @TempDir File tempDir
     
 
     def "should load valid configuration"() {
@@ -123,6 +125,171 @@ class Configuration_UT extends Specification {
         
         then: "validation should pass"
         result
+    }
+
+    def "should validate supported Amazon fetcher modes and Python process bounds"() {
+        given:
+        def configuration = new Configuration(ynabApiKey: 'test-api-key', ynabBudgetId: 'test-budget-id')
+        configuration.amazonOrderFetcher = mode
+        configuration.amazonPythonExecutable = executable
+        configuration.amazonPythonBridgeScript = bridge
+        configuration.amazonPythonConfigPath = configPath
+        configuration.amazonPythonTimeoutSeconds = timeout
+        configuration.amazonPythonMaxOutputBytes = outputLimit
+
+        expect:
+        configuration.isValid() == valid
+
+        where:
+        mode                           | executable | bridge      | configPath     | timeout | outputLimit || valid
+        Configuration.AMAZON_FETCHER_PYTHON | 'python'   | 'bridge.py' | 'upstream.yml' | 1       | 1           || true
+        Configuration.AMAZON_FETCHER_PYTHON | null       | 'bridge.py' | 'upstream.yml' | 1       | 1           || false
+        Configuration.AMAZON_FETCHER_PYTHON | 'python'   | null        | 'upstream.yml' | 1       | 1           || false
+        Configuration.AMAZON_FETCHER_PYTHON | 'python'   | 'bridge.py' | null           | 1       | 1           || false
+        Configuration.AMAZON_FETCHER_PYTHON | 'python'   | 'bridge.py' | 'upstream.yml' | 0       | 1           || false
+        Configuration.AMAZON_FETCHER_PYTHON | 'python'   | 'bridge.py' | 'upstream.yml' | 1       | 0           || false
+        'unsupported'                  | 'python'   | 'bridge.py' | 'upstream.yml' | 1       | 1           || false
+    }
+
+    def "should keep email as the backward-compatible automatic source default"() {
+        expect:
+        new Configuration().amazonOrderFetcher == Configuration.AMAZON_FETCHER_EMAIL
+    }
+
+    def "loads nested Python settings with household orders enabled by default"() {
+        given:
+        File yaml = new File(tempDir, 'config.yml')
+        yaml.text = '''ynab:
+  api_key: test-key
+  budget_id: test-budget
+amazon:
+  order_fetcher: python
+  python:
+    executable: ./bin/python
+    bridge_script: ./scripts/bridge.py
+    config_path: ~/amazonorders/config.yml
+    timeout_seconds: 12
+    max_output_bytes: 1234
+app: {}
+walmart: {}
+'''
+        def configuration = new Configuration()
+
+        when:
+        if (householdSetting != null) {
+            yaml.text = yaml.text.replace('    timeout_seconds:', "    include_household_orders: ${householdSetting}\n    timeout_seconds:")
+        }
+        configuration.loadConfiguration(yaml)
+
+        then:
+        configuration.amazonPythonIncludeHouseholdOrders == expectedHousehold
+        configuration.amazonOrderFetcher == Configuration.AMAZON_FETCHER_PYTHON
+        configuration.amazonPythonExecutable.endsWith('/bin/python')
+        configuration.amazonPythonBridgeScript.endsWith('/scripts/bridge.py')
+        configuration.amazonPythonConfigPath == System.getProperty('user.home') + '/amazonorders/config.yml'
+        configuration.amazonPythonTimeoutSeconds == 12
+        configuration.amazonPythonMaxOutputBytes == 1234
+
+        where:
+        householdSetting | expectedHousehold
+        null             | true
+        true             | true
+        false            | false
+    }
+
+    def "malformed Python numeric settings abort YAML loading instead of running with partial defaults"() {
+        given:
+        File yaml = new File(tempDir, 'invalid-python.yml')
+        yaml.text = """ynab:
+  api_key: test-key
+  budget_id: test-budget
+amazon:
+  order_fetcher: python
+  python:
+    executable: ./bin/python
+    bridge_script: ./scripts/bridge.py
+    config_path: ./upstream.yml
+    ${setting}: not-a-number
+app:
+  dry_run: true
+  processed_transactions_file: ./processed.json
+"""
+        def configuration = new Configuration()
+
+        when:
+        configuration.loadConfiguration(yaml)
+
+        then:
+        thrown(IllegalStateException)
+
+        where:
+        setting << ['timeout_seconds', 'max_output_bytes']
+    }
+
+    def "valid Python YAML retains dry-run protection and application settings"() {
+        given:
+        File yaml = new File(tempDir, 'dry-run.yml')
+        yaml.text = '''ynab:
+  api_key: test-key
+  budget_id: test-budget
+amazon:
+  order_fetcher: python
+  python:
+    executable: ./bin/python
+    bridge_script: ./scripts/bridge.py
+    config_path: ./upstream.yml
+    timeout_seconds: 12
+    max_output_bytes: 1234
+app:
+  dry_run: true
+  processed_transactions_file: ./processed.json
+'''
+        def configuration = new Configuration()
+
+        when:
+        configuration.loadConfiguration(yaml)
+
+        then:
+        configuration.isValid()
+        configuration.isDryRun()
+        configuration.processedTransactionsFile == './processed.json'
+        configuration.amazonPythonTimeoutSeconds == 12
+        configuration.amazonPythonMaxOutputBytes == 1234
+    }
+
+    def "reports the exact invalid Amazon configuration key"() {
+        given:
+        def configuration = new Configuration(ynabApiKey: 'key', ynabBudgetId: 'budget', amazonOrderFetcher: mode,
+            amazonPythonExecutable: executable, amazonPythonBridgeScript: bridge, amazonPythonConfigPath: configPath,
+            amazonPythonTimeoutSeconds: timeout, amazonPythonMaxOutputBytes: outputLimit)
+
+        expect:
+        !configuration.isValid()
+        configuration.lastValidationError.contains(expectedKey)
+
+        where:
+        mode                                  | executable | bridge      | configPath     | timeout | outputLimit || expectedKey
+        'unknown'                             | 'python'   | 'bridge.py' | 'session.yml'  | 1       | 1           || 'amazon.order_fetcher'
+        Configuration.AMAZON_FETCHER_PYTHON   | null       | 'bridge.py' | 'session.yml'  | 1       | 1           || 'amazon.python.executable'
+        Configuration.AMAZON_FETCHER_PYTHON   | 'python'   | null        | 'session.yml'  | 1       | 1           || 'amazon.python.bridge_script'
+        Configuration.AMAZON_FETCHER_PYTHON   | 'python'   | 'bridge.py' | null           | 1       | 1           || 'amazon.python.config_path'
+        Configuration.AMAZON_FETCHER_PYTHON   | 'python'   | 'bridge.py' | 'session.yml'  | 0       | 1           || 'amazon.python.timeout_seconds'
+        Configuration.AMAZON_FETCHER_PYTHON   | 'python'   | 'bridge.py' | 'session.yml'  | 1       | 0           || 'amazon.python.max_output_bytes'
+        Configuration.AMAZON_FETCHER_EMAIL    | null       | null        | null           | 300     | 10485760     || 'Neither Amazon email credentials'
+    }
+
+    def "accepts email default Python without email CSV-only and automatic plus CSV"() {
+        expect:
+        configuration.isValid()
+
+        where:
+        configuration << [
+            new Configuration(ynabApiKey: 'key', ynabBudgetId: 'budget', amazonEmail: 'email', amazonEmailPassword: 'password'),
+            new Configuration(ynabApiKey: 'key', ynabBudgetId: 'budget', amazonOrderFetcher: Configuration.AMAZON_FETCHER_PYTHON,
+                amazonPythonExecutable: 'python', amazonPythonBridgeScript: 'bridge.py', amazonPythonConfigPath: 'session.yml'),
+            new Configuration(ynabApiKey: 'key', ynabBudgetId: 'budget', amazonCsvFilePath: 'orders.csv'),
+            new Configuration(ynabApiKey: 'key', ynabBudgetId: 'budget', amazonEmail: 'email', amazonEmailPassword: 'password', amazonCsvFilePath: 'orders.csv')
+        ]
     }
     
     def "should use default Walmart values when not configured"() {

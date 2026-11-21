@@ -9,13 +9,13 @@ import jakarta.mail.internet.MimeMessage
 import java.util.Properties
 
 /**
- * Integration test class for refund email fetching functionality in AmazonOrderFetcher
+ * Integration test class for refund email fetching functionality in EmailAmazonOrderFetcher
  * Tests the complete flow of detecting, routing, and parsing refund emails
  */
-class AmazonOrderFetcher_Refund_IT extends Specification {
+class EmailAmazonOrderFetcher_Refund_IT extends Specification {
     
     Configuration mockConfig
-    AmazonOrderFetcher orderFetcher
+    EmailAmazonOrderFetcher orderFetcher
     
     // Test email file names
     static final String EKOUAER_REFUND_EMAIL = "Your refund for Ekouaer 2 Pack Womens Pajama.....eml"
@@ -25,7 +25,7 @@ class AmazonOrderFetcher_Refund_IT extends Specification {
     
     def setup() {
         mockConfig = Mock(Configuration)
-        orderFetcher = new AmazonOrderFetcher(mockConfig)
+        orderFetcher = new EmailAmazonOrderFetcher(mockConfig)
     }
     
     // ========== Subtask 6.1: Set up integration test with test email resources ==========

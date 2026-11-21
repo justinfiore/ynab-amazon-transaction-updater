@@ -11,7 +11,8 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
   - Email parsing (automatic order confirmation emails)
   - Amazon Subscribe & Save delivery notifications
   - Amazon refund notifications
-  - CSV export files
+   - CSV export files
+   - Optional Python order-history fetcher using `amazon-orders==6.0.0`
   - Special handling for Subscribe & Save orders with "S&S:" prefix
   - Automatic refund detection and processing with positive amounts
 - **Walmart Integration:**
@@ -33,7 +34,7 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 - No system Gradle installation is required; the checked-in wrapper uses Gradle 9.6.1
 - YNAB API key
 - YNAB Budget ID
-- **For Amazon:** Order history (via email or CSV export)
+- **For Amazon:** Order history (via email, optional Python history, or CSV export)
 - **For Walmart:** Walmart account credentials (email and password)
 - (Optional) Email credentials for automatic Amazon order fetching
 
@@ -57,7 +58,7 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 
 #### Amazon Order Data Source
 
-You have two options for providing Amazon order data:
+You have three options for providing Amazon order data:
 
 **Option A: Email Parsing (Recommended)**
 
@@ -91,6 +92,38 @@ If email parsing is not available or you prefer manual control:
 4. Configure the path in `config.yml`
 
 Note: CSV export does not include Subscribe & Save orders automatically.
+
+**Option C: Python order history (optional)**
+
+Python 3.9+ can fetch account history through the unofficial `amazon-orders`
+website-parsing package. It supports English pages across Amazon regions and can
+break when Amazon changes its site. By default, the bridge includes all Amazon
+Household orders visible to the signed-in account. Set
+`amazon.python.include_household_orders: false` to fetch only that account's own
+orders. This option affects Python fetching only, not email or CSV. It is deliberately opt-in: email remains
+the default and retains its refund and Subscribe & Save notification semantics.
+
+```bash
+python3 -m venv .venv-amazon-orders
+.venv-amazon-orders/bin/python -m pip install --upgrade pip
+.venv-amazon-orders/bin/python -m pip install -r requirements-amazon-orders.txt
+.venv-amazon-orders/bin/amazon-orders --config-path ~/.config/amazonorders/config.yml login
+.venv-amazon-orders/bin/python scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight
+```
+
+The stock login persists its session outside this project. Do not commit its
+config/cookies or place passwords, OTP secrets, or cookies in YAML. Supported
+upstream environment credentials are inherited without being printed. Use
+restrictive permissions for the upstream configuration. Browser challenges may
+need `amazon-orders[browser]` and `playwright install chromium`.
+
+For cookie/config locations, session lifetime, Amp credential secrets, and the
+interactive recovery command, see [Amazon authentication](SETUP.md#amazon-authentication-storage-lifetime-and-recovery).
+When Python authentication requires login, eligible unaugmented Amazon expenses
+receive `[ERROR: Amazon Login Required on ynab-amazon-transaction-updater]` in the
+memo (appended once, preserving existing text). This is retryable, not a processed
+marker: successful augmentation removes it. Dry runs never write it, and generic
+fetch failures do not trigger a login notice.
 
 #### Walmart Order Data Source (Optional)
 
@@ -154,6 +187,7 @@ ynab:
   base_url: "https://api.ynab.com/v1"
 
 amazon:
+  order_fetcher: "email" # use "python" for the optional bridge
   # Email parsing (recommended - automatically includes Subscribe & Save)
   email: "your_amazon_email@example.com"
   email_password: "your_app_password"  # Use app-specific password, not main password
@@ -167,6 +201,13 @@ amazon:
   
   # CSV fallback (optional)
   csv_file_path: "amazon_orders.csv"
+  # python:
+  #   executable: ".venv-amazon-orders/bin/python"
+  #   bridge_script: "scripts/amazon_orders_bridge.py"
+  #   config_path: "~/.config/amazonorders/config.yml"
+  #   include_household_orders: true # false for only the signed-in account's orders
+  #   timeout_seconds: 300
+  #   max_output_bytes: 10485760
 
 walmart:
   enabled: true  # Set to true to enable Walmart integration
@@ -204,6 +245,23 @@ app:
 
 The helper copies the generated HTML reports to `test-results/test/index.html`
 and `test-results/integrationTest/index.html`.
+
+Python bridge tests need no account or credentials. With the optional dependency
+installed, they also exercise the real pinned library's login/history contract
+using offline HTTP fixtures (CI runs this configuration):
+
+```bash
+.venv-amazon-orders/bin/python -m unittest scripts/test_amazon_orders_bridge.py
+```
+
+Running with plain `python3` still runs the isolated fixture tests but skips the
+real-library contract test if `amazon-orders` is not installed.
+
+If Python fetching times out, returns a non-zero exit, cannot import the
+package, or emits malformed output, the updater logs bounded redacted context
+and safely imports no Python orders. Re-run preflight, refresh the persisted
+session, or select email/CSV; live Amazon verification is never part of the
+default test suite.
 
 ### Run the Application
 
@@ -386,6 +444,9 @@ Confidence thresholds:
 - **Transaction Tracking**: Prevents duplicate processing
 - **Confidence Thresholds**: Only updates high-confidence matches
 - **Error Handling**: Graceful handling of API errors and invalid data
+- **Python isolation**: Python mode runs an argument-list child process with a timeout, bounded stdout/stderr, process-tree cleanup, and fixed-category failure diagnostics (upstream stderr is not logged). It never logs bridge JSON or passes Amazon secrets as arguments.
+- **Linux subprocess cleanup**: Linux runs the Python bridge in a separate process group using `/usr/bin/setsid` (util-linux) and `/bin/kill`. These tools are required on Linux; if unavailable, fetching fails safely rather than launching without group containment. Timeouts and failures terminate the group, including children whose parent has already exited; remaining group members are also cleaned up after normal completion. A helper that deliberately starts a new session/group can escape this boundary. macOS and Windows retain best-effort descendant tracking and daemon output readers; they do not have the Linux group-containment guarantee.
+- **Source semantics**: Select one automatic source (`email` or `python`); an optional CSV is appended after it. A failed Python source returns no Python orders rather than silently falling back to another credential source.
 
 ## Troubleshooting
 
@@ -441,7 +502,13 @@ Confidence thresholds:
 
 11. **API Rate Limits**
    - YNAB has rate limits; the application includes delays between requests
-   - If you get rate limit errors, wait a few minutes and try again
+    - If you get rate limit errors, wait a few minutes and try again
+
+12. **Python bridge preflight or fetch failure**
+    - Verify the isolated interpreter and tested dependency: `.venv-amazon-orders/bin/python scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight`
+    - Re-run the stock `amazon-orders --config-path ~/.config/amazonorders/config.yml login` command if the persisted session is stale.
+    - Check that `amazon.python.executable`, `bridge_script`, and `config_path` are absolute/resolved paths and that timeout/output bounds are positive.
+    - Do not paste cookies, passwords, OTP values, stderr payloads, or order JSON into logs or issue reports. Select `email` or CSV if an upstream Amazon challenge cannot run unattended.
 
 ### Debug Mode
 
@@ -464,6 +531,8 @@ app:
 ```
 YNABAmazonTransactionUpdater/
 ├── build.gradle                          # Gradle build configuration
+├── requirements-amazon-orders.txt         # Optional pinned Python bridge dependency
+├── scripts/amazon_orders_bridge.py        # Schema-v1 Python bridge (run with configured interpreter)
 ├── config.yml                            # Application configuration
 ├── config.example.yml                    # Configuration template
 ├── README.md                             # This file
@@ -474,6 +543,7 @@ YNABAmazonTransactionUpdater/
 │   │   │   ├── YNABAmazonTransactionUpdater.groovy  # Main application
 │   │   │   ├── config/
 │   │   │   │   └── Configuration.groovy             # Configuration loader
+│   │   │   ├── service/                            # Email/Python fetchers and bounded runner
 │   │   │   ├── model/
 │   │   │   │   ├── YNABTransaction.groovy          # YNAB transaction model
 │   │   │   │   ├── AmazonOrder.groovy              # Amazon order model
@@ -494,6 +564,8 @@ YNABAmazonTransactionUpdater/
 │       └── resources/                              # Test email samples
 └── .agents/scripts/                                # Build and test scripts
 ```
+
+`./gradlew installDist` packages the bridge and requirement file under the distribution root. Python remains optional for email and CSV users; Java 25 is sufficient for those modes. The bridge uses an unofficial website parser supporting English pages across Amazon regions, so Amazon page changes, authentication challenges, and its history-only model can require recovery or a switch back to email/CSV. Python history does not reproduce email refund-event dates or Subscribe & Save synthetic deliveries.
 
 ## Contributing
 
