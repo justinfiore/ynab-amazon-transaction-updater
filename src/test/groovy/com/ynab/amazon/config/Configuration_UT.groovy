@@ -197,6 +197,66 @@ walmart: {}
         false            | false
     }
 
+    def "malformed Python numeric settings abort YAML loading instead of running with partial defaults"() {
+        given:
+        File yaml = new File(tempDir, 'invalid-python.yml')
+        yaml.text = """ynab:
+  api_key: test-key
+  budget_id: test-budget
+amazon:
+  order_fetcher: python
+  python:
+    executable: ./bin/python
+    bridge_script: ./scripts/bridge.py
+    config_path: ./upstream.yml
+    ${setting}: not-a-number
+app:
+  dry_run: true
+  processed_transactions_file: ./processed.json
+"""
+        def configuration = new Configuration()
+
+        when:
+        configuration.loadConfiguration(yaml)
+
+        then:
+        thrown(IllegalStateException)
+
+        where:
+        setting << ['timeout_seconds', 'max_output_bytes']
+    }
+
+    def "valid Python YAML retains dry-run protection and application settings"() {
+        given:
+        File yaml = new File(tempDir, 'dry-run.yml')
+        yaml.text = '''ynab:
+  api_key: test-key
+  budget_id: test-budget
+amazon:
+  order_fetcher: python
+  python:
+    executable: ./bin/python
+    bridge_script: ./scripts/bridge.py
+    config_path: ./upstream.yml
+    timeout_seconds: 12
+    max_output_bytes: 1234
+app:
+  dry_run: true
+  processed_transactions_file: ./processed.json
+'''
+        def configuration = new Configuration()
+
+        when:
+        configuration.loadConfiguration(yaml)
+
+        then:
+        configuration.isValid()
+        configuration.isDryRun()
+        configuration.processedTransactionsFile == './processed.json'
+        configuration.amazonPythonTimeoutSeconds == 12
+        configuration.amazonPythonMaxOutputBytes == 1234
+    }
+
     def "reports the exact invalid Amazon configuration key"() {
         given:
         def configuration = new Configuration(ynabApiKey: 'key', ynabBudgetId: 'budget', amazonOrderFetcher: mode,

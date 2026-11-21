@@ -164,8 +164,8 @@ class Configuration {
             logger.info("Configuration loaded successfully with log level: ${this.logLevel}")
             
         } catch (Exception e) {
-            System.err.println("Error loading configuration: ${e.message}")
-            e.printStackTrace()
+            // Abort startup rather than accepting partially loaded safety settings.
+            throw new IllegalStateException('Unable to load configuration', e)
         }
     }
     
