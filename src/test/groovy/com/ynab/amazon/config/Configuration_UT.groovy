@@ -156,7 +156,7 @@ class Configuration_UT extends Specification {
         new Configuration().amazonOrderFetcher == Configuration.AMAZON_FETCHER_EMAIL
     }
 
-    def "loads and normalizes nested Python YAML paths"() {
+    def "loads nested Python settings with household orders enabled by default"() {
         given:
         File yaml = new File(tempDir, 'config.yml')
         yaml.text = '''ynab:
@@ -176,15 +176,25 @@ walmart: {}
         def configuration = new Configuration()
 
         when:
+        if (householdSetting != null) {
+            yaml.text = yaml.text.replace('    timeout_seconds:', "    include_household_orders: ${householdSetting}\n    timeout_seconds:")
+        }
         configuration.loadConfiguration(yaml)
 
         then:
+        configuration.amazonPythonIncludeHouseholdOrders == expectedHousehold
         configuration.amazonOrderFetcher == Configuration.AMAZON_FETCHER_PYTHON
         configuration.amazonPythonExecutable.endsWith('/bin/python')
         configuration.amazonPythonBridgeScript.endsWith('/scripts/bridge.py')
         configuration.amazonPythonConfigPath == System.getProperty('user.home') + '/amazonorders/config.yml'
         configuration.amazonPythonTimeoutSeconds == 12
         configuration.amazonPythonMaxOutputBytes == 1234
+
+        where:
+        householdSetting | expectedHousehold
+        null             | true
+        true             | true
+        false            | false
     }
 
     def "reports the exact invalid Amazon configuration key"() {

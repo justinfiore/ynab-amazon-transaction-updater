@@ -28,6 +28,7 @@ amazon:
   #   executable: ".venv-amazon-orders/bin/python"
   #   bridge_script: "scripts/amazon_orders_bridge.py"
   #   config_path: "~/.config/amazonorders/config.yml"
+  #   include_household_orders: true  # Default: include all Household orders visible to this account; false for own orders only
   #   timeout_seconds: 300
   #   max_output_bytes: 10485760
 

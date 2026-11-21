@@ -29,6 +29,7 @@ class Configuration {
     String amazonPythonExecutable
     String amazonPythonBridgeScript
     String amazonPythonConfigPath
+    boolean amazonPythonIncludeHouseholdOrders = true
     int amazonPythonTimeoutSeconds = 300
     int amazonPythonMaxOutputBytes = 10485760
     String imapHost = "imap.gmail.com"
@@ -97,6 +98,7 @@ class Configuration {
             this.amazonPythonExecutable = resolvePath(config.amazon?.python?.executable)
             this.amazonPythonBridgeScript = resolvePath(config.amazon?.python?.bridge_script)
             this.amazonPythonConfigPath = resolvePath(config.amazon?.python?.config_path)
+            this.amazonPythonIncludeHouseholdOrders = (config.amazon?.python?.include_household_orders != null) ? config.amazon.python.include_household_orders : this.amazonPythonIncludeHouseholdOrders
             this.amazonPythonTimeoutSeconds = (config.amazon?.python?.timeout_seconds != null) ? config.amazon.python.timeout_seconds : this.amazonPythonTimeoutSeconds
             this.amazonPythonMaxOutputBytes = (config.amazon?.python?.max_output_bytes != null) ? config.amazon.python.max_output_bytes : this.amazonPythonMaxOutputBytes
             this.imapHost = config.amazon.imap_host ?: this.imapHost

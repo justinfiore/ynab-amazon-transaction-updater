@@ -97,8 +97,10 @@ Note: CSV export does not include Subscribe & Save orders automatically.
 
 Python 3.9+ can fetch account history through the unofficial `amazon-orders`
 website-parsing package. It supports English pages across Amazon regions and can
-break when Amazon changes its site. The bridge fetches only the signed-in account's
-orders, not other Amazon Household members' orders. It is deliberately opt-in: email remains
+break when Amazon changes its site. By default, the bridge includes all Amazon
+Household orders visible to the signed-in account. Set
+`amazon.python.include_household_orders: false` to fetch only that account's own
+orders. This option affects Python fetching only, not email or CSV. It is deliberately opt-in: email remains
 the default and retains its refund and Subscribe & Save notification semantics.
 
 ```bash
@@ -195,6 +197,7 @@ amazon:
   #   executable: ".venv-amazon-orders/bin/python"
   #   bridge_script: "scripts/amazon_orders_bridge.py"
   #   config_path: "~/.config/amazonorders/config.yml"
+  #   include_household_orders: true # false for only the signed-in account's orders
   #   timeout_seconds: 300
   #   max_output_bytes: 10485760
 

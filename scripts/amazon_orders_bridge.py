@@ -50,7 +50,7 @@ def serialize(order):
     }
 
 
-def load_history(config_path, look_back_days):
+def load_history(config_path, look_back_days, account_only=False):
     module = importlib.import_module("amazonorders")
     config_class = getattr(importlib.import_module("amazonorders.conf"), "AmazonOrdersConfig")
     session_class = getattr(importlib.import_module("amazonorders.session"), "AmazonSession")
@@ -60,10 +60,11 @@ def load_history(config_path, look_back_days):
     orders = orders_class(session, config=config)
     cutoff = dt.date.today() - dt.timedelta(days=look_back_days)
     # Fetch full calendar years covering the exact window, then filter locally.
-    # Since 5.2, the default includes the whole Household; keep account-only history.
+    # None uses Amazon's whole-Household default; "self" restricts to this account.
     history = []
     for year in range(cutoff.year, dt.date.today().year + 1):
-        history.extend(orders.get_orders(year=year, full_details=True, family_member_id="self"))
+        history.extend(orders.get_orders(year=year, full_details=True,
+                                        family_member_id="self" if account_only else None))
     return history
 
 
@@ -76,6 +77,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Emit amazon-orders history as schema-v1 JSON.")
     parser.add_argument("--config-path", required=True)
     parser.add_argument("--look-back-days", type=int, default=30)
+    parser.add_argument("--account-only", action="store_true", help="Exclude other Amazon Household members' orders.")
     parser.add_argument("--preflight", action="store_true", help="Verify package/schema without fetching account data.")
     args = parser.parse_args(argv)
     try:
@@ -86,7 +88,7 @@ def main(argv=None):
             raise ValueError("look-back-days must be positive")
         cutoff = dt.date.today() - dt.timedelta(days=args.look_back_days)
         unique = {}
-        for order in load_history(args.config_path, args.look_back_days):
+        for order in load_history(args.config_path, args.look_back_days, args.account_only):
             record = serialize(order)
             order_date = date_value(record["order_placed_date"])
             if (order_date and order_date >= cutoff and record["order_number"] and

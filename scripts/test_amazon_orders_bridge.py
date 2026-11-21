@@ -32,7 +32,7 @@ class Item:
 
 
 class BridgeTests(unittest.TestCase):
-    def run_bridge(self, history_by_year=None, arguments=(), session_error=None, history_error=None):
+    def run_bridge(self, history_by_year=None, arguments=(), session_error=None, history_error=None, household_orders=()):
         calls = []
         root = types.ModuleType("amazonorders")
         root.__version__ = "6.0.0"
@@ -46,7 +46,8 @@ class BridgeTests(unittest.TestCase):
             calls.append(kwargs)
             if history_error:
                 raise history_error
-            return (history_by_year or {}).get(kwargs["year"], [])
+            own_orders = (history_by_year or {}).get(kwargs["year"], [])
+            return own_orders + (list(household_orders) if kwargs["family_member_id"] is None else [])
 
         orders.AmazonOrders = lambda *_args, **_kwargs: types.SimpleNamespace(get_orders=history)
         output, errors = io.StringIO(), io.StringIO()
@@ -67,8 +68,18 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual("", errors)
         self.assertEqual([cutoff.year, today.year], [call["year"] for call in calls])
         self.assertTrue(all(call["full_details"] for call in calls))
-        self.assertTrue(all(call["family_member_id"] == "self" for call in calls))
+        self.assertTrue(all(call["family_member_id"] is None for call in calls))
         self.assertEqual(["first", "last"], [record["order_number"] for record in json.loads(output)["orders"]])
+
+    def test_household_orders_are_included_by_default_and_can_be_excluded(self):
+        today = dt.date.today()
+        own = {today.year: [Order("own", today, 12.34)]}
+        household = [Order("partner", today, 56.78)]
+        for arguments, expected in [((), ["own", "partner"]), (["--account-only"], ["own"])]:
+            with self.subTest(arguments=arguments):
+                code, output, errors, _ = self.run_bridge(own, arguments, household_orders=household)
+                self.assertEqual((0, ""), (code, errors))
+                self.assertEqual(expected, [order["order_number"] for order in json.loads(output)["orders"]])
 
     def test_serializes_complete_items_payment_and_missing_quantity(self):
         today = dt.date.today()

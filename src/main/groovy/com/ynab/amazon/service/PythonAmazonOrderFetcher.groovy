@@ -27,6 +27,7 @@ class PythonAmazonOrderFetcher implements AmazonOrderFetcher {
         List<String> command = [config.amazonPythonExecutable, config.amazonPythonBridgeScript,
                                 '--config-path', config.amazonPythonConfigPath,
                                 '--look-back-days', String.valueOf(config.lookBackDays)]
+        if (!config.amazonPythonIncludeHouseholdOrders) command.add('--account-only')
         ProcessResult result = processRunner.run(command, Duration.ofSeconds(config.amazonPythonTimeoutSeconds), config.amazonPythonMaxOutputBytes)
         if (!result.success) {
             logger.warn("Python Amazon fetch failed (${result.status}${result.exitCode >= 0 ? ", exit ${result.exitCode}" : ''}): ${sanitize(result.stderr ?: result.detail)}")
