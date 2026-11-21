@@ -63,7 +63,7 @@
 ### Optional: Python Amazon History
 
 This is opt-in and uses the unofficial `amazon-orders` website parser. It
-supports English amazon.com, may need updates when Amazon changes, and does not
+supports English pages across Amazon regions, may need updates when Amazon changes, and does not
 recreate email refund or Subscribe & Save notification semantics.
 
 ```bash

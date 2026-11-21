@@ -95,7 +95,7 @@ config/cookies should be owner-readable only. Its supported `AMAZON_USERNAME`,
 may be inherited, but must never be written to YAML or logs. Browser challenges
 can require `amazon-orders[browser]` and `playwright install chromium`.
 
-`amazon-orders` is an unofficial English amazon.com website parser and may fail
+`amazon-orders` is an unofficial website parser supporting English pages across Amazon regions and may fail
 when Amazon changes. A failed Python fetch returns no Python orders; refresh the
 session, increase the timeout only when needed, or roll back by selecting email
 or CSV. Python history does not reproduce email-specific refund or Subscribe &

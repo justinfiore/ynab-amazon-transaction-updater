@@ -35,7 +35,7 @@ class BridgeTests(unittest.TestCase):
     def run_bridge(self, history_by_year=None, arguments=(), session_error=None, history_error=None):
         calls = []
         root = types.ModuleType("amazonorders")
-        root.__version__ = "4.4.7"
+        root.__version__ = "6.0.0"
         conf = types.ModuleType("amazonorders.conf")
         conf.AmazonOrdersConfig = lambda **_: object()
         session = types.ModuleType("amazonorders.session")
@@ -48,7 +48,7 @@ class BridgeTests(unittest.TestCase):
                 raise history_error
             return (history_by_year or {}).get(kwargs["year"], [])
 
-        orders.AmazonOrders = lambda *_args, **_kwargs: types.SimpleNamespace(get_order_history=history)
+        orders.AmazonOrders = lambda *_args, **_kwargs: types.SimpleNamespace(get_orders=history)
         output, errors = io.StringIO(), io.StringIO()
         modules = {"amazonorders": root, "amazonorders.conf": conf, "amazonorders.session": session, "amazonorders.orders": orders}
         with patch.dict(sys.modules, modules), redirect_stdout(output), redirect_stderr(errors):
@@ -67,17 +67,18 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual("", errors)
         self.assertEqual([cutoff.year, today.year], [call["year"] for call in calls])
         self.assertTrue(all(call["full_details"] for call in calls))
+        self.assertTrue(all(call["family_member_id"] == "self" for call in calls))
         self.assertEqual(["first", "last"], [record["order_number"] for record in json.loads(output)["orders"]])
 
     def test_serializes_complete_items_payment_and_missing_quantity(self):
         today = dt.date.today()
-        order = Order("complete", today, 42.17, [Item("First", "ASIN1", 1.25, 2), Item("Second", "ASIN2", 40.92)], payment_method="Visa", last_four=1234)
+        order = Order("complete", today, 42.17, [Item("First", "ASIN1", 1.25, 2), Item("Second", "ASIN2", 40.92)], payment_method="Visa", last_four="0012")
         code, output, errors, _ = self.run_bridge({today.year: [order]})
         record = json.loads(output)["orders"][0]
         self.assertEqual(0, code)
         self.assertEqual("", errors)
         self.assertEqual("Visa", record["payment_method"])
-        self.assertEqual(1234, record["payment_method_last_4"])
+        self.assertEqual("0012", record["payment_method_last_4"])
         self.assertEqual([{"title": "First", "asin": "ASIN1", "price": 1.25, "quantity": 2}, {"title": "Second", "asin": "ASIN2", "price": 40.92, "quantity": 1}], record["items"])
         self.assertNotIn("recipient", json.dumps(record))
         self.assertNotIn("shipping_address", json.dumps(record))
@@ -100,7 +101,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual([], calls)
         payload = json.loads(output)
         self.assertEqual(1, payload["schema_version"])
-        self.assertEqual("4.4.7", payload["package_version"])
+        self.assertEqual("6.0.0", payload["package_version"])
 
     def test_import_session_and_upstream_failures_are_stderr_only(self):
         output, errors = io.StringIO(), io.StringIO()

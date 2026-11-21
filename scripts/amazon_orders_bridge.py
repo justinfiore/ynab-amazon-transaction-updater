@@ -59,11 +59,11 @@ def load_history(config_path, look_back_days):
     session = session_class(config=config)
     orders = orders_class(session, config=config)
     cutoff = dt.date.today() - dt.timedelta(days=look_back_days)
-    # These are the documented public APIs in amazon-orders 4.4.7. Fetch full
-    # calendar years covering the exact window, then filter locally below.
+    # Fetch full calendar years covering the exact window, then filter locally.
+    # Since 5.2, the default includes the whole Household; keep account-only history.
     history = []
     for year in range(cutoff.year, dt.date.today().year + 1):
-        history.extend(orders.get_order_history(year=year, full_details=True))
+        history.extend(orders.get_orders(year=year, full_details=True, family_member_id="self"))
     return history
 
 

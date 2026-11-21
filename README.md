@@ -12,7 +12,7 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
   - Amazon Subscribe & Save delivery notifications
   - Amazon refund notifications
    - CSV export files
-   - Optional Python order-history fetcher using `amazon-orders==4.4.7`
+   - Optional Python order-history fetcher using `amazon-orders==6.0.0`
   - Special handling for Subscribe & Save orders with "S&S:" prefix
   - Automatic refund detection and processing with positive amounts
 - **Walmart Integration:**
@@ -96,8 +96,9 @@ Note: CSV export does not include Subscribe & Save orders automatically.
 **Option C: Python order history (optional)**
 
 Python 3.9+ can fetch account history through the unofficial `amazon-orders`
-website-parsing package. It officially supports English amazon.com and can
-break when Amazon changes its site. It is deliberately opt-in: email remains
+website-parsing package. It supports English pages across Amazon regions and can
+break when Amazon changes its site. The bridge fetches only the signed-in account's
+orders, not other Amazon Household members' orders. It is deliberately opt-in: email remains
 the default and retains its refund and Subscribe & Save notification semantics.
 
 ```bash
@@ -547,7 +548,7 @@ YNABAmazonTransactionUpdater/
 └── .agents/scripts/                                # Build and test scripts
 ```
 
-`./gradlew installDist` packages the bridge and requirement file under the distribution root. Python remains optional for email and CSV users; Java 25 is sufficient for those modes. The bridge uses an unofficial English amazon.com website parser, so Amazon page changes, authentication challenges, and its history-only model can require recovery or a switch back to email/CSV. Python history does not reproduce email refund-event dates or Subscribe & Save synthetic deliveries.
+`./gradlew installDist` packages the bridge and requirement file under the distribution root. Python remains optional for email and CSV users; Java 25 is sufficient for those modes. The bridge uses an unofficial website parser supporting English pages across Amazon regions, so Amazon page changes, authentication challenges, and its history-only model can require recovery or a switch back to email/CSV. Python history does not reproduce email refund-event dates or Subscribe & Save synthetic deliveries.
 
 ## Contributing
 
