@@ -238,11 +238,16 @@ app:
 The helper copies the generated HTML reports to `test-results/test/index.html`
 and `test-results/integrationTest/index.html`.
 
-Python bridge fixture tests need no account or credentials:
+Python bridge tests need no account or credentials. With the optional dependency
+installed, they also exercise the real pinned library's login/history contract
+using offline HTTP fixtures (CI runs this configuration):
 
 ```bash
-python3 -m unittest scripts/test_amazon_orders_bridge.py
+.venv-amazon-orders/bin/python -m unittest scripts/test_amazon_orders_bridge.py
 ```
+
+Running with plain `python3` still runs the isolated fixture tests but skips the
+real-library contract test if `amazon-orders` is not installed.
 
 If Python fetching times out, returns a non-zero exit, cannot import the
 package, or emits malformed output, the updater logs bounded redacted context

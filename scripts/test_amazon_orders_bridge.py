@@ -2,11 +2,13 @@ import datetime as dt
 import importlib.util
 import io
 import json
+import os
+import tempfile
 import sys
 import types
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 SPEC = importlib.util.spec_from_file_location("bridge", "scripts/amazon_orders_bridge.py")
 bridge = importlib.util.module_from_spec(SPEC)
@@ -32,14 +34,27 @@ class Item:
 
 
 class BridgeTests(unittest.TestCase):
-    def run_bridge(self, history_by_year=None, arguments=(), session_error=None, history_error=None, household_orders=()):
+    def run_bridge(self, history_by_year=None, arguments=(), session_error=None, history_error=None, household_orders=(), challenge=False):
         calls = []
         root = types.ModuleType("amazonorders")
         root.__version__ = "6.0.0"
         conf = types.ModuleType("amazonorders.conf")
         conf.AmazonOrdersConfig = lambda **_: object()
         session = types.ModuleType("amazonorders.session")
-        session.AmazonSession = lambda **_: (_ for _ in ()).throw(session_error) if session_error else object()
+        class Session:
+            def __init__(self, **kwargs):
+                self.is_authenticated = False
+                self.io = kwargs.get("io")
+
+            def login(self):
+                if challenge:
+                    self.io.echo("Authentication challenge")
+                    self.io.prompt("sensitive challenge data", type=str)
+                if session_error:
+                    raise session_error
+                self.is_authenticated = True
+
+        session.AmazonSession = Session
         orders = types.ModuleType("amazonorders.orders")
 
         def history(**kwargs):
@@ -49,7 +64,14 @@ class BridgeTests(unittest.TestCase):
             own_orders = (history_by_year or {}).get(kwargs["year"], [])
             return own_orders + (list(household_orders) if kwargs["family_member_id"] is None else [])
 
-        orders.AmazonOrders = lambda *_args, **_kwargs: types.SimpleNamespace(get_orders=history)
+        def order_client(amazon_session, **kwargs):
+            def authenticated_history(**filters):
+                if not amazon_session.is_authenticated:
+                    raise RuntimeError("Call AmazonSession.login() to authenticate first.")
+                return history(**filters)
+            return types.SimpleNamespace(get_orders=authenticated_history)
+
+        orders.AmazonOrders = order_client
         output, errors = io.StringIO(), io.StringIO()
         modules = {"amazonorders": root, "amazonorders.conf": conf, "amazonorders.session": session, "amazonorders.orders": orders}
         with patch.dict(sys.modules, modules), redirect_stdout(output), redirect_stderr(errors):
@@ -96,14 +118,47 @@ class BridgeTests(unittest.TestCase):
 
     def test_excludes_cancelled_invalid_duplicate_and_returns_empty_successfully(self):
         today = dt.date.today()
-        history = {today.year: [Order("kept", today, 1), Order("kept", today, 2), Order("cancelled", today, 1, cancelled=True), Order(None, today, 1), Order("zero", today, 0)]}
+        history = {today.year: [Order("kept", today, 1), Order("kept", today, 2), Order("cancelled", today, 1, cancelled=True), Order(None, today, 1), Order("zero", today, 0), Order("missing-date", None, 2), Order("invalid-date", "not-a-date", 3), Order("cancelled-no-date", None, 4, cancelled=True), Order("after-invalid", today, 5)]}
         code, output, errors, _ = self.run_bridge(history)
         self.assertEqual(0, code)
         self.assertEqual("", errors)
-        self.assertEqual(["kept"], [record["order_number"] for record in json.loads(output)["orders"]])
+        self.assertEqual(["kept", "after-invalid"], [record["order_number"] for record in json.loads(output)["orders"]])
         code, output, errors, _ = self.run_bridge({today.year: []})
         self.assertEqual((0, ""), (code, errors))
         self.assertEqual({"schema_version": 1, "orders": []}, json.loads(output))
+
+    def test_authentication_challenge_fails_without_prompting_or_stdout(self):
+        with patch("builtins.input", side_effect=AssertionError("must not prompt")):
+            code, output, errors, _ = self.run_bridge(challenge=True)
+        self.assertEqual((1, ""), (code, output))
+        self.assertIn("Authentication challenge", errors)
+        self.assertIn("requires interactive input", errors)
+        self.assertNotIn("sensitive challenge data", errors)
+
+    @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install requirements-amazon-orders.txt for the real-library contract test")
+    def test_authenticates_with_real_library_before_fetching_history(self):
+        from amazonorders.orders import AmazonOrders
+        from requests import Response
+
+        response = Response()
+        response.status_code = 200
+        response.url = "https://www.amazon.com/"
+        response._content = b'<span id="nav-link-accountList-nav-line-1">Hello, Fixture</span>'
+        today = dt.date.today()
+        order = Order("real-api", today, 12.34, last_four="0012")
+        output, errors = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = os.path.join(directory, "config.yml")
+            with open(config_path, "w") as config:
+                json.dump({"cookie_jar_path": os.path.join(directory, "cookies.json"), "output_dir": directory}, config)
+            # Stub HTTP/history retrieval, not session construction, login, or the
+            # public get_orders authentication guard. No real credentials/network.
+            with patch.dict(os.environ, {}, clear=True), patch("requests.sessions.Session.request", return_value=response), \
+                    patch.object(AmazonOrders, "_build_orders_async", new_callable=AsyncMock, return_value=([order], None, None, None)), \
+                    redirect_stdout(output), redirect_stderr(errors):
+                code = bridge.main(["--config-path", config_path])
+        self.assertEqual((0, ""), (code, errors.getvalue()))
+        self.assertEqual("real-api", json.loads(output.getvalue())["orders"][0]["order_number"])
 
     def test_preflight_is_stdout_only_and_never_constructs_session(self):
         code, output, errors, calls = self.run_bridge(arguments=["--preflight"], session_error=RuntimeError("should not run"))

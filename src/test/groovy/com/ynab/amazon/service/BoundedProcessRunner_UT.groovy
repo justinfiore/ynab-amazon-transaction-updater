@@ -38,6 +38,21 @@ class BoundedProcessRunner_UT extends Specification {
         result.stderr.size() <= 64
     }
 
+    def "rejects excess buffered output from fast exiting children"() {
+        expect:
+        (1..40).every {
+            def result = runner.run(['/bin/sh', '-c', command], Duration.ofSeconds(2), 32)
+            result.status == expected
+        }
+
+        where:
+        command                                                                  || expected
+        'printf "%032d" 0'                                                       || ProcessResult.Status.SUCCESS
+        'printf "%033d" 0'                                                       || ProcessResult.Status.OUTPUT_LIMIT_EXCEEDED
+        'printf "{}"; printf "%032d" 0 >&2'                                      || ProcessResult.Status.SUCCESS
+        'printf "{}"; printf "%033d" 0 >&2'                                      || ProcessResult.Status.OUTPUT_LIMIT_EXCEEDED
+    }
+
     def "terminates a process that exceeds its wall-clock timeout"() {
         when:
         long started = System.nanoTime()

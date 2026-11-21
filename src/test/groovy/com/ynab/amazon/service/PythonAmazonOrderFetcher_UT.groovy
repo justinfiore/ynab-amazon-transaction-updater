@@ -62,7 +62,7 @@ class PythonAmazonOrderFetcher_UT extends Specification {
         where:
         status << [ProcessResult.Status.START_FAILED, ProcessResult.Status.NON_ZERO_EXIT,
                    ProcessResult.Status.TIMED_OUT, ProcessResult.Status.INTERRUPTED,
-                   ProcessResult.Status.OUTPUT_LIMIT_EXCEEDED]
+                   ProcessResult.Status.OUTPUT_LIMIT_EXCEEDED, ProcessResult.Status.OUTPUT_READ_FAILED]
     }
 
     def "handles complete minimal and invalid records independently"() {

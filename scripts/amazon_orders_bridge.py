@@ -9,6 +9,14 @@ import sys
 SCHEMA_VERSION = 1
 
 
+class NonInteractiveIO:
+    def echo(self, msg, **kwargs):
+        print(msg, file=sys.stderr)
+
+    def prompt(self, msg, **kwargs):
+        raise RuntimeError("Amazon authentication requires interactive input; refresh the session with amazon-orders login")
+
+
 def value(source, *names):
     for name in names:
         if isinstance(source, dict):
@@ -26,7 +34,10 @@ def date_value(raw):
     if isinstance(raw, dt.date):
         return raw
     if isinstance(raw, str):
-        return dt.date.fromisoformat(raw[:10])
+        try:
+            return dt.date.fromisoformat(raw[:10])
+        except ValueError:
+            return None
     return None
 
 
@@ -56,7 +67,8 @@ def load_history(config_path, look_back_days, account_only=False):
     session_class = getattr(importlib.import_module("amazonorders.session"), "AmazonSession")
     orders_class = getattr(importlib.import_module("amazonorders.orders"), "AmazonOrders")
     config = config_class(config_path=config_path)
-    session = session_class(config=config)
+    session = session_class(config=config, io=NonInteractiveIO())
+    session.login()
     orders = orders_class(session, config=config)
     cutoff = dt.date.today() - dt.timedelta(days=look_back_days)
     # Fetch full calendar years covering the exact window, then filter locally.

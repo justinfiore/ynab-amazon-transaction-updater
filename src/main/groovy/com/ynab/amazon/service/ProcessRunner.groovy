@@ -1,6 +1,8 @@
 package com.ynab.amazon.service
 
 import java.time.Duration
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -12,7 +14,7 @@ interface ProcessRunner {
 }
 
 class ProcessResult {
-    enum Status { SUCCESS, START_FAILED, NON_ZERO_EXIT, TIMED_OUT, INTERRUPTED, OUTPUT_LIMIT_EXCEEDED }
+    enum Status { SUCCESS, START_FAILED, NON_ZERO_EXIT, TIMED_OUT, INTERRUPTED, OUTPUT_LIMIT_EXCEEDED, OUTPUT_READ_FAILED }
 
     final Status status
     final int exitCode
@@ -63,9 +65,21 @@ class BoundedProcessRunner implements ProcessRunner {
                 terminateTree(process)
                 return result(ProcessResult.Status.OUTPUT_LIMIT_EXCEEDED, process, stdout, stderr, 'process output exceeded configured limit')
             }
+            // Readers can detect buffered excess after the child has exited.
+            // Resolve both within the same deadline before accepting any output.
+            String capturedStdout = stdout.get(Math.max(0L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)
+            String capturedStderr = stderr.get(Math.max(0L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)
             int exitCode = process.exitValue()
-            return result(exitCode == 0 ? ProcessResult.Status.SUCCESS : ProcessResult.Status.NON_ZERO_EXIT,
-                process, stdout, stderr, '')
+            ProcessResult.Status status = outputExceeded.get() ? ProcessResult.Status.OUTPUT_LIMIT_EXCEEDED :
+                (exitCode == 0 ? ProcessResult.Status.SUCCESS : ProcessResult.Status.NON_ZERO_EXIT)
+            return new ProcessResult(status, exitCode, capturedStdout, capturedStderr,
+                outputExceeded.get() ? 'process output exceeded configured limit' : '')
+        } catch (TimeoutException e) {
+            terminateTree(process)
+            return new ProcessResult(ProcessResult.Status.TIMED_OUT, -1, '', '', 'process output did not complete within configured timeout')
+        } catch (ExecutionException e) {
+            terminateTree(process)
+            return new ProcessResult(ProcessResult.Status.OUTPUT_READ_FAILED, -1, '', '', 'unable to read process output')
         } catch (InterruptedException e) {
             terminateTree(process)
             Thread.currentThread().interrupt()
