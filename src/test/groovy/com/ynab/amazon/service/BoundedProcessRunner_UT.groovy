@@ -4,6 +4,7 @@ import spock.lang.Specification
 import spock.lang.TempDir
 
 import java.time.Duration
+import java.util.concurrent.TimeUnit
 
 class BoundedProcessRunner_UT extends Specification {
     private final BoundedProcessRunner runner = new BoundedProcessRunner()
@@ -78,6 +79,103 @@ class BoundedProcessRunner_UT extends Specification {
         result.status == ProcessResult.Status.TIMED_OUT
         exited
         !alive(pid)
+    }
+
+    def "cleans up inherited pipes after the parent exits and lets the JVM finish"() {
+        given:
+        File pidFile = new File(tempDir, 'orphan.pid')
+        String python = '''
+import os, signal, sys, time
+child = os.fork()
+if child == 0:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    print('holding stdout', flush=True)
+    print('holding stderr', file=sys.stderr, flush=True)
+    time.sleep(30)
+    os._exit(0)
+with open(sys.argv[1], 'w') as output:
+    output.write(str(child))
+time.sleep(0.5)
+os._exit(0)
+'''
+        // An isolated JVM detects non-daemon readers that outlive run(), not
+        // merely whether run() returned a timeout to the calling test worker.
+        File source = new File(tempDir, 'RunnerProbe.java')
+        source.text = '''
+import com.ynab.amazon.service.BoundedProcessRunner;
+import java.time.Duration;
+import java.util.List;
+class RunnerProbe {
+    public static void main(String[] args) {
+        var runner = new BoundedProcessRunner();
+        // Link Groovy's runner/reader call sites before the short-lived parent.
+        runner.run(List.of("/bin/sh", "-c", "printf warmup; printf warmup >&2"),
+            Duration.ofSeconds(2), 1024);
+        long started = System.nanoTime();
+        var result = runner.run(
+            List.of("python3", "-c", args[0], args[1]), Duration.ofMillis(1500), 1024);
+        System.out.println(result.getStatus().name());
+        System.out.println((System.nanoTime() - started) / 1_000_000);
+    }
+}
+'''
+        String classpath = [BoundedProcessRunner, GroovyObject].collect {
+            new File(it.protectionDomain.codeSource.location.toURI()).absolutePath
+        }.join(File.pathSeparator)
+        Process probe = new ProcessBuilder(
+            new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+            '--class-path', classpath, source.absolutePath, python, pidFile.absolutePath
+        ).redirectErrorStream(true).start()
+
+        when:
+        boolean finished = probe.waitFor(10, TimeUnit.SECONDS)
+
+        then:
+        finished
+        probe.exitValue() == 0
+        def lines = probe.inputStream.text.readLines()
+        lines[0] == 'TIMED_OUT'
+        lines[1].toLong() < 4000
+        pidFile.exists()
+        waitForExit(pidFile.text.trim().toLong())
+
+        cleanup:
+        if (pidFile.exists()) {
+            ProcessHandle.of(pidFile.text.trim().toLong()).ifPresent { it.destroyForcibly() }
+        }
+        probe.destroyForcibly()
+    }
+
+    @spock.lang.Requires({ os.linux })
+    def "Linux containment kills children even when their parent exits immediately"() {
+        given:
+        String python = '''
+import os, signal, sys, time
+child = os.fork()
+if child == 0:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    print('holding pipes', flush=True)
+    time.sleep(30)
+    os._exit(0)
+with open(sys.argv[1], 'w') as output:
+    output.write(str(child))
+os._exit(0)
+'''
+        runner.run(['/bin/sh', '-c', 'printf warmup'], Duration.ofSeconds(2), 1024)
+
+        expect:
+        (1..10).every { iteration ->
+            File pidFile = new File(tempDir, "immediate-${iteration}.pid")
+            try {
+                def result = runner.run(['python3', '-c', python, pidFile.absolutePath], Duration.ofMillis(300), 1024)
+                assert result.status == ProcessResult.Status.TIMED_OUT
+                assert pidFile.exists()
+                assert waitForExit(pidFile.text.trim().toLong())
+                true
+            } finally {
+                if (pidFile.exists()) ProcessHandle.of(pidFile.text.trim().toLong()).ifPresent { it.destroyForcibly() }
+            }
+        }
     }
 
     def "returns typed failures for launch and non-zero exit errors"() {

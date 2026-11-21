@@ -121,6 +121,15 @@ class YNABAmazonTransactionUpdater {
             logger.info("Successfully updated ${amazonStats.updated} Amazon transactions (${amazonStats.high_confidence} high, ${amazonStats.medium_confidence} medium confidence)")
         }
         
+        if (amazonService.isLoginRequired()) {
+            def pendingAmazonTransactions = unprocessedTransactions.findAll { transaction ->
+                !transaction.isTransfer() && !transaction.isDeleted() && transaction.amount != null && transaction.amount < 0 &&
+                    matcher.isPotentialAmazonTransaction(transaction) &&
+                    !(config.isDryRun() && amazonMatches.any { it.isHighConfidence() && it.ynabTransaction.id == transaction.id })
+            }
+            processor.addAmazonLoginNotices(pendingAmazonTransactions, ynabService, config.isDryRun())
+        }
+
         // Match and process Walmart orders if enabled
         if (config.walmartEnabled && walmartService != null && !walmartOrders.isEmpty()) {
             logger.info("Matching transactions with Walmart orders...")

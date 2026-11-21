@@ -16,6 +16,9 @@ class PythonAmazonOrderFetcher implements AmazonOrderFetcher {
 
     private final Configuration config
     private final ProcessRunner processRunner
+    private boolean loginRequired
+
+    boolean isLoginRequired() { loginRequired }
 
     PythonAmazonOrderFetcher(Configuration config, ProcessRunner processRunner = new BoundedProcessRunner()) {
         this.config = config
@@ -24,13 +27,16 @@ class PythonAmazonOrderFetcher implements AmazonOrderFetcher {
 
     @Override
     List<AmazonOrder> fetchOrders() {
+        loginRequired = false
         List<String> command = [config.amazonPythonExecutable, config.amazonPythonBridgeScript,
                                 '--config-path', config.amazonPythonConfigPath,
                                 '--look-back-days', String.valueOf(config.lookBackDays)]
         if (!config.amazonPythonIncludeHouseholdOrders) command.add('--account-only')
         ProcessResult result = processRunner.run(command, Duration.ofSeconds(config.amazonPythonTimeoutSeconds), config.amazonPythonMaxOutputBytes)
         if (!result.success) {
-            logger.warn("Python Amazon fetch failed (${result.status}${result.exitCode >= 0 ? ", exit ${result.exitCode}" : ''}): ${sanitize(result.stderr ?: result.detail)}")
+            loginRequired = result.status == ProcessResult.Status.NON_ZERO_EXIT && result.exitCode == 3
+            if (loginRequired) logger.warn('Amazon login required; run amazon-orders login with the configured account and config path')
+            else logger.warn("Python Amazon fetch failed (${result.status}, exit ${result.exitCode}); check runtime configuration and Amazon availability")
             return []
         }
         return mapEnvelope(result.stdout)
@@ -53,7 +59,7 @@ class PythonAmazonOrderFetcher implements AmazonOrderFetcher {
             }
             return new ArrayList<>(orders.values())
         } catch (Exception e) {
-            logger.error("Unable to parse Python Amazon bridge output: ${sanitize(e.message)}")
+            logger.error('Unable to parse Python Amazon bridge output; expected a schema-v1 orders envelope')
             return []
         }
     }
@@ -73,7 +79,9 @@ class PythonAmazonOrderFetcher implements AmazonOrderFetcher {
             String payment = text(record.paymentMethod)
             String lastFour = text(record.paymentMethodLast4)
             order.paymentMethod = payment && lastFour ? "${payment} (${lastFour})" : payment
-            record.items?.each { PythonBridgeItem item -> order.addItem(mapItem(item)) }
+            // Matching requires a product title; retain the order and use its
+            // empty-items fallback if upstream supplied no usable item names.
+            record.items?.findAll { it != null && text(it.title) }?.each { PythonBridgeItem item -> order.addItem(mapItem(item)) }
             return order
         } catch (Exception e) {
             logger.warn("Skipping invalid Python Amazon order at index ${index}${orderNumber ? " (${orderNumber})" : ''}")
@@ -90,8 +98,4 @@ class PythonAmazonOrderFetcher implements AmazonOrderFetcher {
         value?.trim() ?: null
     }
 
-    private static String sanitize(String value) {
-        if (!value) return 'no diagnostic provided'
-        value.replaceAll(/(?i)(password|token|cookie|secret)\s*[:=]\s*\S+/, '$1=[redacted]').replaceAll(/[\r\n]+/, ' ').take(500)
-    }
 }

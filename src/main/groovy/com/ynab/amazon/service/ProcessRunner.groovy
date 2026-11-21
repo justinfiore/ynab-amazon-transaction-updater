@@ -6,6 +6,7 @@ import java.util.concurrent.TimeoutException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.ThreadFactory
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -40,29 +41,53 @@ class BoundedProcessRunner implements ProcessRunner {
     @Override
     ProcessResult run(List<String> command, Duration timeout, int maxOutputBytes) {
         Process process
+        boolean isolatedGroup = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('linux')
         try {
-            process = new ProcessBuilder(command).start()
+            List<String> launchCommand = command
+            if (isolatedGroup) {
+                // Resolve before wrapping so a missing executable remains START_FAILED.
+                File executable = command[0].contains('/') ? new File(command[0]) :
+                    (System.getenv('PATH') ?: '').split(File.pathSeparator).collect {
+                        new File(it ?: '.', command[0])
+                    }.find { it.isFile() && it.canExecute() }
+                if (!executable?.isFile() || !executable.canExecute()) throw new IOException('Executable not available')
+                // setsid execs the command as a new session/group leader. Children
+                // remain in that group even if their original parent exits.
+                launchCommand = ['/usr/bin/setsid', '--', executable.absolutePath] + command.drop(1)
+                if (!new File('/bin/kill').canExecute()) throw new IOException('Process group signalling unavailable')
+            }
+            process = new ProcessBuilder(launchCommand).start()
             process.outputStream.close() // The bridge is non-interactive.
         } catch (IOException e) {
             return new ProcessResult(ProcessResult.Status.START_FAILED, -1, '', '', e.message ?: e.class.simpleName)
         }
 
-        ExecutorService readers = Executors.newFixedThreadPool(2)
+        // A descendant can escape discovery by exiting/reparenting between samples.
+        // Its inherited pipe must never keep the JVM alive after bounded cleanup.
+        ExecutorService readers = Executors.newFixedThreadPool(2, { Runnable task ->
+            Thread thread = new Thread(task, 'bounded-process-output')
+            thread.daemon = true
+            thread
+        } as ThreadFactory)
+        Set<ProcessHandle> descendants = new LinkedHashSet<>()
         AtomicBoolean outputExceeded = new AtomicBoolean(false)
         Future<String> stdout = readers.submit { drain(process.inputStream, maxOutputBytes, outputExceeded) }
         Future<String> stderr = readers.submit { drain(process.errorStream, maxOutputBytes, outputExceeded) }
         try {
             long deadline = System.nanoTime() + timeout.toNanos()
             while (process.isAlive() && !outputExceeded.get()) {
+                // Retain handles while the parent lives: after it exits, its
+                // pipe-holding children may no longer appear in descendants().
+                rememberDescendants(process.toHandle(), descendants)
                 long remaining = deadline - System.nanoTime()
                 if (remaining <= 0) {
-                    terminateTree(process)
+                    terminateTree(process, descendants, isolatedGroup)
                     return result(ProcessResult.Status.TIMED_OUT, process, stdout, stderr, 'process exceeded configured timeout')
                 }
-                process.waitFor(Math.min(TimeUnit.NANOSECONDS.toMillis(remaining) + 1, 100), TimeUnit.MILLISECONDS)
+                process.waitFor(Math.min(TimeUnit.NANOSECONDS.toMillis(remaining) + 1, 10), TimeUnit.MILLISECONDS)
             }
             if (outputExceeded.get()) {
-                terminateTree(process)
+                terminateTree(process, descendants, isolatedGroup)
                 return result(ProcessResult.Status.OUTPUT_LIMIT_EXCEEDED, process, stdout, stderr, 'process output exceeded configured limit')
             }
             // Readers can detect buffered excess after the child has exited.
@@ -75,20 +100,28 @@ class BoundedProcessRunner implements ProcessRunner {
             return new ProcessResult(status, exitCode, capturedStdout, capturedStderr,
                 outputExceeded.get() ? 'process output exceeded configured limit' : '')
         } catch (TimeoutException e) {
-            terminateTree(process)
+            terminateTree(process, descendants, isolatedGroup)
             return new ProcessResult(ProcessResult.Status.TIMED_OUT, -1, '', '', 'process output did not complete within configured timeout')
         } catch (ExecutionException e) {
-            terminateTree(process)
+            terminateTree(process, descendants, isolatedGroup)
             return new ProcessResult(ProcessResult.Status.OUTPUT_READ_FAILED, -1, '', '', 'unable to read process output')
         } catch (InterruptedException e) {
-            terminateTree(process)
+            terminateTree(process, descendants, isolatedGroup)
             Thread.currentThread().interrupt()
             return result(ProcessResult.Status.INTERRUPTED, process, stdout, stderr, 'process wait interrupted')
         } finally {
+            // Also clean helpers that closed their pipes before their parent exited.
+            if (isolatedGroup) signalGroup(process.pid(), 'KILL')
             readers.shutdown()
             try {
-                if (!readers.awaitTermination(TERMINATION_GRACE.toMillis(), TimeUnit.MILLISECONDS)) readers.shutdownNow()
+                if (!readers.awaitTermination(TERMINATION_GRACE.toMillis(), TimeUnit.MILLISECONDS)) {
+                    stdout.cancel(true)
+                    stderr.cancel(true)
+                    readers.shutdownNow()
+                }
             } catch (InterruptedException ignored) {
+                stdout.cancel(true)
+                stderr.cancel(true)
                 readers.shutdownNow()
                 Thread.currentThread().interrupt()
             }
@@ -123,11 +156,37 @@ class BoundedProcessRunner implements ProcessRunner {
         }
     }
 
-    private static void terminateTree(Process process) {
-        List<ProcessHandle> handles = process.toHandle().descendants().toList()
+    private static void rememberDescendants(ProcessHandle parent, Set<ProcessHandle> descendants) {
+        try (def stream = parent.descendants()) {
+            stream.forEach { descendants.add(it) }
+        }
+    }
+
+    private static void signalGroup(long groupId, String signal) {
+        Process sender
+        boolean interrupted = Thread.interrupted()
+        try {
+            sender = new ProcessBuilder('/bin/kill', "-${signal}", '--', "-${groupId}")
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(ProcessBuilder.Redirect.DISCARD).start()
+            if (!sender.waitFor(TERMINATION_GRACE.toMillis(), TimeUnit.MILLISECONDS)) sender.destroyForcibly()
+        } catch (InterruptedException ignored) {
+            sender?.destroyForcibly()
+            interrupted = true
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt()
+        }
+    }
+
+    private static void terminateTree(Process process, Set<ProcessHandle> descendants, boolean isolatedGroup) {
+        if (isolatedGroup) signalGroup(process.pid(), 'TERM')
+        rememberDescendants(process.toHandle(), descendants)
+        // A retained child may itself have spawned more processes since sampling.
+        new ArrayList<ProcessHandle>(descendants).each { rememberDescendants(it, descendants) }
+        List<ProcessHandle> handles = new ArrayList<>(descendants)
         handles.reverseEach { it.destroy() }
         process.destroy()
         waitForExit(handles + process.toHandle(), TERMINATION_GRACE)
+        if (isolatedGroup) signalGroup(process.pid(), 'KILL')
         (handles + process.toHandle()).findAll { it.isAlive() }.reverseEach { it.destroyForcibly() }
     }
 

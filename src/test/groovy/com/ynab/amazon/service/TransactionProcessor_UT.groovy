@@ -39,6 +39,25 @@ class TransactionProcessor_UT extends Specification {
         mockConfig.getProcessedTransactionsFile() >> processedTransactionsFile.absolutePath
     }
     
+    def "notice write failures do not stop later transactions or mark any as processed"() {
+        given:
+        def processor = new TransactionProcessor(mockConfig)
+        def transactions = ['throws', 'rejected', 'succeeds'].collect {
+            new YNABTransaction(id: it, memo: 'Original')
+        }
+        mockYnabService.updateTransactionMemo('throws', _) >> { throw new IOException('unavailable') }
+        mockYnabService.updateTransactionMemo('rejected', _) >> false
+        mockYnabService.updateTransactionMemo('succeeds', _) >> true
+
+        when:
+        processor.addAmazonLoginNotices(transactions, mockYnabService, false)
+
+        then:
+        transactions*.memo == ['Original', 'Original',
+            'Original | [ERROR: Amazon Login Required on ynab-amazon-transaction-updater]']
+        new TransactionProcessor(mockConfig).getUnprocessedTransactions(transactions)*.id == ['throws', 'rejected', 'succeeds']
+    }
+
     def "getUnprocessedTransactions should filter out processed transactions"() {
         given: "a processor with processed tx1"
         def processor = new TransactionProcessor(mockConfig)

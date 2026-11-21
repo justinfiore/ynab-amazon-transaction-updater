@@ -66,6 +66,10 @@ class AmazonService {
         return allOrders
     }
 
+    boolean isLoginRequired() {
+        orderFetcher instanceof PythonAmazonOrderFetcher && orderFetcher.isLoginRequired()
+    }
+
     private static AmazonOrderFetcher selectOrderFetcher(Configuration config) {
         String mode = config.amazonOrderFetcher ?: Configuration.AMAZON_FETCHER_EMAIL
         if (mode == Configuration.AMAZON_FETCHER_PYTHON) return new PythonAmazonOrderFetcher(config)

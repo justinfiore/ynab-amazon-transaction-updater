@@ -7,6 +7,11 @@ import json
 import sys
 
 SCHEMA_VERSION = 1
+LOGIN_REQUIRED_EXIT_CODE = 3
+
+
+class LoginRequired(Exception):
+    pass
 
 
 class NonInteractiveIO:
@@ -14,7 +19,7 @@ class NonInteractiveIO:
         print(msg, file=sys.stderr)
 
     def prompt(self, msg, **kwargs):
-        raise RuntimeError("Amazon authentication requires interactive input; refresh the session with amazon-orders login")
+        raise LoginRequired("Amazon authentication requires interactive input; refresh the session with amazon-orders login")
 
 
 def value(source, *names):
@@ -67,17 +72,48 @@ def load_history(config_path, look_back_days, account_only=False):
     session_class = getattr(importlib.import_module("amazonorders.session"), "AmazonSession")
     orders_class = getattr(importlib.import_module("amazonorders.orders"), "AmazonOrders")
     config = config_class(config_path=config_path)
-    session = session_class(config=config, io=NonInteractiveIO())
-    session.login()
-    orders = orders_class(session, config=config)
-    cutoff = dt.date.today() - dt.timedelta(days=look_back_days)
-    # Fetch full calendar years covering the exact window, then filter locally.
-    # None uses Amazon's whole-Household default; "self" restricts to this account.
-    history = []
-    for year in range(cutoff.year, dt.date.today().year + 1):
-        history.extend(orders.get_orders(year=year, full_details=True,
-                                        family_member_id="self" if account_only else None))
-    return history
+
+    class ObservedSession(session_class):
+        # SignInError has no response metadata. Keep the structured response
+        # from the public request API, not exception text, for classification.
+        last_response = None
+
+        def request(self, *args, **kwargs):
+            self.last_response = None
+            self.last_response = super().request(*args, **kwargs)
+            # login() processes forms without checking the HTTP status first.
+            # Do not prompt or treat error-page markup as authentication evidence.
+            self.last_response.response.raise_for_status()
+            return self.last_response
+
+    session = ObservedSession(config=config, io=NonInteractiveIO())
+    auth_errors = importlib.import_module("amazonauth.exception")
+    try:
+        session.login()
+        orders = orders_class(session, config=config)
+        cutoff = dt.date.today() - dt.timedelta(days=look_back_days)
+        # Fetch all calendar years covering the window, then filter locally.
+        # None selects the whole Household; "self" selects only this account.
+        history = []
+        for year in range(cutoff.year, dt.date.today().year + 1):
+            history.extend(orders.get_orders(year=year, full_details=True,
+                                            family_member_id="self" if account_only else None))
+        return history
+    except auth_errors.AmazonAuthRedirectError as error:
+        raise LoginRequired("Amazon sign-in is required") from error
+    except auth_errors.AmazonAuthSignInError as error:
+        # Upstream also raises SignInError for HTTP failures, unknown HTML,
+        # exhausted retries and unsupported flows. Only a successful response
+        # with both a credential form and its error box is a recognized rejection.
+        response = session.last_response
+        if response is not None and response.response.ok and response.parsed is not None:
+            select_one = importlib.import_module("amazonauth.util").select_one
+            selectors = config.selectors
+            if (select_one(response.parsed, selectors.DEFAULT_ERROR_TAG_SELECTOR) is not None and
+                    (select_one(response.parsed, selectors.SIGN_IN_FORM_SELECTOR) is not None or
+                     select_one(response.parsed, selectors.CLAIM_FORM_SELECTOR) is not None)):
+                raise LoginRequired("Amazon rejected sign-in") from error
+        raise
 
 
 def preflight(config_path):
@@ -109,8 +145,11 @@ def main(argv=None):
                 unique[record["order_number"]] = record
         print(json.dumps({"schema_version": SCHEMA_VERSION, "orders": list(unique.values())}, default=str, separators=(",", ":")))
         return 0
-    except Exception as error:
-        print("amazon-orders bridge failed: " + str(error)[:500], file=sys.stderr)
+    except LoginRequired:
+        print("Amazon login required; run amazon-orders login with the configured account and config path", file=sys.stderr)
+        return LOGIN_REQUIRED_EXIT_CODE
+    except Exception:
+        print("amazon-orders bridge failed; check runtime configuration and Amazon availability", file=sys.stderr)
         return 1
 
 

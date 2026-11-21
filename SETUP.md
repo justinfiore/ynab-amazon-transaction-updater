@@ -101,6 +101,79 @@ session, increase the timeout only when needed, or roll back by selecting email
 or CSV. Python history does not reproduce email-specific refund or Subscribe &
 Save notification dates.
 
+#### Amazon authentication: storage, lifetime, and recovery
+
+The stock `amazon-orders login` command above signs in interactively and persists
+cookies outside this repository. The bridge calls the library's `login()` on each
+fetch, reusing the persisted session or attempting authentication as needed.
+`--preflight` only verifies imports/schema; it does **not** check whether you are
+signed in or can retrieve orders.
+
+With `amazon-orders==6.0.0`, the defaults are:
+
+- Configuration: `~/.config/amazonorders/config.yml`.
+- Default-account, amazon.com session: `~/.config/amazonorders/cookies.json`.
+- Other Amazon sites have separate cookie files beside that jar; named accounts
+  use `~/.config/amazonorders/accounts/<account>/` (for example,
+  `accounts/spouse/cookies.json` for amazon.com).
+- An explicit upstream `cookie_jar_path` overrides the cookie location. Changing
+  only `amazon.python.config_path` does **not** relocate the default cookie jar.
+
+Protect both config and cookie files with owner-only access. Cookies grant access
+to your account: do not commit them, put them in issue reports, or store them in
+this project's YAML. For unattended runs in Amp, the optional credential secrets
+are `AMAZON_USERNAME`, `AMAZON_PASSWORD`, and `AMAZON_OTP_SECRET_KEY` (the reusable
+TOTP seed, not a short-lived OTP code). These can help automatic login, but cannot
+guarantee that CAPTCHA, browser, or other interactive challenges will succeed.
+A fresh orb also needs its own secure session provisioning or interactive login;
+setting credentials does not copy another machine's cookie jar.
+
+There is **no guaranteed session lifetime**. Individual cookies have expiry times,
+and Amazon can reject a session earlier or require a new challenge. Do not assume
+that a cookie file's existence or age means it is still valid.
+
+If the library detects a redirect to sign-in, needs interactive input, or returns
+a recognized credential form with an error box on a successful HTTP response,
+the bridge exits with reserved code 3. A generic upstream sign-in exception alone
+is insufficient: unknown pages and HTTP failures remain ordinary failures, not
+evidence that login is required. The updater logs a fixed failure category
+without upstream diagnostic payloads, imports no Python orders, and continues
+with configured CSV orders and the rest of the workflow rather than crashing.
+Other failures (network, parser, missing dependencies, timeout, output limits)
+also remain contained, but do **not** claim that login is required.
+
+For a recognized authentication failure, unprocessed Amazon expenses that were
+not successfully augmented receive this exact memo notice:
+
+```text
+[ERROR: Amazon Login Required on ynab-amazon-transaction-updater]
+```
+
+An existing memo is preserved and the notice appended once with ` | `, for example:
+
+```text
+Personal purchase | [ERROR: Amazon Login Required on ynab-amazon-transaction-updater]
+```
+
+Already-processed transactions, transfers, deleted transactions, refunds, other
+retailers, and successful CSV augmentations are excluded. Dry runs only log what
+would happen; they never write the notice. A failed notice write is logged and
+does not stop other transactions. The notice does not mark a transaction as
+processed: later runs retry it, and successful augmentation removes the notice
+while retaining the original memo.
+
+To recover, run the stock login command interactively using the **same upstream
+configuration, Amazon site, account, and cookie location as the bridge**:
+
+```bash copy Copy Amazon Login
+.venv-amazon-orders/bin/amazon-orders --config-path ~/.config/amazonorders/config.yml login
+```
+
+If using a named account, select that same account in the upstream configuration
+or its supported environment settings for both commands. Complete any requested
+challenges, then run the updater again (optionally dry-run first). If the session
+cannot be restored, choose email/CSV mode rather than repeatedly raising timeouts.
+
 ### 3. Build and Run
 
 #### Windows:

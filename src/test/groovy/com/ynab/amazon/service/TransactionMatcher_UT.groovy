@@ -18,6 +18,23 @@ class TransactionMatcher_UT extends Specification {
         matcher = new TransactionMatcher()
     }
     
+    def "auth notice does not identify a retailer and is removed even for an order without items"() {
+        given:
+        String notice = '[ERROR: Amazon Login Required on ynab-amazon-transaction-updater]'
+        def unrelated = new YNABTransaction(id: 'other', payee_name: 'GROCERY', memo: notice,
+            amount: -10000, date: '2026-11-20')
+        def amazon = new YNABTransaction(id: 'amazon', payee_name: 'AMAZON.COM', memo: 'Personal | ' + notice,
+            amount: -10000, date: '2026-11-20')
+        def order = new AmazonOrder(orderId: 'empty-items', totalAmount: -10G, orderDate: '2026-11-20')
+
+        when:
+        def matches = matcher.findMatches([unrelated, amazon], [order])
+
+        then:
+        matches*.ynabTransaction*.id == ['amazon']
+        matches[0].proposedMemo == "Personal | Amazon Order (Couldn't identify items)"
+    }
+
     def "findMatches should return empty list when no transactions provided"() {
         given: "empty list of transactions and some orders"
         def transactions = []

@@ -15,6 +15,14 @@ bridge = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bridge)
 
 
+class SignInError(Exception):
+    pass
+
+
+class RedirectError(SignInError):
+    pass
+
+
 class Order:
     def __init__(self, number, date, total, items=None, cancelled=False, payment_method=None, last_four=None):
         self.order_number = number
@@ -73,25 +81,37 @@ class BridgeTests(unittest.TestCase):
 
         orders.AmazonOrders = order_client
         output, errors = io.StringIO(), io.StringIO()
-        modules = {"amazonorders": root, "amazonorders.conf": conf, "amazonorders.session": session, "amazonorders.orders": orders}
+        auth_errors = types.ModuleType("amazonauth.exception")
+        auth_errors.AmazonAuthSignInError = SignInError
+        auth_errors.AmazonAuthRedirectError = RedirectError
+        modules = {"amazonorders": root, "amazonorders.conf": conf, "amazonorders.session": session,
+                   "amazonorders.orders": orders, "amazonauth.exception": auth_errors}
         with patch.dict(sys.modules, modules), redirect_stdout(output), redirect_stderr(errors):
             code = bridge.main(["--config-path", "/safe/config.yml", *arguments])
         return code, output.getvalue(), errors.getvalue(), calls
 
     def test_exact_inclusive_boundaries_across_years_and_deduplicates(self):
-        today = dt.date.today()
-        cutoff = today - dt.timedelta(days=400)
-        history = {
-            cutoff.year: [Order("first", cutoff, 1), Order("outside", cutoff - dt.timedelta(days=1), 1)],
-            today.year: [Order("last", today, 2), Order("first", today, 9)],
-        }
-        code, output, errors, calls = self.run_bridge(history, ["--look-back-days", "400"])
-        self.assertEqual(0, code)
-        self.assertEqual("", errors)
-        self.assertEqual([cutoff.year, today.year], [call["year"] for call in calls])
-        self.assertTrue(all(call["full_details"] for call in calls))
-        self.assertTrue(all(call["family_member_id"] is None for call in calls))
-        self.assertEqual(["first", "last"], [record["order_number"] for record in json.loads(output)["orders"]])
+        for today, expected_years in [(dt.date(2026, 11, 21), [2025, 2026]),
+                                      (dt.date(2027, 1, 1), [2025, 2026, 2027])]:
+            with self.subTest(today=today):
+                class FrozenDate(dt.date):
+                    @classmethod
+                    def today(cls):
+                        return cls(today.year, today.month, today.day)
+                cutoff = today - dt.timedelta(days=400)
+                history = {
+                    cutoff.year: [Order("first", cutoff.isoformat(), 1),
+                                  Order("outside", (cutoff - dt.timedelta(days=1)).isoformat(), 1)],
+                    today.year: [Order("last", today.isoformat(), 2), Order("first", today.isoformat(), 9)],
+                }
+                clock = types.SimpleNamespace(date=FrozenDate, datetime=dt.datetime, timedelta=dt.timedelta)
+                with patch.object(bridge, "dt", clock):
+                    code, output, errors, calls = self.run_bridge(history, ["--look-back-days", "400"])
+                self.assertEqual((0, ""), (code, errors))
+                self.assertEqual(expected_years, [call["year"] for call in calls])
+                self.assertTrue(all(call["full_details"] for call in calls))
+                self.assertTrue(all(call["family_member_id"] is None for call in calls))
+                self.assertEqual(["first", "last"], [record["order_number"] for record in json.loads(output)["orders"]])
 
     def test_household_orders_are_included_by_default_and_can_be_excluded(self):
         today = dt.date.today()
@@ -130,10 +150,80 @@ class BridgeTests(unittest.TestCase):
     def test_authentication_challenge_fails_without_prompting_or_stdout(self):
         with patch("builtins.input", side_effect=AssertionError("must not prompt")):
             code, output, errors, _ = self.run_bridge(challenge=True)
-        self.assertEqual((1, ""), (code, output))
+        self.assertEqual((3, ""), (code, output))
         self.assertIn("Authentication challenge", errors)
-        self.assertIn("requires interactive input", errors)
+        self.assertIn("Amazon login required", errors)
         self.assertNotIn("sensitive challenge data", errors)
+
+    def test_only_explicit_redirect_errors_require_login_without_response_evidence(self):
+        for error in [RedirectError('redirect'), SignInError('rejected'),
+                      SignInError('Amazon login required'), RuntimeError('network unavailable'), ValueError('parse failed')]:
+            for stage in ['session_error', 'history_error']:
+                with self.subTest(error=error, stage=stage):
+                    code, output, errors, _ = self.run_bridge(**{stage: error})
+                    self.assertEqual(3 if isinstance(error, RedirectError) else 1, code)
+                    self.assertEqual('', output)
+                    self.assertEqual(isinstance(error, RedirectError), 'Amazon login required' in errors)
+
+    @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install requirements-amazon-orders.txt for the real-library contract test")
+    def test_real_library_classifies_response_evidence_not_sign_in_exception_text(self):
+        from amazonorders.orders import AmazonOrders
+        from requests import Response
+
+        sign_in = '''<form name="signIn" method="post" action="/ap/signin">
+            <input name="email" value=""><input name="password" value=""></form>'''
+        rejected = '<div id="auth-error-message-box">Fixture rejected credentials</div>' + sign_in
+        greeting = '<span id="nav-link-accountList-nav-line-1">Hello, Fixture</span>'
+        otp = '<form id="auth-mfa-form"><input name="otpCode" value=""></form>'
+
+        def response(status, html, path="/ap/signin"):
+            result = Response()
+            result.status_code = status
+            result.url = "https://www.amazon.com" + path
+            result._content = html.encode()
+            return result
+
+        cases = [
+            ("503", [response(503, "Service unavailable")], False, 1),
+            ("unknown HTML", [response(200, "Unknown page: Amazon login required")], False, 1),
+            ("error box without credential form", [response(200, rejected.split('<form')[0])], False, 1),
+            ("interactive OTP", [response(200, otp)], False, 3),
+            ("rejected credentials", [response(200, sign_in), response(200, rejected)], True, 3),
+            ("503 with auth markup", [response(200, sign_in), response(503, rejected)], True, 1),
+            ("503 with OTP markup", [response(503, otp)], False, 1),
+            ("403 with auth markup", [response(403, rejected)], True, 1),
+            ("unknown HTML after submission", [response(200, sign_in), response(200, "Unknown page")], True, 1),
+            ("history redirect", [response(200, greeting, "/"), response(200, sign_in)], False, 3),
+            ("history 503", [response(200, greeting, "/"), response(503, sign_in)], False, 1),
+        ]
+        for name, responses, credentials, expected in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                config_path = os.path.join(directory, "config.yml")
+                with open(config_path, "w") as config:
+                    json.dump({"cookie_jar_path": os.path.join(directory, "cookies.json"),
+                               "output_dir": directory, "max_auth_attempts": 2,
+                               "auth_reattempt_wait": 0,
+                               "username": "fixture@example.invalid" if credentials else None,
+                               "password": "fixture-password" if credentials else None}, config)
+                output, errors = io.StringIO(), io.StringIO()
+
+                async def history_redirect(client, *args, **kwargs):
+                    # Use the real check_response, as real order-page retrieval does.
+                    client.amazon_session.check_response(client.amazon_session.get("https://www.amazon.com/orders"))
+
+                with patch.dict(os.environ, {}, clear=True), \
+                        patch("requests.sessions.Session.request",
+                              side_effect=[response(200, "Fixture home", "/"), *responses]) as http, \
+                        patch.object(AmazonOrders, "_build_orders_async", history_redirect), \
+                        patch("builtins.input", side_effect=AssertionError("must not prompt")), \
+                        redirect_stdout(output), redirect_stderr(errors):
+                    code = bridge.main(["--config-path", config_path])
+                self.assertEqual(expected, code, errors.getvalue())
+                self.assertEqual("", output.getvalue())
+                self.assertEqual(expected == 3, "Amazon login required" in errors.getvalue())
+                self.assertNotIn("Fixture rejected credentials", errors.getvalue())
+                self.assertNotIn("fixture-password", errors.getvalue())
+                self.assertEqual(1 + len(responses), http.call_count)
 
     @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install requirements-amazon-orders.txt for the real-library contract test")
     def test_authenticates_with_real_library_before_fetching_history(self):

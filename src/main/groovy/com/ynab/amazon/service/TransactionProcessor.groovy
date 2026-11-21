@@ -52,10 +52,11 @@ class TransactionProcessor {
         }
         
         // Check if memo already contains product information
-        if (transaction.memo && (transaction.memo.contains("items:") || 
-                                transaction.memo.contains("Amazon Order") ||
-                                transaction.memo.contains("Walmart Order") ||
-                                transaction.memo.length() > 50)) {
+        String memo = AmazonAuthNotice.withoutNotice(transaction.memo)
+        if (memo && (memo.contains("items:") ||
+                     memo.contains("Amazon Order") ||
+                     memo.contains("Walmart Order") ||
+                     memo.length() > 50)) {
             if (logger.isDebugEnabled()) {
                 logger.debug("""
                     |Skipping transaction - Already processed (memo contains product info)
@@ -71,6 +72,29 @@ class TransactionProcessor {
         return false
     }
     
+    /** Add a retryable notice without marking the transaction as processed. */
+    void addAmazonLoginNotices(List<YNABTransaction> transactions, YNABService ynabService, boolean dryRun) {
+        getUnprocessedTransactions(transactions).each { transaction ->
+            if (transaction.memo?.contains(AmazonAuthNotice.MESSAGE)) return
+            String existing = transaction.memo && transaction.memo != 'null' ? transaction.memo : ''
+            String memo = existing ? "${existing} | ${AmazonAuthNotice.MESSAGE}" : AmazonAuthNotice.MESSAGE
+            if (memo.length() > 500) {
+                logger.warn("Cannot append Amazon login notice without truncating transaction ${transaction.id} memo")
+                return
+            }
+            if (dryRun) {
+                logger.info("Would add Amazon login notice to transaction ${transaction.id}")
+                return
+            }
+            try {
+                if (ynabService.updateTransactionMemo(transaction.id, memo)) transaction.memo = memo
+                else logger.warn("Unable to add Amazon login notice to transaction ${transaction.id}")
+            } catch (Exception ignored) {
+                logger.warn("Unable to add Amazon login notice to transaction ${transaction.id}")
+            }
+        }
+    }
+
     /**
      * Update YNAB transactions with new memos or perform a dry run
      * @param matches List of transaction matches to process

@@ -70,8 +70,9 @@ class TransactionMatcher {
         }
         
         // Check if memo contains product information (indicating it was already processed)
-        boolean isProcessed = transaction.memo.contains("items:") || 
-                           transaction.memo.length() > 100  // Long memos likely already processed
+        String memo = AmazonAuthNotice.withoutNotice(transaction.memo)
+        boolean isProcessed = memo.contains("items:") ||
+                           memo.length() > 100  // Long memos likely already processed
         
         if (isProcessed && logger.isDebugEnabled()) {
             logger.debug("Skipping already processed transaction: {}", transaction.toString())
@@ -83,7 +84,7 @@ class TransactionMatcher {
     /**
      * Check if transaction could be an Amazon transaction
      */
-    private boolean isPotentialAmazonTransaction(YNABTransaction transaction) {
+    boolean isPotentialAmazonTransaction(YNABTransaction transaction) {
         // Check payee name
         if (transaction.payee_name) {
             String payee = transaction.payee_name.toUpperCase().trim()
@@ -94,7 +95,7 @@ class TransactionMatcher {
         
         // Check memo for Amazon references
         if (transaction.memo) {
-            String memo = transaction.memo.toUpperCase()
+            String memo = AmazonAuthNotice.withoutNotice(transaction.memo).toUpperCase()
             if (memo.contains("AMAZON") || memo.contains("AMZN")) {
                 return true
             }
@@ -318,13 +319,13 @@ class TransactionMatcher {
         boolean isSubscribeAndSave = order.orderId?.startsWith("SUB-")
         
         if (!order.items || order.items.isEmpty()) {
-            if(order.isReturn) {
-                return "Amazon Return (Couldn't identify items)"
+            String summary = order.isReturn ? "Amazon Return (Couldn't identify items)" :
+                (isSubscribeAndSave ? "S&S: Amazon Order (Couldn't identify items)" : "Amazon Order (Couldn't identify items)")
+            String existingMemo = AmazonAuthNotice.withoutNotice(transaction.memo)
+            if (transaction.memo?.contains(AmazonAuthNotice.MESSAGE) && existingMemo && existingMemo != 'null') {
+                return "${existingMemo} | ${summary}".take(500)
             }
-            if (isSubscribeAndSave) {
-                return "S&S: Amazon Order (Couldn't identify items)"
-            }
-            return "Amazon Order (Couldn't identify items)"
+            return summary
         }
         
         // Generate the base summary
@@ -359,8 +360,9 @@ class TransactionMatcher {
         
         // Combine with existing memo if it exists
         String proposedMemo = summary
-        if(transaction.memo != null && !transaction.memo.isEmpty() && !transaction.memo.equals("null")) {
-            proposedMemo = "${transaction.memo} | ${summary}"
+        String existingMemo = AmazonAuthNotice.withoutNotice(transaction.memo)
+        if (existingMemo && existingMemo != 'null') {
+            proposedMemo = "${existingMemo} | ${summary}"
         }
         
         // Sanitize the memo to only allow certain characters

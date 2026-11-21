@@ -117,6 +117,14 @@ upstream environment credentials are inherited without being printed. Use
 restrictive permissions for the upstream configuration. Browser challenges may
 need `amazon-orders[browser]` and `playwright install chromium`.
 
+For cookie/config locations, session lifetime, Amp credential secrets, and the
+interactive recovery command, see [Amazon authentication](SETUP.md#amazon-authentication-storage-lifetime-and-recovery).
+When Python authentication requires login, eligible unaugmented Amazon expenses
+receive `[ERROR: Amazon Login Required on ynab-amazon-transaction-updater]` in the
+memo (appended once, preserving existing text). This is retryable, not a processed
+marker: successful augmentation removes it. Dry runs never write it, and generic
+fetch failures do not trigger a login notice.
+
 #### Walmart Order Data Source (Optional)
 
 The application can automatically fetch Walmart orders using two different modes:
@@ -436,7 +444,8 @@ Confidence thresholds:
 - **Transaction Tracking**: Prevents duplicate processing
 - **Confidence Thresholds**: Only updates high-confidence matches
 - **Error Handling**: Graceful handling of API errors and invalid data
-- **Python isolation**: Python mode runs an argument-list child process with a timeout, bounded stdout/stderr, process-tree cleanup, and redacted diagnostics. It never logs bridge JSON or passes Amazon secrets as arguments.
+- **Python isolation**: Python mode runs an argument-list child process with a timeout, bounded stdout/stderr, process-tree cleanup, and fixed-category failure diagnostics (upstream stderr is not logged). It never logs bridge JSON or passes Amazon secrets as arguments.
+- **Linux subprocess cleanup**: Linux runs the Python bridge in a separate process group using `/usr/bin/setsid` (util-linux) and `/bin/kill`. These tools are required on Linux; if unavailable, fetching fails safely rather than launching without group containment. Timeouts and failures terminate the group, including children whose parent has already exited; remaining group members are also cleaned up after normal completion. A helper that deliberately starts a new session/group can escape this boundary. macOS and Windows retain best-effort descendant tracking and daemon output readers; they do not have the Linux group-containment guarantee.
 - **Source semantics**: Select one automatic source (`email` or `python`); an optional CSV is appended after it. A failed Python source returns no Python orders rather than silently falling back to another credential source.
 
 ## Troubleshooting
