@@ -246,6 +246,40 @@ class WalmartService_IT extends Specification {
         remote.small.subtransactions*.category_id==[null,null]
     }
 
+    def 'approved decisions outside the shortlist retain conflicts without authorizing reuse'() {
+        given:
+        def purchase = { String id ->
+            def order = new WalmartOrder(orderId:id,orderDate:'2026-11-20',currency:'USD',complete:true,totalAmount:10.00,
+                orderUrl:"https://www.walmart.com/orders/details?orderId=${id}",
+                items:[new WalmartOrderItem(itemId:'item',productId:'soap',title:'Soap',quantity:1,grossCents:1000L)],
+                charges:[[key:'charge',date:'2026-11-21',payment:'VISA',currency:'USD',cents:1000L]])
+            def tx = new YNABTransaction(id:id,date:'2026-11-21',amount:-10000L,payee_name:'WALMART',payee_id:'payee',
+                account_id:'account',cleared:'cleared',approved:'false',deleted:'false')
+            remote[id] = WalmartFixture.remote(tx)
+            new TransactionMatcher().findWalmartMatches([tx],[order])
+        }
+        def first = purchase('101')
+        new TransactionProcessor(config).processWalmartMatches(first,ynab,false)
+        remote['101'].approved=true
+        remote['101'].category_id='h'
+        def second = purchase('102')
+        new TransactionProcessor(config).processWalmartMatches(second,ynab,false)
+        assert remote['102'].category_id=='h'
+        remote['102'].approved=true
+        remote['102'].category_id='outside-shortlist'
+        def before = json.readValue(json.writeValueAsBytes(remote),Map)
+
+        when:
+        new TransactionProcessor(config).processWalmartMatches(purchase('103'),ynab,false)
+
+        then:
+        remote['103'].category_id==null
+        remote['101']==before['101']
+        remote['102']==before['102']
+        writes.size()==3
+        config.walmartCategorization.categories*.id==['g','h']
+    }
+
     def 'only complete approved identifiable fragments teach products and corrections replace stale evidence'() {
         given:
         def order=WalmartFixture.order()

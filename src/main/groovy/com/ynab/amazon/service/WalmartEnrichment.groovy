@@ -23,7 +23,7 @@ class WalmartEnrichment {
             if (config.walmartEnrichment == 'exception_first') {
                 categories = WalmartAllocation.categories(ynab.getWalmartCategories(), config.walmartCategorization.categories as List, config.walmartDefaultCategoryId)
                 accounts = ynab.getWalmartBudgetAccounts()
-                learn(state, ynab, categories.keySet())
+                learn(state, ynab)
                 if (!dryRun) save(state)
             }
             matches.groupBy { it.walmartOrder.orderId }.each { String orderId, List<TransactionMatch> group ->
@@ -146,7 +146,7 @@ class WalmartEnrichment {
             (expected.subtransactions ?: []).collect { [it.amount,it.category_id,it.memo,it.payee_id] }.sort { it.toString() }
     }
 
-    private void learn(Map state, YNABService ynab, Set allowed) {
+    private void learn(Map state, YNABService ynab) {
         Map observations = [:].withDefault { [] }
         state.plans.findAll { key, value -> key.startsWith(config.ynabBudgetId + '/') }.values().each { entry ->
             Map fragments = [:].withDefault { [] }
@@ -165,7 +165,9 @@ class WalmartEnrichment {
                 saved.lines.findAll { it.item_id && it.product_id }.each { line ->
                     def rows = originalRows.findAll { it.amount == -((long)line.cents)*10 && (!saved.result.subtransactions || it.memo == line.memo) }
                     def row = rows.size()==1 && rows[0].id ? currentRows.find { it.id==rows[0].id } : null
-                    fragments[line.item_id] << [product:line.product_id,category:intact && row && allowed.contains(row.category_id) ? row.category_id : null]
+                    // Evidence is independent of write eligibility: an out-of-list
+                    // human correction must still veto conflicting automatic reuse.
+                    fragments[line.item_id] << [product:line.product_id,category:intact && row ? row.category_id : null]
                 }
                 saved.reviewed = intact
             }
