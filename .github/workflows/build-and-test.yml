@@ -80,3 +80,47 @@ jobs:
       - name: Fail if Gradle tests failed
         if: always() && steps.gradle-test.outputs.exit_code != '0'
         run: exit 1
+
+  walmart-native:
+    name: Optional Walmart / ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Java 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+      - name: Set up Python for account-free bridge fixtures
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Enabled lifecycle and native packaging
+        run: ./gradlew clean build installDist distZip distTar -Pwalmart --no-daemon
+      - name: Cached offline lifecycle
+        run: ./gradlew build installDist -Pwalmart --offline --no-daemon
+      - name: Base lifecycle after enabled build excludes native helper
+        run: |
+          ./gradlew build installDist --offline --no-daemon
+          test -z "$(find build/install -name walmart-helper -print)"
+      - name: Summarize JVM and Go tests
+        if: always()
+        run: python3 .github/scripts/publish_test_summary.py build/test-results
+      - name: Upload native reports and target-labeled distributions
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: walmart-${{ matrix.runner }}
+          path: |
+            build/test-results/
+            build/reports/tests/
+            build/walmart/*.json
+            build/distributions/*walmart-*
+          retention-days: 14

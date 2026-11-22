@@ -89,3 +89,7 @@ tasks.register('testAll') {
 tasks.named('check') {
     dependsOn tasks.named('testAll')
 }
+
+if (providers.gradleProperty('walmart').isPresent()) {
+    apply from: 'gradle/walmart.gradle'
+}

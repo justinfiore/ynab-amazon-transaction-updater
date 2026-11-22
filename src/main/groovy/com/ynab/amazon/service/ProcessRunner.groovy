@@ -46,8 +46,18 @@ class BoundedProcessRunner implements ProcessRunner {
         'AMAZON_USERNAME', 'AMAZON_PASSWORD', 'AMAZON_OTP_SECRET_KEY'
     ] as Set
 
+    private final Set<String> environmentKeys
+
+    BoundedProcessRunner(Set<String> environmentKeys = ENVIRONMENT_KEYS) {
+        this.environmentKeys = environmentKeys.collect { it.toUpperCase(Locale.ROOT) } as Set
+    }
+
     @Override
     ProcessResult run(List<String> command, Duration timeout, int maxOutputBytes) {
+        runWithInput(command, timeout, maxOutputBytes, '')
+    }
+
+    ProcessResult runWithInput(List<String> command, Duration timeout, int maxOutputBytes, String input) {
         Process process
         boolean isolatedGroup = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('linux')
         try {
@@ -66,16 +76,15 @@ class BoundedProcessRunner implements ProcessRunner {
             }
             ProcessBuilder builder = new ProcessBuilder(launchCommand)
             // Windows environment keys such as SystemRoot are case-insensitive.
-            builder.environment().keySet().removeIf { !ENVIRONMENT_KEYS.contains(it.toUpperCase(Locale.ROOT)) }
+            builder.environment().keySet().removeIf { !environmentKeys.contains(it.toUpperCase(Locale.ROOT)) }
             process = builder.start()
-            process.outputStream.close() // The bridge is non-interactive.
         } catch (IOException e) {
             return new ProcessResult(ProcessResult.Status.START_FAILED, -1, '', '', e.message ?: e.class.simpleName)
         }
 
         // A descendant can escape discovery by exiting/reparenting between samples.
         // Its inherited pipe must never keep the JVM alive after bounded cleanup.
-        ExecutorService readers = Executors.newFixedThreadPool(2, { Runnable task ->
+        ExecutorService readers = Executors.newFixedThreadPool(3, { Runnable task ->
             Thread thread = new Thread(task, 'bounded-process-output')
             thread.daemon = true
             thread
@@ -84,6 +93,9 @@ class BoundedProcessRunner implements ProcessRunner {
         AtomicBoolean outputExceeded = new AtomicBoolean(false)
         Future<String> stdout = readers.submit { drain(process.inputStream, maxOutputBytes, outputExceeded) }
         Future<String> stderr = readers.submit { drain(process.errorStream, maxOutputBytes, outputExceeded) }
+        Future writer = readers.submit {
+            process.outputStream.withCloseable { it.write(input.getBytes('UTF-8')) }
+        }
         try {
             long deadline = System.nanoTime() + timeout.toNanos()
             while (process.isAlive() && !outputExceeded.get()) {
@@ -105,6 +117,7 @@ class BoundedProcessRunner implements ProcessRunner {
             // Resolve both within the same deadline before accepting any output.
             String capturedStdout = stdout.get(Math.max(0L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)
             String capturedStderr = stderr.get(Math.max(0L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)
+            writer.get(Math.max(0L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)
             int exitCode = process.exitValue()
             ProcessResult.Status status = outputExceeded.get() ? ProcessResult.Status.OUTPUT_LIMIT_EXCEEDED :
                 (exitCode == 0 ? ProcessResult.Status.SUCCESS : ProcessResult.Status.NON_ZERO_EXIT)

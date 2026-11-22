@@ -1,575 +1,242 @@
 package com.ynab.amazon.service
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.sun.net.httpserver.HttpServer
 import com.ynab.amazon.config.Configuration
-import com.ynab.amazon.model.WalmartOrder
-import com.ynab.amazon.model.WalmartOrderItem
-import com.ynab.amazon.model.YNABTransaction
-import com.ynab.amazon.model.TransactionMatch
+import com.ynab.amazon.model.*
 import spock.lang.Specification
+import spock.lang.TempDir
 
-/**
- * Integration test class for end-to-end Walmart order processing
- * Tests the complete flow: fetch → match → update
- */
+/** Actual HTTP contract tests; account-free and independent of Docker/models. */
 class WalmartService_IT extends Specification {
-    
+    @TempDir File directory
+    def json = new ObjectMapper()
+    HttpServer server
+    Map<String, Map> remote
+    List<Map> writes
     Configuration config
-    WalmartService walmartService
-    TransactionMatcher matcher
-    TransactionProcessor processor
-    YNABService mockYnabService
-    
+    YNABService ynab
+    boolean loseResponse
+    boolean failReadback
+    boolean pendingReadback
+    boolean rejectSmall
+
     def setup() {
-        config = new Configuration()
-        config.walmartEnabled = true
-        config.dryRun = true
-        config.processedTransactionsFile = null  // Disable processed transactions file for tests
-        
-        matcher = new TransactionMatcher()
-        processor = new TransactionProcessor(config)
-        mockYnabService = Mock(YNABService)
+        remote = [:]; writes = []
+        server = HttpServer.create(new InetSocketAddress('127.0.0.1', 0), 0)
+        server.createContext('/v1/plans/plan') { exchange ->
+            String suffix = exchange.requestURI.path - '/v1/plans/plan'
+            Map body
+            if (suffix == '/categories') body = [data:[category_groups:[[name:'Everyday',categories:[[id:'g',name:'Groceries'],[id:'h',name:'Household']]]]]]
+            else if (suffix == '/accounts') body = [data:[accounts:[[id:'account',on_budget:true,deleted:false,closed:false]]]]
+            else {
+                String id = suffix.tokenize('/').last()
+                if ((exchange.requestMethod=='GET' && pendingReadback) || (exchange.requestMethod=='PUT' && rejectSmall && id=='small')) {
+                    pendingReadback=false; exchange.sendResponseHeaders(503,-1); exchange.close(); return
+                }
+                if (exchange.requestMethod == 'PUT') {
+                    Map change = json.readValue(exchange.requestBody, Map).transaction
+                    writes << [id:id,change:json.readValue(json.writeValueAsBytes(change),Map)]
+                    remote[id] += change
+                    remote[id].subtransactions?.eachWithIndex { row,index -> row.id = "${id}-row-${index}"; row.deleted=false }
+                    if (failReadback) { failReadback=false; pendingReadback=true }
+                    if (loseResponse) { loseResponse=false; exchange.close(); return }
+                }
+                body = [data:[transaction:remote[id]]]
+            }
+            byte[] bytes = json.writeValueAsBytes(body)
+            exchange.responseHeaders.set('Content-Type','application/json')
+            exchange.sendResponseHeaders(200,bytes.length)
+            exchange.responseBody.withCloseable { it.write(bytes) }
+            exchange.close()
+        }
+        server.start()
+        config = new Configuration(ynabBudgetId:'plan',ynabApiKey:'fixture',ynabBaseUrl:"http://127.0.0.1:${server.address.port}/v1",
+            walmartEnrichment:'exception_first',walmartDefaultCategoryId:'g',walmartCategorization:[categories:[[id:'g'],[id:'h']]],
+            walmartJournalFile:new File(directory,'journal.json').path)
+        ynab = new YNABService(config)
     }
-    
-    // ========== Test Data Helpers ==========
-    
-    private WalmartOrder createSingleChargeOrder() {
-        def order = new WalmartOrder()
-        order.orderId = "1234567890123"
-        order.orderDate = "2024-01-15"
-        order.orderStatus = "Delivered"
-        order.totalAmount = -49.99  // Negative to match YNAB transaction format
-        order.addFinalCharge(-49.99)  // Negative to match YNAB transaction format
-        order.orderUrl = "https://www.walmart.com/orders/details?orderId=1234567890123"
-        
-        def item = new WalmartOrderItem()
-        item.title = "Wireless Mouse"
-        item.price = -49.99  // Negative to match YNAB transaction format
-        item.quantity = 1
-        order.addItem(item)
-        
-        return order
+    def cleanup() { ynab.close(); server.stop(0) }
+
+    def 'HTTP writes preserve parents and remain unapproved; lost response and restart do not duplicate allocations'() {
+        given:
+        def order = WalmartFixture.order()
+        def transactions = WalmartFixture.transactions()
+        assert ynab.getWalmartBudgetAccounts() == ['account'] as Set
+        assert transactions.every { WalmartAllocation.eligible(it, ['account'] as Set) }
+        transactions.each { remote[it.id] = WalmartFixture.remote(it) }
+        // Only approved product mappings authorize default/household classification.
+        new WalmartJournal(config.walmartJournalFile).locked(false) { state, save ->
+            state.mappings = ['plan/food':['g'], 'plan/soap':['h']]; save(state)
+        }
+        def matches = new TransactionMatcher().findWalmartMatches(transactions,[order])
+        loseResponse = true
+
+        when:
+        def stats = new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+        def again = new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        stats.updated == 2
+        again.updated == 0
+        writes.size() == 2
+        writes[0].id == 'large'
+        writes[0].change == [memo:matches.find { it.ynabTransaction.id=='large' }.proposedMemo,approved:false,category_id:null,
+            subtransactions:[[amount:-20000,category_id:'h',memo:'Soap'],[amount:-50000,category_id:'g',memo:'Default Walmart Category']]]
+        writes[1].change.category_id == 'g'
+        !writes[1].change.containsKey('subtransactions')
+        remote.large.amount == -70000
+        remote.small.amount == -30000
+        remote.values().every { !it.approved && it.account_id=='account' && it.cleared=='cleared' && it.import_id=='bank-import' }
+        remote.large.memo.startsWith('User note | 2026-11-20 | Total $100.00 | #123 | ')
+        !remote.large.memo.contains('Soap')
     }
-    
-    private WalmartOrder createMultiChargeOrder() {
-        def order = new WalmartOrder()
-        order.orderId = "2345678901234"
-        order.orderDate = "2024-01-20"
-        order.orderStatus = "Delivered"
-        order.totalAmount = -150.00  // Negative to match YNAB transaction format
-        order.addFinalCharge(-100.00)  // Negative to match YNAB transaction format
-        order.addFinalCharge(-50.00)   // Negative to match YNAB transaction format
-        order.orderUrl = "https://www.walmart.com/orders/details?orderId=2345678901234"
-        
-        def item1 = new WalmartOrderItem()
-        item1.title = "Laptop Stand"
-        item1.price = -100.00  // Negative to match YNAB transaction format
-        item1.quantity = 1
-        order.addItem(item1)
-        
-        def item2 = new WalmartOrderItem()
-        item2.title = "USB Cable"
-        item2.price = -50.00  // Negative to match YNAB transaction format
-        item2.quantity = 1
-        order.addItem(item2)
-        
-        return order
+
+    def 'preview performs no writes and leaves journal unchanged'() {
+        given:
+        def matches = new TransactionMatcher().findWalmartMatches(WalmartFixture.transactions(),[WalmartFixture.order()])
+
+        when:
+        def preview = new TransactionProcessor(config).processWalmartMatches(matches,ynab,true)
+
+        then:
+        writes.empty
+        !new File(config.walmartJournalFile).exists()
+        preview.preview[0].operations.size()==2
+        preview.updated==0
     }
-    
-    private WalmartOrder createNonDeliveredOrder() {
-        def order = new WalmartOrder()
-        order.orderId = "3456789012345"
-        order.orderDate = "2024-01-25"
-        order.orderStatus = "Processing"
-        order.totalAmount = -29.99  // Negative to match YNAB transaction format
-        order.addFinalCharge(-29.99)  // Negative to match YNAB transaction format
-        order.orderUrl = "https://www.walmart.com/orders/details?orderId=3456789012345"
-        
-        def item = new WalmartOrderItem()
-        item.title = "Phone Case"
-        item.price = -29.99  // Negative to match YNAB transaction format
-        item.quantity = 1
-        order.addItem(item)
-        
-        return order
+
+    def 'human change between snapshot and fresh read stops allocation for whole order'() {
+        given:
+        def txs = WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        remote.small.approved=true
+        def matches = new TransactionMatcher().findWalmartMatches(txs,[WalmartFixture.order()])
+
+        when:
+        def result = new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        writes.empty
+        result.preview*.reason.contains('parent_changed')
+        remote.small.approved
     }
-    
-    private YNABTransaction createWalmartTransaction(BigDecimal amount, String date, String payee = "WALMART.COM") {
-        def transaction = new YNABTransaction()
-        transaction.id = UUID.randomUUID().toString()
-        transaction.date = date
-        transaction.amount = -amount * 1000 as long // YNAB uses milliunits
-        transaction.payee_name = payee
-        transaction.memo = ""
-        return transaction
+
+    def 'restart resolves durable unknown intent before any retry and source drift stops remaining writes'() {
+        given:
+        def order=WalmartFixture.order()
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        def matches=new TransactionMatcher().findWalmartMatches(txs,[order])
+        failReadback=true
+
+        when:
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        thrown(IllegalStateException)
+        writes.size()==1
+
+        when:
+        order.adjustments << [kind:'tip',cents:100L]
+        def drift=new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        drift.preview*.reason==['applied_plan_drift']
+        writes.size()==1
+
+        when:
+        order.adjustments.removeLast()
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        writes*.id==['large','small']
+        new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> state.plans['plan/123'].operations.values().every { it.allocation && !it.pending } }
     }
-    
-    // ========== Subtask 7.1.1: Test complete flow with sample Walmart orders ==========
-    
-    def "should process single-charge Walmart order end-to-end"() {
-        given: "a delivered Walmart order with single charge"
-        WalmartOrder order = createSingleChargeOrder()
-        List<WalmartOrder> orders = [order]
-        
-        and: "a matching YNAB transaction"
-        YNABTransaction transaction = createWalmartTransaction(49.99, "2024-01-15")
-        List<YNABTransaction> transactions = [transaction]
-        
-        when: "matching and processing"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        Map<String, Integer> stats = processor.processWalmartMatches(matches, mockYnabService, true)
-        
-        then: "should find match and process successfully"
-        matches.size() == 1
-        matches[0].walmartOrder == order
-        matches[0].ynabTransaction == transaction
-        matches[0].confidenceScore >= 0.7
-        !matches[0].isMultiTransaction
-        
-        stats.updated == 1
-        stats.high_confidence >= 1
+
+    def 'a link-only run does not prevent later allocation with freshly fetched parents'() {
+        given:
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        config.walmartEnrichment='link_only'
+        def order=WalmartFixture.order()
+        new TransactionProcessor(config).processWalmartMatches(new TransactionMatcher().findWalmartMatches(txs,[order]),ynab,false)
+
+        when:
+        config.walmartEnrichment='exception_first'
+        txs.each { it.memo=remote[it.id].memo }
+        new TransactionProcessor(config).processWalmartMatches(new TransactionMatcher().findWalmartMatches(txs,[order]),ynab,false)
+
+        then:
+        writes.size()==4
+        writes.take(2).every { it.change.keySet()==['memo'] as Set }
+        writes.drop(2).every { it.change.approved==false }
+        remote.large.subtransactions.empty
+        remote.small.subtransactions*.category_id==[null,null]
     }
-    
-    def "should process multi-charge Walmart order end-to-end"() {
-        given: "a delivered Walmart order with multiple charges"
-        WalmartOrder order = createMultiChargeOrder()
-        List<WalmartOrder> orders = [order]
-        
-        and: "matching YNAB transactions"
-        YNABTransaction transaction1 = createWalmartTransaction(100.00, "2024-01-20")
-        YNABTransaction transaction2 = createWalmartTransaction(50.00, "2024-01-21")
-        List<YNABTransaction> transactions = [transaction1, transaction2]
-        
-        when: "matching and processing"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        Map<String, Integer> stats = processor.processWalmartMatches(matches, mockYnabService, true)
-        
-        then: "should find individual charge matches and process successfully"
-        matches.size() == 2  // Two individual matches
-        matches.every { it.walmartOrder == order }
-        matches.every { !it.isMultiTransaction }
-        matches.every { it.confidenceScore >= 0.7 }
-        
-        stats.updated == 2 // Both transactions updated
+
+    def 'only complete approved identifiable fragments teach products and corrections replace stale evidence'() {
+        given:
+        def order=WalmartFixture.order()
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        def matches=new TransactionMatcher().findWalmartMatches(txs,[order])
+        // No mappings: the $80 item fragments across $70/$30; all fragments must be approved.
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+        remote.large.approved=true
+        remote.large.category_id='h'
+
+        when:
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> !state.mappings['plan/food'] }
+
+        when:
+        remote.small.approved=true
+        remote.small.subtransactions[0].category_id='h'
+        remote.small.subtransactions[1].category_id='g'
+        remote.small.subtransactions=remote.small.subtransactions.reverse()
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> state.mappings['plan/food']==['h'] && state.mappings['plan/soap']==['g'] }
+        writes.size()==2
+
+        when:
+        remote.large.category_id='g'
+        remote.small.subtransactions.find { it.memo=='Apples' }.category_id='g'
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> state.mappings['plan/food']==['g'] }
+
+        when:
+        remote.small.subtransactions.find { it.memo=='Apples' }.amount=-9990
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> !state.mappings['plan/food'] }
+        writes.size()==2
     }
-    
-    def "should skip non-delivered orders"() {
-        given: "a non-delivered Walmart order"
-        WalmartOrder deliveredOrder = createSingleChargeOrder()
-        WalmartOrder nonDeliveredOrder = createNonDeliveredOrder()
-        List<WalmartOrder> orders = [deliveredOrder, nonDeliveredOrder]
-        
-        and: "matching YNAB transactions"
-        YNABTransaction transaction1 = createWalmartTransaction(49.99, "2024-01-15")
-        YNABTransaction transaction2 = createWalmartTransaction(29.99, "2024-01-25")
-        List<YNABTransaction> transactions = [transaction1, transaction2]
-        
-        when: "matching"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        
-        then: "should only match delivered order"
-        matches.size() == 1
-        matches[0].walmartOrder.orderId == deliveredOrder.orderId
-        matches[0].walmartOrder.isDelivered() == true
+}
+
+class WalmartFixture {
+    static WalmartOrder order() {
+        new WalmartOrder(orderId:'123',orderDate:'2026-11-20',orderStatus:'Delivered',currency:'USD',complete:true,totalAmount:100.00,
+            orderUrl:'https://www.walmart.com/orders/details?orderId=123',
+            items:[new WalmartOrderItem(itemId:'a',productId:'food',title:'Apples',quantity:1.25,grossCents:8000L),
+                new WalmartOrderItem(itemId:'b',productId:'soap',title:'Soap',quantity:2,grossCents:2000L)],
+            adjustments:[[kind:'tax',cents:500L],[kind:'fee',cents:300L],[kind:'tip',cents:200L],[kind:'discount',cents:1000L]],
+            charges:[[key:'c1',date:'2026-11-21',payment:'CREDITCARD:VISA:1234',currency:'USD',cents:7000L],
+                [key:'c2',date:'2026-11-22',payment:'CREDITCARD:VISA:1234',currency:'USD',cents:3000L]])
     }
-    
-    // ========== Subtask 7.1.2: Test with mixed Amazon and Walmart orders ==========
-    
-    def "should handle mixed Amazon and Walmart transactions"() {
-        given: "Walmart orders"
-        WalmartOrder walmartOrder = createSingleChargeOrder()
-        List<WalmartOrder> walmartOrders = [walmartOrder]
-        
-        and: "mixed YNAB transactions"
-        YNABTransaction walmartTx = createWalmartTransaction(49.99, "2024-01-15", "WALMART.COM")
-        YNABTransaction amazonTx = createWalmartTransaction(29.99, "2024-01-16", "AMAZON.COM")
-        YNABTransaction otherTx = createWalmartTransaction(19.99, "2024-01-17", "TARGET")
-        List<YNABTransaction> transactions = [walmartTx, amazonTx, otherTx]
-        
-        when: "matching Walmart orders"
-        List<TransactionMatch> walmartMatches = matcher.findWalmartMatches(transactions, walmartOrders)
-        
-        then: "should only match Walmart transaction"
-        walmartMatches.size() == 1
-        walmartMatches[0].transactions[0] == walmartTx
-        walmartMatches[0].transactions[0].payee_name.contains("WALMART")
+    static List<YNABTransaction> transactions() {
+        [new YNABTransaction(id:'large',date:'2026-11-21',amount:-70000L,payee_name:'WALMART',payee_id:'payee',memo:'User note',account_id:'account',cleared:'cleared',approved:'false',deleted:'false',import_id:'bank-import'),
+         new YNABTransaction(id:'small',date:'2026-11-22',amount:-30000L,payee_name:'WALMART',payee_id:'payee',memo:null,account_id:'account',cleared:'cleared',approved:'false',deleted:'false',import_id:'bank-import')]
     }
-    
-    // ========== Subtask 7.1.3: Test multi-transaction order scenarios ==========
-    
-    def "should match multi-transaction order with correct charge amounts"() {
-        given: "a Walmart order with 3 final charges"
-        def order = new WalmartOrder()
-        order.orderId = "4567890123456"
-        order.orderDate = "2024-02-01"
-        order.orderStatus = "Delivered"
-        order.totalAmount = -200.00
-        order.addFinalCharge(-100.00)
-        order.addFinalCharge(-60.00)
-        order.addFinalCharge(-40.00)
-        order.orderUrl = "https://www.walmart.com/orders/details?orderId=4567890123456"
-        
-        def item = new WalmartOrderItem()
-        item.title = "Electronics Bundle"
-        item.price = -200.00
-        item.quantity = 1
-        order.addItem(item)
-        
-        List<WalmartOrder> orders = [order]
-        
-        and: "matching YNAB transactions"
-        YNABTransaction tx1 = createWalmartTransaction(100.00, "2024-02-01")
-        YNABTransaction tx2 = createWalmartTransaction(60.00, "2024-02-02")
-        YNABTransaction tx3 = createWalmartTransaction(40.00, "2024-02-03")
-        List<YNABTransaction> transactions = [tx1, tx2, tx3]
-        
-        when: "matching"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        
-        then: "should match all three transactions individually to the order"
-        matches.size() == 3  // Three individual matches
-        matches.every { it.walmartOrder == order }
-        matches.every { !it.isMultiTransaction }
-        matches.every { it.confidenceScore >= 0.7 }
-        
-        // Verify order has multiple charges
-        order.hasMultipleCharges() == true
-        order.finalChargeAmounts.size() == 3
-    }
-    
-    def "should not match transactions with incorrect amounts"() {
-        given: "a Walmart order with specific charges"
-        WalmartOrder order = createMultiChargeOrder() // Charges: 100.00, 50.00
-        List<WalmartOrder> orders = [order]
-        
-        and: "YNAB transactions with wrong amounts"
-        YNABTransaction tx1 = createWalmartTransaction(100.00, "2024-01-20") // Matches first charge
-        YNABTransaction tx2 = createWalmartTransaction(40.00, "2024-01-21") // Wrong amount, doesn't match 50.00
-        List<YNABTransaction> transactions = [tx1, tx2]
-        
-        when: "matching"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        
-        then: "should only match the correct amount transaction"
-        matches.size() == 1  // Only tx1 matches
-        matches[0].ynabTransaction == tx1
-        matches[0].confidenceScore >= 0.7
-    }
-    
-    def "should handle transactions spread across multiple days"() {
-        given: "a Walmart order with multiple charges"
-        WalmartOrder order = createMultiChargeOrder()
-        List<WalmartOrder> orders = [order]
-        
-        and: "YNAB transactions spread across 5 days"
-        YNABTransaction tx1 = createWalmartTransaction(100.00, "2024-01-20")
-        YNABTransaction tx2 = createWalmartTransaction(50.00, "2024-01-25") // 5 days later
-        List<YNABTransaction> transactions = [tx1, tx2]
-        
-        when: "matching"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        
-        then: "should match both transactions individually if within 14-day window"
-        matches.size() == 2  // Two individual matches
-        matches.every { it.walmartOrder == order }
-        matches.every { !it.isMultiTransaction }
-    }
-    
-    // ========== Subtask 7.1.4: Test delivered vs non-delivered filtering ==========
-    
-    def "should only process delivered orders"() {
-        given: "orders with various statuses"
-        WalmartOrder deliveredOrder = createSingleChargeOrder()
-        deliveredOrder.orderStatus = "Delivered"
-        
-        WalmartOrder processingOrder = createNonDeliveredOrder()
-        processingOrder.orderStatus = "Processing"
-        
-        WalmartOrder shippedOrder = new WalmartOrder()
-        shippedOrder.orderId = "5678901234567"
-        shippedOrder.orderDate = "2024-01-30"
-        shippedOrder.orderStatus = "Shipped"
-        shippedOrder.totalAmount = -39.99
-        shippedOrder.addFinalCharge(-39.99)
-        
-        List<WalmartOrder> orders = [deliveredOrder, processingOrder, shippedOrder]
-        
-        and: "matching transactions"
-        YNABTransaction tx1 = createWalmartTransaction(49.99, "2024-01-15")
-        YNABTransaction tx2 = createWalmartTransaction(29.99, "2024-01-25")
-        YNABTransaction tx3 = createWalmartTransaction(39.99, "2024-01-30")
-        List<YNABTransaction> transactions = [tx1, tx2, tx3]
-        
-        when: "matching"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        
-        then: "should only match delivered order"
-        matches.size() == 1
-        matches[0].walmartOrder.orderStatus == "Delivered"
-        matches[0].walmartOrder.isDelivered() == true
-    }
-    
-    def "should verify isDelivered() method works correctly"() {
-        given: "orders with different statuses"
-        WalmartOrder delivered = createSingleChargeOrder()
-        delivered.orderStatus = "Delivered"
-        
-        WalmartOrder processing = createNonDeliveredOrder()
-        processing.orderStatus = "Processing"
-        
-        WalmartOrder cancelled = new WalmartOrder()
-        cancelled.orderStatus = "Cancelled"
-        
-        expect: "isDelivered() returns correct values"
-        delivered.isDelivered() == true
-        processing.isDelivered() == false
-        cancelled.isDelivered() == false
-    }
-    
-    // ========== Subtask 7.1.5: Test final charges vs temporary holds ==========
-    
-    def "should only use final charges for matching"() {
-        given: "a Walmart order with final charges specified"
-        WalmartOrder order = createMultiChargeOrder()
-        // Order has totalAmount of 150.00 but finalChargeAmounts of [100.00, 50.00]
-        // This simulates temporary hold being different from final charges
-        List<WalmartOrder> orders = [order]
-        
-        and: "YNAB transactions matching final charges"
-        YNABTransaction tx1 = createWalmartTransaction(100.00, "2024-01-20")
-        YNABTransaction tx2 = createWalmartTransaction(50.00, "2024-01-21")
-        List<YNABTransaction> transactions = [tx1, tx2]
-        
-        when: "matching"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        
-        then: "should match based on final charges, not total amount"
-        matches.size() == 2  // Two individual matches
-        matches.every { it.walmartOrder == order }
-        matches.every { !it.isMultiTransaction }
-        
-        // Verify it's using finalChargeAmounts
-        order.finalChargeAmounts.size() == 2
-        order.finalChargeAmounts.sum() == -150.00
-    }
-    
-    def "should ignore temporary holds in matching"() {
-        given: "a Walmart order where temporary hold differs from final charges"
-        def order = new WalmartOrder()
-        order.orderId = "6789012345678"
-        order.orderDate = "2024-02-10"
-        order.orderStatus = "Delivered"
-        order.totalAmount = -200.00 // This was the temporary hold
-        order.addFinalCharge(-180.00) // Final charge after adjustments
-        order.orderUrl = "https://www.walmart.com/orders/details?orderId=6789012345678"
-        
-        def item = new WalmartOrderItem()
-        item.title = "Discounted Item"
-        item.price = -180.00
-        item.quantity = 1
-        order.addItem(item)
-        
-        List<WalmartOrder> orders = [order]
-        
-        and: "YNAB transaction matching final charge"
-        YNABTransaction tx = createWalmartTransaction(180.00, "2024-02-10")
-        List<YNABTransaction> transactions = [tx]
-        
-        when: "matching"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        
-        then: "should match based on final charge amount"
-        matches.size() == 1
-        matches[0].ynabTransaction.amount == -180000 // milliunits
-        matches[0].confidenceScore >= 0.7
-    }
-    
-    // ========== Subtask 7.1.6: Test YNAB updates in dry-run mode ==========
-    
-    def "should log updates without modifying YNAB in dry-run mode"() {
-        given: "dry-run mode enabled"
-        config.dryRun = true
-        
-        and: "a Walmart order and matching transaction"
-        WalmartOrder order = createSingleChargeOrder()
-        List<WalmartOrder> orders = [order]
-        
-        YNABTransaction transaction = createWalmartTransaction(49.99, "2024-01-15")
-        List<YNABTransaction> transactions = [transaction]
-        
-        when: "matching and processing"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        Map<String, Integer> stats = processor.processWalmartMatches(matches, mockYnabService, true)
-        
-        then: "should process but not call YNAB service"
-        matches.size() == 1
-        stats.updated == 1
-        
-        // Verify YNAB service was not called
-        0 * mockYnabService.updateTransaction(_, _)
-    }
-    
-    def "should update YNAB when dry-run is disabled"() {
-        given: "dry-run mode disabled"
-        config.dryRun = false
-        
-        and: "a Walmart order and matching transaction"
-        WalmartOrder order = createSingleChargeOrder()
-        List<WalmartOrder> orders = [order]
-        
-        YNABTransaction transaction = createWalmartTransaction(49.99, "2024-01-15")
-        List<YNABTransaction> transactions = [transaction]
-        
-        when: "matching and processing"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        Map<String, Integer> stats = processor.processWalmartMatches(matches, mockYnabService, false)
-        
-        then: "should call YNAB service to update"
-        matches.size() == 1
-        stats.updated == 1
-        
-        // Verify YNAB service was called and returns success
-        1 * mockYnabService.updateTransactionMemo(_, _) >> true
-    }
-    
-    def "should generate correct memo format in dry-run"() {
-        given: "dry-run mode enabled"
-        config.dryRun = true
-        
-        and: "a single-charge Walmart order"
-        WalmartOrder order = createSingleChargeOrder()
-        List<WalmartOrder> orders = [order]
-        
-        YNABTransaction transaction = createWalmartTransaction(49.99, "2024-01-15")
-        transaction.memo = "Existing memo"
-        List<YNABTransaction> transactions = [transaction]
-        
-        when: "processing"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        processor.processWalmartMatches(matches, mockYnabService, true)
-        
-        then: "memo should be formatted correctly"
-        matches.size() == 1
-        def match = matches[0]
-        
-        // Verify memo would contain order link and product summary
-        def expectedMemo = transaction.memo + " | Walmart Order: ${order.orderId} - ${order.getProductSummary()}"
-        // Note: Actual memo generation happens in processor, this verifies the match data is correct
-        match.walmartOrder.orderId == "1234567890123"
-        match.walmartOrder.getProductSummary() == "Wireless Mouse"
-    }
-    
-    def "should generate correct memo format for multi-transaction orders"() {
-        given: "dry-run mode enabled"
-        config.dryRun = true
-        
-        and: "a multi-charge Walmart order"
-        WalmartOrder order = createMultiChargeOrder()
-        List<WalmartOrder> orders = [order]
-        
-        YNABTransaction tx1 = createWalmartTransaction(100.00, "2024-01-20")
-        tx1.memo = "First charge"
-        YNABTransaction tx2 = createWalmartTransaction(50.00, "2024-01-21")
-        tx2.memo = "Second charge"
-        List<YNABTransaction> transactions = [tx1, tx2]
-        
-        when: "processing"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        processor.processWalmartMatches(matches, mockYnabService, true)
-        
-        then: "should create individual matches for multi-charge order"
-        matches.size() == 2  // Two individual matches
-        matches.every { !it.isMultiTransaction }
-        matches.every { it.walmartOrder == order }
-        
-        // Verify order data for memo generation
-        order.hasMultipleCharges() == true
-        order.finalChargeAmounts.size() == 2
-    }
-    
-    // ========== Additional Integration Scenarios ==========
-    
-    def "should handle empty order list gracefully"() {
-        given: "no Walmart orders"
-        List<WalmartOrder> orders = []
-        
-        and: "YNAB transactions"
-        YNABTransaction transaction = createWalmartTransaction(49.99, "2024-01-15")
-        List<YNABTransaction> transactions = [transaction]
-        
-        when: "matching"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        
-        then: "should return empty matches"
-        matches.isEmpty()
-    }
-    
-    def "should handle empty transaction list gracefully"() {
-        given: "Walmart orders"
-        WalmartOrder order = createSingleChargeOrder()
-        List<WalmartOrder> orders = [order]
-        
-        and: "no transactions"
-        List<YNABTransaction> transactions = []
-        
-        when: "matching"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        
-        then: "should return empty matches"
-        matches.isEmpty()
-    }
-    
-    def "should process multiple orders and transactions correctly"() {
-        given: "multiple Walmart orders"
-        WalmartOrder order1 = createSingleChargeOrder()
-        WalmartOrder order2 = createMultiChargeOrder()
-        List<WalmartOrder> orders = [order1, order2]
-        
-        and: "matching YNAB transactions"
-        YNABTransaction tx1 = createWalmartTransaction(49.99, "2024-01-15")
-        YNABTransaction tx2 = createWalmartTransaction(100.00, "2024-01-20")
-        YNABTransaction tx3 = createWalmartTransaction(50.00, "2024-01-21")
-        List<YNABTransaction> transactions = [tx1, tx2, tx3]
-        
-        when: "matching and processing"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        Map<String, Integer> stats = processor.processWalmartMatches(matches, mockYnabService, true)
-        
-        then: "should match all transactions individually"
-        matches.size() == 3  // Three individual matches
-        
-        // All matches should be individual (not multi-transaction)
-        matches.every { !it.isMultiTransaction }
-        
-        // Should have matches for both orders
-        def order1Matches = matches.findAll { it.walmartOrder.orderId == order1.orderId }
-        def order2Matches = matches.findAll { it.walmartOrder.orderId == order2.orderId }
-        
-        order1Matches.size() == 1  // Single charge order
-        order2Matches.size() == 2  // Multi charge order
-        
-        // Total updates should be 3
-        stats.updated == 3
-    }
-    
-    def "should respect minimum confidence threshold"() {
-        given: "high confidence threshold"
-        // Note: TransactionProcessor uses config internally for threshold
-        processor = new TransactionProcessor(config)
-        
-        and: "a Walmart order with marginal match"
-        WalmartOrder order = createSingleChargeOrder()
-        order.orderDate = "2024-01-15"
-        List<WalmartOrder> orders = [order]
-        
-        YNABTransaction transaction = createWalmartTransaction(49.99, "2024-01-25") // 10 days later
-        List<YNABTransaction> transactions = [transaction]
-        
-        when: "matching and processing"
-        List<TransactionMatch> matches = matcher.findWalmartMatches(transactions, orders)
-        Map<String, Integer> stats = processor.processWalmartMatches(matches, mockYnabService, true)
-        
-        then: "should not update due to low confidence"
-        matches.isEmpty() || matches[0].confidenceScore < 0.9
-        stats.updated == 0
+    static Map remote(YNABTransaction tx) {
+        [id:tx.id,date:tx.date,amount:tx.amount,payee_name:tx.payee_name,payee_id:'payee',memo:tx.memo,category_id:tx.category_id,
+            account_id:tx.account_id,cleared:tx.getCleared(),approved:tx.isApproved(),deleted:false,import_id:tx.import_id,subtransactions:[]]
     }
 }

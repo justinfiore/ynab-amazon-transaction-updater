@@ -49,6 +49,8 @@ Thumbs.db
 config.yml
 amazon_orders.csv
 processed_transactions.json
+walmart-journal.json*
+walmart-session.json*
 amazonorders/
 *.cookie
 *.log

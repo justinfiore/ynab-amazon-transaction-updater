@@ -2,7 +2,7 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/justinfiore/ynab-amazon-transaction-updater)
 
-A Groovy application that automatically updates YNAB (You Need A Budget) transactions with retailer order details by matching transactions and updating the memo field with product summaries. Supports Amazon orders. Walmart fetching is unavailable pending the proposed Go integration.
+A Groovy application that updates YNAB (You Need A Budget) transactions with retailer order details. Supports Amazon orders and an optional native Go-backed Walmart ledger source. Walmart remains disabled by default; Laya model qualification is not complete.
 
 ## Features
 
@@ -15,7 +15,7 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
    - Optional Python order-history fetcher using `amazon-orders==6.0.0`
   - Special handling for Subscribe & Save orders with "S&S:" prefix
   - Automatic refund detection and processing with positive amounts
-- **Walmart (unavailable):** Existing order models, matching and processing logic remain, but there is no working order-fetching source. A Go-backed replacement is proposed in [PR #15](https://github.com/justinfiore/ynab-amazon-transaction-updater/pull/15).
+- **Walmart (optional):** Exact final-charge matching, metadata-only direct links and explicit exception-first allocation using existing categories. See [setup, safety and qualification limits](WALMART.md); no model profile is qualified yet.
 - Intelligently matches YNAB transactions with retailer orders
 - Updates transaction memos with product summaries
 - Tracks processed transactions to avoid duplicates
@@ -125,11 +125,11 @@ memo (appended once, preserving existing text). This is retryable, not a process
 marker: successful augmentation removes it. Dry runs never write it, and generic
 fetch failures do not trigger a login notice.
 
-#### Walmart Order Data Source (Unavailable)
+#### Optional Walmart Order Data Source
 
-The nonworking browser guest/login fetchers and their configuration have been removed without backwards compatibility. Keep `walmart.enabled: false`: setting it to `true` reports an explicit unavailable error. Only `walmart.enabled` remains recognized; remove all other Walmart settings from existing configuration files.
+The removed guest/login browser fetchers have no compatibility fallback. Build with `-Pwalmart` for the reviewed Go-backed native helper and import a protected browser capture manually. Disabled/link-only operation requires no Docker or model.
 
-The [proposed Go integration](https://github.com/justinfiore/ynab-amazon-transaction-updater/pull/15) will provide a replacement source. It is not implemented and cannot currently fetch orders.
+See [Walmart setup and safety](WALMART.md) for session provisioning, category onboarding, exact accounting and incomplete model/platform qualification. Start disabled with dry runs; no Laya profile is ready.
 
 ### 4. Configure the Application
 
@@ -227,15 +227,15 @@ java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
 2. **YNAB Integration**: Fetches transactions from your YNAB budget within the lookback period
 3. **Retailer Data Fetching**:
    - **Amazon**: Fetches order history from email (automatic parsing of order confirmations and Subscribe & Save notifications) or CSV file (fallback or manual option)
-   - **Walmart**: Fetching is unavailable; keep disabled pending Go integration
+   - **Walmart**: Optional reviewed Go helper and protected session; disabled by default
 4. **Transaction Matching**: Uses intelligent algorithms to match YNAB transactions with retailer orders:
    - **Amazon**: Amount (40%), Date (30%), Payee (20%), Memo (10%)
-   - **Walmart (retained logic, not an available workflow)**: Amount (70%), Date (20%), Payee (10%) - matches individual transactions to specific final charge amounts
+   - **Walmart**: Exact cents, final-charge dates and global unique assignment with optional payment/account evidence
 5. **Memo Updates**: Updates matched transactions with product summaries:
    - **Amazon Regular**: "Product Name" or "3 items: Product A, Product B, Product C"
    - **Amazon Subscribe & Save**: "S&S: Product Name" or "S&S: 3 items: Product A, Product B, Product C"
    - **Amazon Refunds**: "REFUND: Product Name" with positive amounts
-   - **Walmart (retained logic, not an available workflow)**: "[existing memo] | Walmart Order: [order_number] - [product_summary]"
+   - **Walmart**: "[existing memo] | 2026-11-20 | Total $100.00 | #[order_id] | [direct order URL]"; no generated parent item summary
 6. **Tracking**: Maintains a list of processed transactions to avoid duplicates
 
 ## Amazon Subscribe & Save Support
@@ -263,10 +263,10 @@ This ensures refunds are properly tracked in your budget without manual interven
 
 ## Walmart Individual Charge Matching
 
-Walmart often splits a single order into multiple credit card charges. The retained matcher supports individual final charge amounts, but fetching is unavailable, so this is not currently an end-to-end workflow. The proposed Go replacement will add stricter distinct-charge matching and optional proportional allocation.
+Walmart often splits a single order into multiple charges. The optional Go source retains distinct final-charge occurrences. Global exact matching skips ambiguity and never substitutes order totals. Optional exception-first allocation concentrates exceptions into few transactions; proportional allocation is not supported. See [WALMART.md](WALMART.md).
 
-**Retained matching concept (requires a future data source):**
-1. Obtain Walmart orders and their final charge history from the future source
+**Matching:**
+1. Obtain normalized final-charge history from the reviewed native helper
 2. Identifies only "Final Order Charges" (ignores "Temporary Hold" charges)
 3. Matches each YNAB transaction to a specific final charge amount from any order
 4. Updates matched transactions with Walmart order information
@@ -280,7 +280,7 @@ Walmart often splits a single order into multiple credit card charges. The retai
 - YNAB Transactions:
   - Transaction A: -$100.00, 2024-01-15, "WALMART.COM"
   - Transaction B: -$50.00, 2024-01-16, "WALMART.COM"
-- Intended result once fetching is implemented: Both transactions linked to Walmart Order #123
+- Result for a unique assignment: Both transactions linked to Walmart Order #123, each consuming its own charge
 
 ## CSV Format
 
@@ -309,7 +309,7 @@ Note: CSV files do not automatically include Subscribe & Save orders. Use email 
 Note: At least one Amazon data source (email or CSV) must be configured.
 
 ### Walmart Settings
-- `enabled`: Keep `false` (default). Setting `true` reports that fetching is unavailable pending Go integration. No other Walmart settings are recognized; the removed browser configuration has no compatibility path.
+- `enabled`: `false` by default. Requires a native helper and protected session when enabled. `enrichment` defaults to `link_only`; `exception_first` requires a valid existing shortlist/default. See [all settings and qualification blockers](WALMART.md). Removed browser settings have no compatibility path.
 
 ### Application Settings
 - `processed_transactions_file`: File to track processed transactions (default: "processed_transactions.json")
@@ -365,11 +365,7 @@ The application uses a weighted scoring system to match transactions:
 - **Memo Matching (10%)**: Checks for Amazon references in existing memos
 
 ### Walmart Individual Charge Matching
-Retained matcher only; Walmart fetching is unavailable pending Go integration.
-
-- **Amount Matching (70%)**: Compares transaction amount with individual final charge amounts
-- **Date Matching (20%)**: Checks if dates are within 7 days of each other
-- **Payee Matching (10%)**: Looks for Walmart-related payee names
+Walmart uses exact integer cents, a 14-day final-charge-date window and Walmart-related purchase payees, with optional account/payment mapping. Globally ambiguous assignments remain unchanged; no fuzzy confidence or order-total fallback applies. Confidence thresholds below refer to Amazon only.
 
 Confidence thresholds:
 - High confidence (≥80%): Automatically updated
@@ -422,9 +418,9 @@ Confidence thresholds:
    - Check that the dates and amounts match your YNAB transactions
    - Try running in dry-run mode with DEBUG logging to see matching details
 
-8. **Walmart fetching unavailable**
-   - Keep `walmart.enabled: false` until the proposed Go integration is implemented
-   - Remove all other Walmart settings; the browser guest/login paths have been removed without a compatibility fallback
+8. **Walmart helper/session unavailable**
+   - Keep disabled or install a matching `-Pwalmart` distribution and import a protected session; see [WALMART.md](WALMART.md)
+   - Refresh expired captures manually. The removed browser paths have no fallback; model/platform qualification remains incomplete.
 
 9. **API Rate Limits**
    - YNAB has rate limits; the application includes delays between requests

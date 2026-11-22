@@ -12,7 +12,11 @@ class YNABTransaction {
     Long amount
     String memo
     String payee_name
+    String payee_id
+    String flag_color
     String category_name
+    String category_id
+    List<Map> subtransactions = []
     String account_id
     String cleared
     String approved
@@ -65,4 +69,4 @@ class YNABTransaction {
     String toString() {
         return "YNABTransaction{id='${id}', date='${date}', amount=${amount}, memo='${memo}', payee='${payee_name}'}"
     }
-} 
+}

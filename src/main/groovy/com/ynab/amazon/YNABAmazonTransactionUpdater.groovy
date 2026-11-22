@@ -17,6 +17,10 @@ class YNABAmazonTransactionUpdater {
     
     static void main(String[] args) {
         try {
+            if (args && args[0] in ['--walmart-setup', '--walmart-categories']) {
+                com.ynab.amazon.service.WalmartOnboarding.run(new File(args.length>1 ? args[1] : 'config.yml'),args[0]=='--walmart-categories')
+                return
+            }
             logger.info("Starting YNAB Amazon Transaction Updater")
             
             // Load configuration
@@ -93,7 +97,8 @@ class YNABAmazonTransactionUpdater {
         def walmartOrders = []
         if (config.walmartEnabled && walmartService != null) {
             logger.info("Fetching Walmart orders...")
-            walmartOrders = walmartService.getOrders() ?: []
+            try { walmartOrders = walmartService.getOrders() ?: [] }
+            catch (Exception ignored) { logger.warn('Walmart retrieval failed; continuing Amazon processing without Walmart data') }
             logger.info("Found ${walmartOrders.size()} Walmart orders")
         } else {
             logger.info("Walmart integration is disabled, skipping Walmart order fetching")
@@ -133,7 +138,7 @@ class YNABAmazonTransactionUpdater {
         // Match and process Walmart orders if enabled
         if (config.walmartEnabled && walmartService != null && !walmartOrders.isEmpty()) {
             logger.info("Matching transactions with Walmart orders...")
-            def walmartMatches = matcher.findWalmartMatches(unprocessedTransactions, walmartOrders) ?: []
+            def walmartMatches = matcher.findWalmartMatches(ynabTransactions, walmartOrders, config.walmartPaymentAccounts) ?: []
             logger.info("Found ${walmartMatches.size()} potential Walmart matches")
             
             def walmartStats = processor.processWalmartMatches(walmartMatches, ynabService, config.isDryRun()) ?: [
@@ -150,4 +155,4 @@ class YNABAmazonTransactionUpdater {
             }
         }
     }
-} 
+}

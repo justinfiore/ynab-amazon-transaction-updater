@@ -5,30 +5,30 @@ All tasks are implementation work for a later apply phase. This proposal does no
 ## 1. Pinned helper and protected session input
 
 - [ ] 1.1 Add the optional repository-owned Go module using `walmart-client-go/v2` v2.2.1 at reviewed commit `d908f3d31ae1be088ad4a02ebe7f0b3dd2f70244`; check in checksums and verify reproducible builds, `go mod verify` and dependency advisory review without credentials.
-- [ ] 1.2 Define versioned minimal JSON input/output, completeness/error categories and query bounds; verify fixture/schema tests omit addresses, cookies, raw responses and unsupported success payloads.
+- [x] 1.2 Define versioned minimal JSON input/output, completeness/error categories and query bounds; verify fixture/schema tests omit addresses, cookies, raw responses and unsupported success payloads.
 - [ ] 1.3 Implement safe local browser-capture parsing and protected session-file writes without shell execution; verify malicious capture text cannot execute and owner-only permissions/ACL behavior is covered on supported platforms.
-- [ ] 1.4 Enforce Walmart-only HTTPS destinations, redirects, TLS and bounded requests/pagination in the helper, replacing unsafe upstream defaults where needed; verify fake-server/transport tests reject off-site, insecure, stale-session and oversized/error cases without secret diagnostics.
-- [ ] 1.5 Document optional helper build, capture/session provisioning, expiration, disposal, toolchain/platform support and OS isolation limits; verify the documented build works without login and ordinary application installation requires no Go/helper.
+- [x] 1.4 Enforce Walmart-only HTTPS destinations, redirects, TLS and bounded requests/pagination in the helper, replacing unsafe upstream defaults where needed; verify fake-server/transport tests reject off-site, insecure, stale-session and oversized/error cases without secret diagnostics.
+- [x] 1.5 Document optional helper build, capture/session provisioning, expiration, disposal, toolchain/platform support and OS isolation limits; verify the documented build works without login and ordinary application installation requires no Go/helper.
 - [ ] 1.6 Add opt-in `-Pwalmart` Gradle lifecycle wiring for helper/test compilation, Go unit/integration tests, check/build, clean and installDist/distZip/distTar. Provision a pinned build-host Go SDK with checked-in archive hashes and read-only modules, disable implicit SDK switching, declare incremental inputs/outputs and emit target-labeled Walmart distributions containing the helper/onboarding script but no compiler, weights or secrets. Verify base builds perform no Go resolution/download, enabled failures fail Gradle, cached offline builds work and uncached offline builds fail clearly.
 
 ## 2. Ledger source and exact normalization
 
-- [ ] 2.1 Add helper/session paths and positive time/output settings to configuration and `WalmartService` as the sole fetching source gated by `walmart.enabled` (default `false`); document these new settings and verify disabled operation needs no helper, removed guest/login settings have no compatibility aliases or fallback, and Amazon environment isolation remains unchanged.
-- [ ] 2.2 Add the bounded Go-backed Groovy fetcher with source-scoped environment filtering; verify timeout, excess output, invalid schema, nonzero exit and stale-auth fixtures return no usable failed-fetch payload while other retailers continue.
+- [x] 2.1 Add helper/session paths and positive time/output settings to configuration and `WalmartService` as the sole fetching source gated by `walmart.enabled` (default `false`); document these new settings and verify disabled operation needs no helper, removed guest/login settings have no compatibility aliases or fallback, and Amazon environment isolation remains unchanged.
+- [x] 2.2 Add the bounded Go-backed Groovy fetcher with source-scoped environment filtering; verify timeout, excess output, invalid schema, nonzero exit and stale-auth fixtures return no usable failed-fetch payload while other retailers continue.
 - [ ] 2.3 Normalize distinct payment-charge occurrences, dates, currency, completeness and stable keys; verify repeated equal-valued charges remain distinct, holds/refunds are excluded and malformed/misaligned ledgers fail split eligibility.
 - [ ] 2.4 Normalize items, decimal quantities, pre-discount extended costs and separately identified discounts/tax/fees/tips; verify weighted items, duplicate display groups, net-versus-gross discount evidence without double counting, cancellations, unsupported precision/currency and unexplained residuals with independently expected fixture totals.
 
 ## 3. Unique matching and durable links
 
-- [ ] 3.1 Extend `TransactionMatch` and ledger matching with global candidate resolution, exact cents, charge dates and optional account/payment mapping; document mapping and verify no charge reuse or order-total fallback, equal-charge multiplicity and cross-order/account ambiguity.
-- [ ] 3.2 Replace generated Walmart parent item summaries with metadata-only enrichment: order date, full order total/currency, order ID and direct validated URL, preserving existing user memo; document an example and verify multi-charge totals, duplicate runs, unsafe URLs, no shortener calls, absence of item names and skip-on-overflow within 500 characters.
+- [x] 3.1 Extend `TransactionMatch` and ledger matching with global candidate resolution, exact cents, charge dates and optional account/payment mapping; document mapping and verify no charge reuse or order-total fallback, equal-charge multiplicity and cross-order/account ambiguity.
+- [x] 3.2 Replace generated Walmart parent item summaries with metadata-only enrichment: order date, full order total/currency, order ID and direct validated URL, preserving existing user memo; document an example and verify multi-charge totals, duplicate runs, unsafe URLs, no shortener calls, absence of item names and skip-on-overflow within 500 characters.
 - [ ] 3.3 Add ledger dry-run reporting and source-specific skip reasons without marking completion; document preview and verify representative matches, failures and ambiguous assignments produce no HTTP writes.
 
 ## 4. Existing-category mapping and exception-first allocation
 
 - [ ] 4.1 Add existing-category catalog reads and explicit category-ID shortlist/default validation with optional boundary descriptions; implement approved product mapping precedence and uncategorized unresolved exceptions, not automatic default fallback. Verify empty/duplicate/absent-default lists, renamed/deleted/hidden/special categories, out-of-list mappings, conflicting human evidence and plan isolation without category creation/suggestions or hosted data uploads.
-- [ ] 4.2 Implement exact-cent reconciliation with all taxes, fees, tips and separately identified item/order discounts in the default category. Verify independent expected positive, zero and negative-default examples, exception-item discounts, unknown discount semantics and no artificial balancing lines.
-- [ ] 4.3 Require all final charges to match initially eligible unapproved, unsplit transactions before category allocation; verify missing gift-card/payment, approved/preexisting-split parent, zero/unsupported total, mismatch and refund cases stay link-only at most without partial allocation or a proportional fallback.
+- [x] 4.2 Implement exact-cent reconciliation with all taxes, fees, tips and separately identified item/order discounts in the default category. Verify independent expected positive, zero and negative-default examples, exception-item discounts, unknown discount semantics and no artificial balancing lines.
+- [x] 4.3 Require all final charges to match initially eligible unapproved, unsplit transactions before category allocation; verify missing gift-card/payment, approved/preexisting-split parent, zero/unsupported total, mismatch and refund cases stay link-only at most without partial allocation or a proportional fallback.
 - [ ] 4.4 Implement deterministic descending-capacity selection and stable item filling to minimize exception-bearing transaction count. Verify independent expected $70/$30 and multi-transaction cases, equal-capacity ties, input-order independence, exact exception/transaction totals, item fragmentation, no-exception orders, zero remainders and single-line category-only writes.
 - [ ] 4.5 Add explicit `link_only`/`exception_first` configuration and diagnostic preview; document compact memos, default-plus-exceptions accounting, adjustment policy, complete-payment requirements and immediate budget effects. No grocery itemization or required second review interface.
 - [ ] 4.6 Implement the sole initial CPU-only Laya classic adapter in a Docker worker with a bounded decision contract. Explicitly select classic rather than Vega/router; defer Kev entirely to a future proposal. Do not mark a checkpoint supported until its CPU, memory, license and quality gates pass; unavailable profiles fail closed without substitution.
@@ -42,7 +42,7 @@ All tasks are implementation work for a later apply phase. This proposal does no
 
 ## 5. Safe YNAB split updates and recovery
 
-- [ ] 5.1 Extend YNAB DTOs/read-back and PUT payloads for category-only and unsplit-to-split updates; verify fake-server/schema tests preserve identity/amount/cleared state/memo, explicitly retain `approved: false`, null parent category only for splits, omit subtransactions for single-category writes and use exact negative milliunits.
+- [x] 5.1 Extend YNAB DTOs/read-back and PUT payloads for category-only and unsplit-to-split updates; verify fake-server/schema tests preserve identity/amount/cleared state/memo, explicitly retain `approved: false`, null parent category only for splits, omit subtransactions for single-category writes and use exact negative milliunits.
 - [ ] 5.2 Enforce fresh-read eligibility and preserve approval/user work; verify initially approved or preexisting-split parents, tracking accounts, transfers, reconciled/deleted parents, special categories and concurrent edits are skipped without unapproving, replacing or rewriting them. Link-only mode preserves categories/approval.
 - [ ] 5.3 Add protected atomic allocation journaling with local application serialization and separate per-charge link/category/split/review status plus item-to-line provenance. Verify a link-only parent can later allocate, prior journaled writes are recognized, category-only operations are not repeated and partial writes retry only unfinished operations.
 - [ ] 5.4 Verify unknown category/split write outcomes by remote read-back against saved intent, and stop after any applied-plan drift/conflicts; cover accepted-but-response-lost, rejected, changed-tip/ledger/category settings and user edits, and document manual recovery and non-atomicity across transactions.
@@ -55,3 +55,21 @@ All tasks are implementation work for a later apply phase. This proposal does no
 - [ ] 6.3 Add CI coverage for base and `-Pwalmart` Gradle lifecycles and supported native OS/architecture packaging. Verify JVM-to-helper fixture execution and distribution launch without Go on PATH, correct target/executable permissions, SDK hash rejection, enabled/disabled builds in either order without stale artifacts, clean/incremental behavior and aggregated test reporting; no account credentials or model downloads.
 - [ ] 6.4 Qualify and document Laya Linux amd64/arm64 container images and native onboarding on Linux x86_64, Apple Silicon macOS arm64 and Windows x86_64. Disclose Docker Desktop backend/WSL2/Hyper-V prerequisites without requiring application commands in WSL. Verify host/engine/image filtering before token/download, missing Docker/no-fitting-profile cases, Intel Mac and other unsupported explanations, unchanged-config/link-only handling and no silent emulation or dependency downgrade. Publish tested engine/image/Python/dependency versions, container versus host memory/latency and isolation limits; untested matrix entries remain unqualified regardless of Go binary availability.
 - [ ] 6.5 Add resource-aware onboarding before model selection: default 1 GB RAM with explicit increases up to 2 GB, stable byte-unit storage and measured fitting-profile recommendations with headroom. Verify exact fit/headroom boundaries, missing measurements, explicit increase/cancel paths, no fitting profile, saved-budget reuse and worker-tree load/inference overruns. Distinguish model runtime RAM from disk/download and whole-application RAM; qualify quantized variants independently and do not invent latency targets or silently exceed the selected budget.
+
+## Apply progress and remaining qualification
+
+The implementation branch contains a verified Linux amd64 app/helper foundation,
+not a completed model-capable release. Unchecked tasks include partial work whose
+full acceptance matrix has not passed. In particular: the Go normalizer fails
+closed on unproven currency/discount semantics; Windows session/journal ACLs are
+not implemented; diagnostic reporting and the broader category/learning edge-case
+matrix still need completion; native CI/matrix execution is not established.
+
+Laya's qualified registry is empty. FP32 exceeded the model memory ceiling;
+multilingual BF16's measured quality failed. Full locked worker/image release,
+independent full-token preservation, provisioning, cache/deadline containment and
+host-platform qualification remain incomplete. Do not check these tasks merely
+because host-side launcher scaffolding or native synthetic measurements exist.
+Public artifacts need no token; any future hidden read-scoped token is optional
+and provisioning-only on an actual access/rate-limit failure. Kev remains outside
+the initial integration despite separately authorized experimental evaluation.

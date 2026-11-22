@@ -13,6 +13,7 @@ class TransactionMatch {
     List<YNABTransaction> transactions  // Support for multi-transaction matches
     AmazonOrder amazonOrder
     WalmartOrder walmartOrder
+    Map walmartCharge
     String proposedMemo
     double confidenceScore
     String matchReason
@@ -69,4 +70,4 @@ class TransactionMatch {
         String retailer = amazonOrder ? "Amazon" : "Walmart"
         return "TransactionMatch{ynabId='${ynabTransaction?.id}', ${retailer}OrderId='${orderId}', confidence=${confidenceScore}, multiTx=${isMultiTransaction}, reason='${matchReason}'}"
     }
-} 
+}

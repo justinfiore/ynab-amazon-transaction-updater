@@ -13,6 +13,6 @@ class WalmartService {
 
     List<WalmartOrder> getOrders() {
         if (!config.walmartEnabled) return []
-        throw new IllegalStateException('Walmart fetching is unavailable; browser fetching was removed. Set walmart.enabled to false until the Go integration is implemented.')
+        return new GoWalmartOrderFetcher(config).fetchOrders()
     }
 }

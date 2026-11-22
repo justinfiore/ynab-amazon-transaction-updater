@@ -649,8 +649,7 @@ class TransactionMatcher_UT extends Specification {
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"  // Make sure it's delivered
-        order.addFinalCharge(-100.00)
-        order.addFinalCharge(-50.00)
+        order.charges = ledgerCharges(order, [100.00, 50.00])
         def orders = [order]
         
         when: "findWalmartMatches is called"
@@ -671,8 +670,7 @@ class TransactionMatcher_UT extends Specification {
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"  // Make sure it's delivered
-        order.addFinalCharge(-100.00)
-        order.addFinalCharge(-50.00)
+        order.charges = ledgerCharges(order, [100.00, 50.00])
         def orders = [order]
         
         when: "findWalmartMatches is called"
@@ -697,9 +695,7 @@ class TransactionMatcher_UT extends Specification {
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"  // Make sure it's delivered
-        order.addFinalCharge(-50.00)
-        order.addFinalCharge(-50.00)
-        order.addFinalCharge(-50.00)
+        order.charges = ledgerCharges(order, [50.00, 50.00, 50.00])
         def orders = [order]
         
         when: "findWalmartMatches is called"
@@ -725,8 +721,7 @@ class TransactionMatcher_UT extends Specification {
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"  // Make sure it's delivered
         // Final charges are different from transaction amounts
-        order.addFinalCharge(-100.00)
-        order.addFinalCharge(-50.00)
+        order.charges = ledgerCharges(order, [100.00, 50.00])
         def orders = [order]
         
         when: "findWalmartMatches is called"
@@ -801,8 +796,7 @@ class TransactionMatcher_UT extends Specification {
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"
-        order.addFinalCharge(-100.00)
-        order.addFinalCharge(-50.00)
+        order.charges = ledgerCharges(order, [100.00, 50.00])
         def orders = [order]
         
         when: "findWalmartMatches is called"
@@ -823,8 +817,7 @@ class TransactionMatcher_UT extends Specification {
         
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"
-        order.addFinalCharge(-100.00)
-        order.addFinalCharge(-50.00)
+        order.charges = ledgerCharges(order, [100.00, 50.00])
         def orders = [order]
         
         when: "findWalmartMatches is called"
@@ -860,88 +853,77 @@ class TransactionMatcher_UT extends Specification {
         "TRANSFER: WALMART"    | false  // Blacklisted
     }
     
-    def "generateWalmartProposedMemo should handle single item orders"() {
+    def "Walmart parent metadata excludes item names"() {
         given: "a Walmart order with a single item"
         def transaction = createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART")
         def walmartOrder = createSampleWalmartOrder("1234", "2023-05-15", 25.99)
         walmartOrder.addItem(createSampleWalmartOrderItem("Test Product", 25.99, 1))
         
-        when: "generateWalmartProposedMemo is called"
-        def method = TransactionMatcher.getDeclaredMethod("generateWalmartProposedMemo", 
-            YNABTransaction, com.ynab.amazon.model.WalmartOrder)
-        method.setAccessible(true)
-        def memo = method.invoke(matcher, transaction, walmartOrder)
+        when:
+        def memo = matcher.findWalmartMatches([transaction], [walmartOrder])[0].proposedMemo
         
         then: "the memo should contain the order ID and item title"
-        memo == "Walmart Order: 1234 - Test Product"
+        memo == '2023-05-15 | Total $25.99 | #1234 | https://www.walmart.com/orders/details?orderId=1234'
+        !memo.contains('Test Product')
     }
     
-    def "generateWalmartProposedMemo should handle single transaction format"() {
+    def "Walmart parent metadata labels full total not charge"() {
         given: "a Walmart order with multiple items"
         def transaction = createSampleTransaction("tx1", "2023-05-15", 50.00, "WALMART")
         def walmartOrder = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         walmartOrder.addItem(createSampleWalmartOrderItem("Product A", 50.00, 1))
         walmartOrder.addItem(createSampleWalmartOrderItem("Product B", 100.00, 1))
+        walmartOrder.charges = ledgerCharges(walmartOrder, [50.00, 100.00])
         
-        when: "generateWalmartProposedMemo is called"
-        def method = TransactionMatcher.getDeclaredMethod("generateWalmartProposedMemo", 
-            YNABTransaction, com.ynab.amazon.model.WalmartOrder)
-        method.setAccessible(true)
-        def memo = method.invoke(matcher, transaction, walmartOrder)
+        when:
+        def memo = matcher.findWalmartMatches([transaction], [walmartOrder])[0].proposedMemo
         
         then: "the memo should use single transaction format"
-        memo.contains("Walmart Order: 1234 - ")
+        memo.startsWith('2023-05-15 | Total $150.00 | #1234 | ')
         !memo.contains("Charge")
     }
     
-    def "generateWalmartProposedMemo should preserve existing memo"() {
+    def "Walmart parent metadata preserves existing memo"() {
         given: "a transaction with existing memo and a Walmart order"
         def transaction = createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART", "Original memo")
         def walmartOrder = createSampleWalmartOrder("1234", "2023-05-15", 25.99)
         walmartOrder.addItem(createSampleWalmartOrderItem("Test Product", 25.99, 1))
         
-        when: "generateWalmartProposedMemo is called"
-        def method = TransactionMatcher.getDeclaredMethod("generateWalmartProposedMemo", 
-            YNABTransaction, com.ynab.amazon.model.WalmartOrder)
-        method.setAccessible(true)
-        def memo = method.invoke(matcher, transaction, walmartOrder)
+        when:
+        def memo = matcher.findWalmartMatches([transaction], [walmartOrder])[0].proposedMemo
         
         then: "the memo should preserve the original memo"
-        memo == "Original memo | Walmart Order: 1234 - Test Product"
+        memo == 'Original memo | 2023-05-15 | Total $25.99 | #1234 | https://www.walmart.com/orders/details?orderId=1234'
     }
     
-    def "calculateIndividualChargeMatchScore should return high score for exact total match"() {
+    def "Walmart never falls back to whole order total"() {
         given: "a transaction and order with exact amount and same date"
         def transaction = createSampleTransaction("tx1", "2023-05-15", 25.99, "WALMART")
         def order = createSampleWalmartOrder("1234", "2023-05-15", 25.99)
         order.orderStatus = "Delivered"
+        order.charges = []
         
-        when: "calculateIndividualChargeMatchScore is called with order total"
-        def method = TransactionMatcher.getDeclaredMethod("calculateIndividualChargeMatchScore", 
-            YNABTransaction, com.ynab.amazon.model.WalmartOrder, BigDecimal)
-        method.setAccessible(true)
-        def score = method.invoke(matcher, transaction, order, order.totalAmount)
+        when:
+        def matches = matcher.findWalmartMatches([transaction], [order])
         
         then: "score should be high (0.8 or above)"
-        score >= 0.8
+        matches.empty
     }
     
-    def "calculateIndividualChargeMatchScore should return high score for exact charge match"() {
+    def "Walmart exact charge retains occurrence identity"() {
         given: "a transaction that matches a specific final charge amount"
         def transaction = createSampleTransaction("tx1", "2023-05-15", 100.00, "WALMART")
         def order = createSampleWalmartOrder("1234", "2023-05-15", 150.00)
         order.orderStatus = "Delivered"
-        order.addFinalCharge(-100.00)
-        order.addFinalCharge(-50.00)
+        order.charges = ledgerCharges(order, [100.00, 50.00])
         
-        when: "calculateIndividualChargeMatchScore is called"
-        def method = TransactionMatcher.getDeclaredMethod("calculateIndividualChargeMatchScore", 
-            YNABTransaction, com.ynab.amazon.model.WalmartOrder, BigDecimal)
-        method.setAccessible(true)
-        def score = method.invoke(matcher, transaction, order, new BigDecimal(-100.00))
+        when:
+        def matches = matcher.findWalmartMatches([transaction], [order])
         
         then: "score should be high (0.8 or above)"
-        score >= 0.8
+        matches.size() == 1
+        matches[0].walmartCharge.key == '1234-0'
+        matches[0].walmartCharge.cents == 10000L
     }
     
     // Helper method to create Walmart order
@@ -950,9 +932,17 @@ class TransactionMatcher_UT extends Specification {
         order.orderId = orderId
         order.orderDate = orderDate
         order.orderStatus = "Delivered"
-        // Walmart amounts should be negative for purchases (same as YNAB transactions)
-        order.totalAmount = -totalAmount
+        order.totalAmount = totalAmount
+        order.currency = 'USD'
+        order.orderUrl = order.orderLink
+        order.charges = ledgerCharges(order, [totalAmount])
         return order
+    }
+
+    private List<Map> ledgerCharges(def order, List<BigDecimal> amounts) {
+        amounts.withIndex().collect { amount, index ->
+            [key: "${order.orderId}-${index}".toString(), cents: amount.movePointRight(2).longValueExact(), date: order.orderDate, currency: 'USD', payment: 'CREDITCARD:VISA:1234']
+        }
     }
     
     // Helper method to create Walmart order item
