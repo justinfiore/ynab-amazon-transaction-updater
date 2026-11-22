@@ -2,7 +2,7 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/justinfiore/ynab-amazon-transaction-updater)
 
-A Groovy application that updates YNAB (You Need A Budget) transactions with retailer order details. Supports Amazon orders and an optional native Go-backed Walmart ledger source. Walmart remains disabled by default; Laya model qualification is not complete.
+A Groovy application that updates YNAB (You Need A Budget) transactions with retailer order details. Supports Amazon orders and an optional native Go-backed Walmart ledger source. Groovy owns Walmart processing and optional paid OpenAI Decisions/TypeSafe Jev inference. Walmart remains disabled by default; live provider quality and the native platform matrix are not qualified.
 
 ## Features
 
@@ -127,9 +127,9 @@ fetch failures do not trigger a login notice.
 
 #### Optional Walmart Order Data Source
 
-The removed guest/login browser fetchers have no compatibility fallback. Build with `-Pwalmart` for the reviewed Go-backed native helper and import a protected browser capture manually. Disabled/link-only operation requires no Docker or model.
+The removed guest/login browser fetchers have no compatibility fallback. Build with `-Pwalmart` for the reviewed retrieval-only Go helper and import a protected browser capture manually. Disabled/link-only operation requires no inference key. There is no local-model runtime or OAuth route.
 
-See [Walmart setup and safety](WALMART.md) for session provisioning, category onboarding, exact accounting and incomplete model/platform qualification. Start disabled with dry runs; no Laya profile is ready.
+See [Walmart setup and safety](WALMART.md) for protected provider-key/category onboarding, synthetic comparison, exact accounting and incomplete quality/platform qualification. Start disabled with dry runs; no paid provider quality is claimed from mock tests.
 
 ### 4. Configure the Application
 

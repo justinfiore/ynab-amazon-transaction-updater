@@ -15,7 +15,7 @@ This proposal branch tracks target contracts, not completion of the separate par
 
 - [x] 2.1 Add helper/session paths and positive time/output settings to configuration and `WalmartService` as the sole fetching source gated by `walmart.enabled` (default `false`); document these new settings and verify disabled operation needs no helper, removed guest/login settings have no compatibility aliases or fallback, and Amazon environment isolation remains unchanged.
 - [x] 2.2 Add the bounded Go-backed Groovy fetcher with source-scoped environment filtering; verify timeout, excess output, invalid schema, nonzero exit and stale-auth fixtures return no usable failed-fetch payload while other retailers continue.
-- [ ] 2.3 Keep Go retrieval-only: preserve minimal source decimals, repeated ledger entries, original status/type and completeness without financial decisions. Move any existing helper domain normalization into Groovy. In Groovy normalize distinct final-charge occurrences, dates, currency and stable keys; verify equal-valued multiplicity, holds/refunds and malformed/misaligned ledgers. Verify successful empty history emits orders:[] while missing/null arrays remain invalid.
+- [x] 2.3 Keep Go retrieval-only: preserve minimal source decimals, repeated ledger entries, original status/type and completeness without financial decisions. Move any existing helper domain normalization into Groovy. In Groovy normalize distinct final-charge occurrences, dates, currency and stable keys; verify equal-valued multiplicity, holds/refunds and malformed/misaligned ledgers. Verify successful empty history emits orders:[] while missing/null arrays remain invalid.
 - [ ] 2.4 In Groovy normalize items, decimal quantities, pre-discount extended costs and separately identified discounts/tax/fees/tips; verify weighted items, duplicate display groups, net-versus-gross discount evidence without double counting, cancellations, unsupported precision/currency and unexplained residuals with independently expected fixture totals.
 
 ## 3. Unique matching and durable links
@@ -31,8 +31,8 @@ This proposal branch tracks target contracts, not completion of the separate par
 - [x] 4.3 Require all final charges to match initially eligible unapproved, unsplit transactions before category allocation; verify missing gift-card/payment, approved/preexisting-split parent, zero/unsupported total, mismatch and refund cases stay link-only at most without partial allocation or a proportional fallback.
 - [ ] 4.4 Implement deterministic descending-capacity selection and stable item filling to minimize exception-bearing transaction count. Verify independent expected $70/$30 and multi-transaction cases, equal-capacity ties, input-order independence, exact exception/transaction totals, item fragmentation, no-exception orders, zero remainders and single-line category-only writes.
 - [ ] 4.5 Add explicit `link_only`/`exception_first` configuration and diagnostic preview; document compact memos, default-plus-exceptions accounting, adjustment policy, complete-payment requirements and immediate budget effects. No grocery itemization or required second review interface.
-- [ ] 4.6 Implement direct Groovy API-key OpenAI Decisions (gpt-6-luna) with complete correlated choice distributions/confidence and bounded requests. Verify official wire schemas and explicit model selection; no OAuth/Responses/subscription route or provider/billing fallback. Remove abandoned local-model runtime/registry/provisioning/config paths without affecting Amazon's Python bridge.
-- [ ] 4.7 Implement direct Groovy TypeSafe Jev (jev-1.14.0, /v1/systemone) with separate state/questions/criteria and named-answer schema adaptation to the common decision contract. Verify provider-specific limits, concrete model validation, full probabilities/confidence/usage and no floating alias, OpenRouter intermediary or cross-provider key forwarding. Use existing JVM HTTP/JSON, no Python/JS SDK.
+- [x] 4.6 Implement direct Groovy API-key OpenAI Decisions (gpt-6-luna) with complete correlated choice distributions/confidence and bounded requests. Verify official wire schemas and explicit model selection; no OAuth/Responses/subscription route or provider/billing fallback. Remove abandoned local-model runtime/registry/provisioning/config paths without affecting Amazon's Python bridge.
+- [x] 4.7 Implement direct Groovy TypeSafe Jev (jev-1.14.0, /v1/systemone) with separate state/questions/criteria and named-answer schema adaptation to the common decision contract. Verify provider-specific limits, concrete model validation, full probabilities/confidence/usage and no floating alias, OpenRouter intermediary or cross-provider key forwarding. Use existing JVM HTTP/JSON, no Python/JS SDK.
 - [ ] 4.8 Implement meaningful shortlisted choices mapped to stable local IDs plus abstention and independently qualified provider-specific acceptance. Verify invalid/non-finite/out-of-list/incomplete results, duplicate JSON keys/question names, inconsistent argmax/distributions, refusals, conflicting mappings, limits without silent truncation, hostile product text and failures never become defaults/writes. Keep monetary allocation in Groovy.
 - [ ] 4.9 Implement separate protected provider-key records, atomic setup/replacement/disconnection and POSIX/Windows access checks. Verify no keys in YAML/arguments/Go/logs/fingerprints, no auth-refresh/replay loops, exact origin/redirect isolation, JSON/deadline/concurrency/request/token bounds and bounded transient retries. Disabled/link-only needs no provider requests; mappings/cache hits avoid inference. Disconnect explains console revocation rather than claiming remote deletion.
 - [ ] 4.10 Add a separate Groovy synthetic/public comparison command with explicit two-provider paid consent/budgets, no Walmart sessions/YNAB writes/production-cache effects and identical frozen inputs/shortlist/policy. Report raw/accepted accuracy/coverage, exception recall, default precision, abstention, latency, usage/retries and cost per 1,000 items, distinguishing dated estimates/unknowns from actual billed cost. Separate calibration from held-out evaluation and independently qualify providers before support claims. Default tests mock both; live runs require authorization and keys, no private purchases.
@@ -58,15 +58,24 @@ This proposal branch tracks target contracts, not completion of the separate par
 
 ## Apply progress and remaining qualification
 
-The implementation branch contains a verified Linux amd64 app/helper foundation,
-not a completed provider-capable release. Unchecked tasks include partial work whose
-full acceptance matrix has not passed. In particular: the Go normalizer fails
-closed on unproven currency/discount semantics; Windows session/journal ACLs are
-not implemented; diagnostic reporting and the broader category/learning edge-case
-matrix still need completion; native CI/matrix execution is not established.
+The Linux amd64 implementation now has retrieval-only Go evidence transport,
+Groovy financial normalization and two bounded paid-provider wire adapters.
+Abandoned local runtime/registry/config paths are removed. Account-free tests
+exercise both adapters, malformed/partial distributions, independent confidence,
+abstention, scoped credentials, request/token reservations, transient retries,
+confirmed key/category activation and a frozen 12-calibration/60-heldout
+comparison with metric/cost arithmetic. Mock provider decisions also run through
+real fake-server YNAB allocation, restart/cache reuse and frozen-policy drift.
 
-Paid OpenAI Decisions and direct TypeSafe Jev replace the abandoned local-model
-paths. Existing monetary/recovery tests remain relevant; retrieval-only Go,
-Groovy normalization, provider contracts, consent/key onboarding, caches and
-comparison acceptance must be verified against the revised proposal. No live
-paid quality qualification or remote account writes are authorized by apply.
+Checked provider-adapter tasks mean official schema plus mock verification,
+not paid endpoint access or qualified predictive quality. Setup leaves both
+providers unqualified; production inference refuses that state. No live paid
+inference or account writes have been performed or authorized by apply.
+
+Unchecked tasks still include partially implemented contracts, not just absent
+code: actual paid quality/calibration/latency/cost, Windows owner-only ACLs,
+hidden-console/native host matrix and real HTTPS deadline/containment tests;
+the broader normalization/category/learning/diagnostic acceptance matrices;
+and cross-platform CI/packaging execution. Groovy fails closed on unproven
+currency/discount semantics rather than claiming a reconstructed gross basis.
+Do not archive this change as fully accepted or call this a qualified release.

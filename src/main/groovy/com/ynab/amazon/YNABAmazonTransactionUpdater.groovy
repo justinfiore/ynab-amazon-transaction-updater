@@ -17,6 +17,15 @@ class YNABAmazonTransactionUpdater {
     
     static void main(String[] args) {
         try {
+            if (args && args[0] == '--walmart-disconnect') {
+                com.ynab.amazon.service.WalmartOnboarding.disconnect(new File(args.length>1 ? args[1] : 'config.yml'))
+                return
+            }
+            if (args && args[0] == '--walmart-compare') {
+                if (!(args.length in [2,4]) || (args.length==4 && args[2]!='--provider')) throw new IllegalArgumentException('Usage: --walmart-compare comparison.yml [--provider jev|openai]')
+                com.ynab.amazon.service.WalmartProviderComparison.run(new File(args[1]),args.length==4 ? [args[3]] : ['openai','jev'])
+                return
+            }
             if (args && args[0] in ['--walmart-setup', '--walmart-categories']) {
                 com.ynab.amazon.service.WalmartOnboarding.run(new File(args.length>1 ? args[1] : 'config.yml'),args[0]=='--walmart-categories')
                 return

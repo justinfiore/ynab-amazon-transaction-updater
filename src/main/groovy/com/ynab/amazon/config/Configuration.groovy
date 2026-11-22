@@ -47,7 +47,7 @@ class Configuration {
     String walmartDefaultCategoryId
     String walmartJournalFile = 'walmart-journal.json'
     Map<String, String> walmartPaymentAccounts = [:]
-    Map walmartCategorization = [memory_limit_bytes: 1000000000L, categories: []]
+    Map walmartCategorization = [categories: []]
     
     Configuration() {
         // Do not auto-load from file by default to keep tests deterministic.

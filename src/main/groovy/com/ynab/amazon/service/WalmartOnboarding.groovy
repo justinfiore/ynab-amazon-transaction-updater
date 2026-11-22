@@ -3,7 +3,6 @@ package com.ynab.amazon.service
 import com.ynab.amazon.config.Configuration
 import org.yaml.snakeyaml.Yaml
 import java.nio.file.*
-import java.time.Duration
 
 /** Read-only account discovery; never enables fetching or writes transactions. */
 class WalmartOnboarding {
@@ -12,34 +11,31 @@ class WalmartOnboarding {
         config.loadConfiguration(file)
         def input = new BufferedReader(new InputStreamReader(System.in))
         def output = new PrintWriter(System.out, true)
+        Map pending = [:]
         if (!categoriesOnly) {
-            output.println('Model RAM is separate from disk/download size. Docker engine/VM, JVM, helper and OS need additional RAM.')
-            output.println('Use native Docker Desktop on macOS/Windows; Windows may require its WSL2/Hyper-V backend, not application commands in WSL.')
-            output.println('Model RAM in decimal GB (1 GB = 1,000,000,000 bytes), default 1; explicitly choose at most 2, or q to cancel:')
-            String answer = input.readLine()
-            if (answer == null || answer.trim() == 'q') return
-            long budget
-            try { budget = new BigDecimal(answer.trim() ?: '1').multiply(1000000000G).longValueExact() }
-            catch (Exception ignored) { output.println('Invalid RAM budget; configuration unchanged.'); return }
-            if (budget < 1 || budget > 2000000000L) { output.println('RAM must be positive and at most 2 GB; configuration unchanged.'); return }
-            // No token is requested for public artifacts. Credentials could only be
-            // requested by a future qualified provisioner on an actual access failure.
-            if (!LayaDockerClassifier.profiles()) {
-                output.println('No qualified Laya classic profile is available within the supported platform/RAM matrix. Configuration unchanged; no token or download requested. Use link_only, or --walmart-categories for category-only setup.')
-                return
-            }
-            def info = new BoundedProcessRunner(GoWalmartOrderFetcher.ENVIRONMENT).run(['docker','info','--format','{{.OSType}}/{{.Architecture}}'],Duration.ofSeconds(10),4096)
-            if (!info.success) { output.println('Docker unavailable. Install/configure it yourself; configuration unchanged.'); return }
-            // Registry intentionally empty until full image/runtime/quality qualification.
-            output.println('Model provisioning requires a qualified release; configuration unchanged.')
-            return
+            output.println('Select paid provider: 1 OpenAI Decisions, 2 Jev (direct TypeSafe), q cancels:')
+            String selected = input.readLine()
+            String provider = selected == '1' ? 'openai' : selected == '2' ? 'jev' : null
+            if (!provider) return
+            output.println("${provider}: ${WalmartRemoteClassifier.ROUTES[provider]}")
+            output.println('Only product titles and shortlisted labels/descriptions leave this machine. Titles can reveal sensitive purchases. Paid API billing applies; no provider fallback.')
+            output.println(provider == 'jev' ? 'TypeSafe: no input training; U.S. processing; retention as necessary, NOT default zero retention. https://typesafe.ai/legal/privacy-policy https://typesafe.ai/legal/data-processing' :
+                'OpenAI API policy (not a zero-retention guarantee): https://platform.openai.com/docs/guides/your-data')
+            output.println('Consent to this data transfer and paid inference? Type yes; anything else cancels:')
+            if (input.readLine() != 'yes') return
+            def console = System.console()
+            if (!console) { output.println('Hidden input unavailable. Run the distributed launcher in an interactive terminal; never put a key in arguments or YAML. Configuration unchanged.'); return }
+            char[] secret = console.readPassword('Provider-issued API key (hidden): ')
+            if (!secret?.length) return
+            pending = [provider:provider, secret:secret]
+            output.println('Key is checked locally only. Setup sends no inference request and does not verify remote entitlement. Acceptance remains unqualified until separately evaluated.')
         }
         def ynab = new YNABService(config)
-        try { selectCategories(file.toPath(), ynab, input, output) }
-        finally { ynab.close() }
+        try { selectCategories(file.toPath(), ynab, input, output, pending) }
+        finally { if (pending.secret) Arrays.fill((char[])pending.secret, (char)0); ynab.close() }
     }
 
-    static boolean selectCategories(Path file, YNABService ynab, BufferedReader input, PrintWriter output) {
+    static boolean selectCategories(Path file, YNABService ynab, BufferedReader input, PrintWriter output, Map pending = [:]) {
         file = file.toAbsolutePath().normalize()
         if (Files.isSymbolicLink(file) || !Files.isRegularFile(file) || Files.size(file)>1048576) throw new IllegalStateException('Unsafe setup configuration')
         byte[] original=Files.readAllBytes(file)
@@ -70,16 +66,28 @@ class WalmartOnboarding {
         try { chosen=selection(answer.trim() ?: savedDefault.toString(),selected.size()).with { if (size()!=1) throw new IllegalArgumentException(); first() } }
         catch (Exception ignored) { output.println('Invalid default; configuration unchanged.'); return false }
         String defaultId=selected[chosen-1].id
-        output.println('Save protected shortlist/default only? Existing enablement, enrichment mode and unrelated settings remain unchanged. Type yes:')
+        if (pending.provider) output.println("Save ${pending.provider} / ${WalmartRemoteClassifier.ROUTES[pending.provider]}, key under .walmart-credentials beside this config (contents hidden).")
+        selected.each { c -> output.println("Selected ${display(catalog.find { it.id==c.id }.name)} [${c.id}]${c.id==defaultId ? ' DEFAULT' : ''}") }
+        output.println('Save protected settings? Existing enablement, enrichment mode and unrelated settings remain unchanged. Type yes:')
         if (input.readLine()!='yes') return false
         // Revalidate stable IDs, not positions, after confirmation.
         WalmartAllocation.categories(ynab.getWalmartCategories(),selected,defaultId)
         new WalmartJournal(file.toString()+'.setup-state').locked(false) { ignored, save ->
             if (Files.isSymbolicLink(file) || !Arrays.equals(original,Files.readAllBytes(file))) throw new IllegalStateException('Configuration changed during setup; retry')
-            walmart.categorization = (walmart.categorization ?: [:]) + [categories:selected]
-            walmart.default_category_id=defaultId
-            config.walmart=walmart
-            WalmartJournal.atomic(file,new Yaml().dump(config).getBytes('UTF-8'))
+            Path staged = null
+            boolean activated = false
+            try {
+                Map categorization = walmart.categorization ?: [:]
+                if (pending.provider) {
+                    staged = WalmartProviderKeys.stage(file, pending.provider.toString(), (char[])pending.secret)
+                    categorization = WalmartRemoteClassifier.defaults(pending.provider.toString()) + [credentials_file:staged.toString()]
+                }
+                walmart.categorization = categorization + [categories:selected]
+                walmart.default_category_id=defaultId
+                config.walmart=walmart
+                WalmartJournal.atomic(file,new Yaml().dump(config).getBytes('UTF-8'))
+                activated = true
+            } finally { if (staged && !activated) Files.deleteIfExists(staged) }
         }
         output.println('Saved. Fetching/allocation was not enabled. YAML comments/layout may be normalized; unrelated values are preserved.')
         true
@@ -90,6 +98,25 @@ class WalmartOnboarding {
         def values=text.split(',').collect { Integer.parseInt(it.trim()) }
         if (values.toSet().size()!=values.size() || values.any { it<1 || it>maximum }) throw new IllegalArgumentException()
         values
+    }
+
+    static void disconnect(File configFile) {
+        Path file=configFile.toPath().toAbsolutePath().normalize()
+        if (Files.isSymbolicLink(file) || !Files.isRegularFile(file) || Files.size(file)>1048576) throw new IllegalStateException('Unsafe setup configuration')
+        byte[] before=Files.readAllBytes(file)
+        Map config=new Yaml().load(new String(before,'UTF-8')) as Map
+        Map selected=config.walmart?.categorization ?: [:]
+        if (!selected.credentials_file || !selected.provider) { println 'No selected provider connection.'; return }
+        WalmartProviderKeys.read(selected.credentials_file.toString(),selected.provider.toString())
+        println "Disconnect local ${selected.provider} key? This does NOT revoke the key remotely; revoke it through the provider console. Type yes:"
+        if (new BufferedReader(new InputStreamReader(System.in)).readLine()!='yes') return
+        new WalmartJournal(file.toString()+'.setup-state').locked(false) { ignored,save ->
+            if (Files.isSymbolicLink(file) || !Arrays.equals(before,Files.readAllBytes(file))) throw new IllegalStateException('Configuration changed; retry')
+            config.walmart.categorization=[categories:selected.categories ?: []]
+            WalmartJournal.atomic(file,new Yaml().dump(config).getBytes('UTF-8'))
+            WalmartProviderKeys.disconnect(selected.credentials_file.toString(),selected.provider.toString())
+        }
+        println 'Local key removed. Other provider records are unchanged. Revoke remote access in the provider console.'
     }
     private static String display(Object value) { value?.toString()?.replaceAll(/[\p{Cntrl}]/,' ') ?: '' }
 }

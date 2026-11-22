@@ -76,8 +76,10 @@ separately or download wrapper files by hand. Verify it with:
 Walmart is optional and disabled by default. See [Walmart setup and safety](WALMART.md)
 for opt-in Gradle/native-helper builds, protected session import and numbered
 existing-category setup. Removed browser guest/login fetchers have no fallback.
-Laya profiles and cross-platform qualification remain unavailable; no model
-token or Docker is needed for disabled/link-only operation.
+Optional paid OpenAI Decisions/TypeSafe Jev inference uses Groovy with explicit
+data/billing consent and separately protected provider keys. Live quality and
+cross-platform qualification remain pending. Disabled/link-only needs no
+inference key; no local-model runtime, Docker or OAuth route is required.
 
 ### Optional: Python Amazon Order History
 

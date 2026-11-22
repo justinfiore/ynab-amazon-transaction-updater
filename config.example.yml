@@ -47,9 +47,11 @@ walmart:
   # Run --walmart-categories to select existing categories by number; never creates categories.
   # default_category_id: "existing-id"
   categorization:
-    memory_limit_bytes: 1000000000  # Model-only default 1 GB; explicit max 2 GB, not whole-app RAM
     categories: []  # [{id: "existing-id", description: "optional boundary"}]
-    # No qualified Laya profile currently available; unresolved items remain exceptions.
+    # --walmart-setup prompts for OpenAI Decisions or direct TypeSafe Jev, hidden key and consent.
+    # No provider selected by default. Keys belong ONLY in protected provider records, not YAML.
+    # Setup adds exact model/policy, bounds, credential path and unqualified acceptance settings.
+    # Unqualified providers make no production calls; use separately authorized synthetic comparison.
 
 # Application Configuration
 app:

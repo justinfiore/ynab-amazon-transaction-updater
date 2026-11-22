@@ -45,7 +45,9 @@ class WalmartJournal {
             PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString('rw-------')))
         try {
             FileChannel.open(temporary, WRITE).withCloseable { channel ->
-                channel.write(java.nio.ByteBuffer.wrap(content)); channel.force(true)
+                def buffer=java.nio.ByteBuffer.wrap(content)
+                while (buffer.hasRemaining()) channel.write(buffer)
+                channel.force(true)
             }
             Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         } finally { Files.deleteIfExists(temporary) }

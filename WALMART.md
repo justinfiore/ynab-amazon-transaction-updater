@@ -3,7 +3,8 @@
 Walmart is disabled by default; `link_only` is the default enrichment mode. The
 Go source replaces the removed browser fetchers, with no Playwright, guest or
 login fallback. Amazon installation and base Gradle builds require no Go,
-Docker, model or Walmart session.
+inference key or Walmart session. Walmart inference uses paid API keys only;
+there is no local model, Docker requirement, OAuth or subscription route.
 
 ## Build and session provisioning
 
@@ -20,7 +21,7 @@ download manifest. The module pins reviewed `walmart-client-go/v2` v2.2.1
 
 Native Linux amd64 is exercised here. SDK hashes also cover Linux arm64,
 macOS arm64 and Windows amd64; availability is not platform qualification.
-Windows session/journal ACL support is **not implemented**: protected operations
+Windows session/journal/provider-key ACL support is **not implemented**: protected operations
 fail closed rather than writing insecure files. No Intel Mac SDK is offered.
 
 Log into Walmart manually in your own browser. In browser developer tools,
@@ -48,8 +49,12 @@ helper runs with your OS user's privileges.
 See `config.example.yml`. `helper_executable` may be omitted in an installed
 Walmart distribution. `session_file` is required. Time/output/page limits must
 be positive; `max_pages` is at most 20. Removed browser configuration has no
-aliases. Start with `app.dry_run: true`. The helper returns a version-1 minimal
-ledger (no addresses, cookies or raw HTTP payloads), not upstream diagnostics.
+aliases. Start with `app.dry_run: true`. The helper returns version-1 allowlisted
+source evidence (no addresses, cookies or raw HTTP payloads), not upstream diagnostics.
+It preserves decimal amounts and repeated ledger entries; Groovy owns currency,
+final-charge filtering, stable occurrence keys, item deduplication, adjustments,
+classification, matching and all financial/YNAB processing. No inference or YNAB
+key is passed to Go. Successful empty history is an explicit `orders: []`.
 
 Walmart requires a verified USD YNAB plan before fetching/matching and rechecks
 that currency before enrichment. Non-USD, missing or unavailable plan currency
@@ -82,7 +87,7 @@ default from that shortlist. It performs GETs only. Confirmation revalidates
 stable IDs and atomically writes protected YAML, detects edits made during
 setup and preserves unrelated values, `enabled` and `enrichment`. YAML comments
 and formatting can be normalized. Cancel or invalid input leaves the original
-file unchanged. This separate category setup needs no Docker or model token.
+file unchanged. This separate category setup needs no inference key or remote model call.
 
 Explicitly choose `exception_first` only after reviewing its immediate budget
 effects. **Unapproved transactions are real YNAB changes, not drafts.** Only
@@ -95,7 +100,7 @@ The entire order must have supported USD final payments matched to unapproved,
 unsplit, non-transfer, non-reconciled transactions in open on-budget accounts.
 Incomplete payments, refunds, unknown currency/gross-discount semantics,
 unexplained residuals and negative default remainders prevent allocation; unique
-safe links may still be added. The current Go normalizer deliberately marks
+safe links may still be added. The Groovy normalizer deliberately marks
 nonzero savings with unproven gross/net semantics incomplete, not guessed gross.
 
 All separately proven tax/fee/tip costs increase the default; discounts decrease
@@ -130,36 +135,114 @@ to force replanning over existing splits. Correct/review in YNAB. The program
 does not rewrite existing splits or auto-approve anything. Back up protected
 journals/configs as sensitive financial data, outside source control.
 
-## Laya qualification: unavailable, not ready
+## Paid Groovy inference and protected onboarding
 
-`--walmart-setup` explains decimal model RAM (default 1,000,000,000 bytes;
-explicit maximum 2,000,000,000) and returns unchanged when no qualified profile
-exists. Docker engine/VM, JVM, helper and OS RAM are additional; disk/download
-size is separate. Public artifacts do not need a Hugging Face token. Hidden,
-read-scoped credentials may only be requested by a future verified provisioner
-on an actual access/rate-limit failure; no global Hub login or token persistence.
+Run the distributed launcher with `--walmart-setup [config.yml]` in an interactive
+terminal. It asks for OpenAI Decisions or Jev **before** hidden key input. No
+hidden console means no key prompt/save: do not use an echoed stdin workaround.
+Setup explains data transfer and billing, asks consent, lists existing numbered
+categories/default, revalidates IDs and confirms a protected atomic config save.
+It never enables fetching or exception-first mode. Setup checks key-record shape
+locally only; there is no silent paid probe or claim of verified remote access.
 
-The checked-in qualified registry is intentionally empty. The host-side Docker
-launcher is guarded by that registry; it is not an operational model release.
-No pinned worker image/full-runtime release or automatic provisioning is shipped
-yet. Do not edit a manifest to claim readiness. Kev, GPU/cloud fallback and
-model substitution are outside this change. Disabled/link-only paths never
-probe Docker or fetch models.
+Routes are fixed, independent JVM HTTP contexts:
 
-Independent synthetic evaluation reports unchanged English and multilingual FP32
-exceed both 1 GB and 2 GB during load. Multilingual BF16 fits below 2 GB in one
-Linux Docker test (~1.769 GB peak), but quality fails: 29/60 raw correct and
-15/17 accepted correct at the frozen probability >=0.8 / margin >=0.2 gate.
-These measurements do **not** qualify either profile or other platforms. Laya's
-state truncation flag also misses silently shortened question/options, requiring
-independent full-token preservation checks before any future activation.
+- OpenAI: `https://api.openai.com/v1/decisions`, `gpt-6-luna`, paid OpenAI API key.
+- Jev: `https://api.typesafe.ai/v1/systemone`, `jev-1.14.0`, TypeSafe-issued key.
 
-Linux amd64/arm64 images, Linux x86_64/macOS arm64/Windows x86_64 onboarding and
-Docker Desktop backends remain an **unqualified intended matrix**. Native helper
-tests do not prove container isolation, image safety, latency or whole-host RAM.
-Readiness requires immutable artifact/runtime locks, license/advisory review,
-local-only safetensors/config/tokenizer loading, full-token/choice checks,
-held-out quality, measured loading/inference/headroom and actual containment.
+No Responses, Codex/ChatGPT OAuth, OpenRouter, key refresh, floating aliases or
+provider/billing fallback. Only uncached product titles plus selected category
+labels/descriptions and fixed instructions are sent. Titles themselves can be
+sensitive. Local product/category/account/order IDs, payment data and memos are
+not sent. Duplicate/ambiguous category labels fail closed rather than silently
+collapsing options. Money remains deterministic Groovy arithmetic.
+
+TypeSafe commits to no input training, **not default zero retention**; its policy
+allows necessary retention and describes U.S. processing. Enterprise ZDR requires
+account-specific arrangements. Read https://typesafe.ai/legal/privacy-policy and
+https://typesafe.ai/legal/data-processing. For OpenAI read
+https://platform.openai.com/docs/guides/your-data; API access alone is not ZDR.
+
+Keys are separate provider-tagged 0600 atomic records under a 0700
+`.walmart-credentials` directory beside the selected config. YAML holds only
+their paths. A random connection ID scopes caches, never a key hash. Source
+control ignores this directory. Preserve owner-only permissions and do not back
+it up to source control. A replacement stages a new immutable record, then
+activates it with config; cancellation/save failure cleans staged keys. Older
+confirmed records remain available for separately configuring comparison; dispose
+of unused records and revoke old keys in the provider console. Never copy a key
+to YAML, shell arguments, Go input, environment exports or bug reports.
+`--walmart-disconnect [config.yml]` confirms removal of the selected local key
+and route settings, preserving categories, mode and other provider records.
+This does not revoke the credential remotely: do that in the provider console.
+Windows ACL protection and macOS onboarding remain unqualified; protected key
+operations fail closed without the verified POSIX security contract.
+
+Setup writes explicit connect/read/total deadlines, input/response/batch limits,
+sequential concurrency `1`, per-run request/token reservations and at most one
+transient retry (configurable 0–2). Each retry consumes a fresh request/token
+reservation. Only HTTP 429/500/502/503/504 may retry, with bounded backoff and
+Retry-After; long Retry-After stops instead of being shortened. Redirects,
+auth failures and uncertain transport outcomes never replay. Automatic HTTP
+retries/cookies/redirects are disabled. Missing usage remains unknown, not free;
+failed attempts retain their full reserved token allowance. Local token bounds
+are conservative reservations, not a guarantee of the provider's eventual bill.
+
+Validated decisions require complete correlations and distributions, finite
+probabilities and separate confidence, bounded distribution sum and agreement
+between choice and unique argmax. A bad batch returns no partial decisions.
+Abstentions remain uncategorized exceptions, never Groceries. Inference failure
+prevents category/split allocation; safe metadata-only links can still proceed.
+Approved mappings take precedence; conflicting approved evidence vetoes inference.
+Dry runs never upload. Cache entries include provider/model/policy, scores and
+plan/product/title/shortlist/descriptions/acceptance/connection fingerprints.
+Changes invalidate inferred reuse and stop already-frozen application plans.
+
+**Neither paid provider is quality-qualified by this implementation.** Setup sets
+`acceptance.qualified: false`; production makes no inference requests under an
+unqualified policy. Example probability/confidence/margin gates are test values,
+not calibrated recommendations. Separately authorize synthetic evaluation,
+calibrate provider-specific gates without held-out tuning, review the evidence
+and record the acceptance `evidence_id` and exact `qualified_for` fingerprint
+before deliberately enabling the matching provider/model/policy. The fingerprint
+binds the actual labels/descriptions, prompt, route/model and gates; changing any
+of those removes qualification. A boolean flag alone is insufficient. Comparison
+prints this fingerprint for its frozen shortlist, not for arbitrary private
+shortlists. Contract tests cannot establish accuracy, latency or cost.
+
+## Separate synthetic provider comparison
+
+`--walmart-compare comparison.yml` loads only a dedicated provider configuration,
+not the application config, Walmart session, YNAB service or production journal.
+Copy each explicitly configured provider's `categorization` block to
+`providers.openai` / `providers.jev` in that dedicated file, keeping only paths to
+their separate protected records. Include the model/policy, acceptance and all
+positive limits from setup. Both must be configured. The command prints each
+request/token budget and requires typing `PAY BOTH PROVIDERS`; builds/tests
+never invoke paid calls. For an explicitly authorized single-provider run use
+`--walmart-compare comparison.yml --provider jev` (or `openai`); only the selected
+provider record is needed and consent becomes `PAY JEV ONLY` (or `PAY OPENAI ONLY`).
+Omitting `--provider` retains the two-provider mode and its two-provider consent.
+
+Both receive the same frozen synthetic/public titles, shortlist/descriptions and
+abstain instructions. The earlier 60-title fixture and reference policy are
+preserved byte-for-byte under `src/main/resources/walmart-comparison`; a separate
+12-title calibration split does not reuse held-out rows. The prompt has a new
+version, so earlier local-model numbers are historical, not directly comparable
+measurements of this prompt. Configure gates using calibration evidence only;
+the command reports configured and common fixed gates separately and never tunes
+thresholds against held-out answers or activates production acceptance.
+
+JSON output records dataset/policy fingerprints, concrete models, calibration and
+held-out raw/accepted accuracy, coverage, abstention, default precision, exact
+non-default recall, failures, item-completion latency (batch completion, not
+amortized latency), throughput, elapsed time, requests/retries and token usage.
+Undefined precision is null, not perfect accuracy. Missing/failed predictions
+cannot count as correct abstentions. Actual billed cost is unknown. USD per 1,000
+items is labeled a base-rate estimate using dated 2026-11-22 input rates of
+$0.10/M (OpenAI) and $0.042/M (Jev), free output, excluding cache discounts,
+regional/long-context premiums and account pricing; incomplete/failed usage
+produces unknown cost, not a cheaper-provider claim.
 
 ## Account-free verification
 
@@ -168,6 +251,7 @@ Run `.agents/scripts/build.sh -Pwalmart`,
 `.agents/scripts/run-integration-tests.sh -Pwalmart`. Enabled tests include Go
 unit/contract tests and JUnit XML under `build/test-results/walmart*`; defaults
 remain model-download/account-free. See `openspec/changes/walmart-integration/tasks.md`
-for tasks still incomplete, especially model provisioning/qualification and
+for tasks still incomplete, especially paid quality qualification and
 native cross-platform/ACL verification. Passing app fixtures are not live-account
-or model readiness claims.
+or model readiness claims. Go has no inference dependency; both paid wire
+contracts and comparison are tested only with synthetic fake transports.

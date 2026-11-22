@@ -8,8 +8,9 @@ import com.ynab.amazon.model.*
 import spock.lang.Specification
 import spock.lang.TempDir
 import spock.lang.Unroll
+import java.nio.file.Path
 
-/** Actual HTTP contract tests; account-free and independent of Docker/models. */
+/** Actual YNAB HTTP contract tests with account-free provider transports. */
 class WalmartService_IT extends Specification {
     @TempDir File directory
     def json = new ObjectMapper()
@@ -72,6 +73,90 @@ class WalmartService_IT extends Specification {
         ynab = new YNABService(config)
     }
     def cleanup() { ynab.close(); server.stop(0) }
+
+    @Unroll
+    def '#provider decisions allocate exact amounts, persist isolated cache and block frozen policy drift'() {
+        given:
+        Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),provider,'synthetic-not-live'.toCharArray())
+        config.walmartCategorization=WalmartRemoteClassifier.defaults(provider)+[credentials_file:key.toString(),categories:[[id:'g'],[id:'h']],
+            acceptance:[qualified:true,evidence_id:'mock-only',probability:0.8,confidence:0.8,margin:0.2]]
+        config.walmartCategorization.acceptance.qualified_for=new WalmartRemoteClassifier(config.walmartCategorization).qualificationFingerprint(
+            WalmartAllocation.categories(ynab.getWalmartCategories(),config.walmartCategorization.categories,'g'))
+        int calls=0
+        Closure transport={ endpoint,secret,body,limits ->
+            calls++
+            Map request=json.readValue(body,Map)
+            List names=provider=='openai' ? request.questions*.name : request.questions.keySet().toList()
+            Map answers=names.collectEntries { name ->
+                String label=name=='item_0' ? 'Groceries' : 'Household'
+                Map scores=['Groceries':label=='Groceries' ? 0.96 : 0.02,'Household':label=='Household' ? 0.96 : 0.02,(WalmartRemoteClassifier.ABSTAIN):0.02]
+                [(name):[name:name,type:'choice',choice:label,confidence:0.95,probabilities:provider=='openai' ? scores.collect { k,v -> [value:k,probability:v] } : scores]]
+            }
+            [status:200,body:json.writeValueAsString([model:request.model,answers:provider=='openai' ? answers.values().toList() : answers,usage:[input_tokens:100,output_tokens:0]])]
+        }
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        def matches=new TransactionMatcher().findWalmartMatches(txs,[WalmartFixture.order()])
+
+        when:
+        new WalmartEnrichment(config).process(matches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+
+        then:
+        remote.large.subtransactions*.amount==[-20000L,-50000L]
+        remote.large.subtransactions*.category_id==['h','g']
+        remote.small.category_id=='g'
+        calls==1
+        !new File(config.walmartJournalFile).text.contains('synthetic-not-live')
+        new WalmartJournal(config.walmartJournalFile).locked(true) { state,save -> state.inferred.size()==2 && state.inferred.values().every { it.source==provider } }
+
+        when: 'a fresh classifier and process reuse protected decisions without remote calls or duplicate PUTs'
+        new WalmartEnrichment(config).process(matches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        then:
+        calls==1
+        writes.size()==2
+
+        when:
+        config.walmartCategorization.categories[1].description='Changed category boundary'
+        def drift=new WalmartEnrichment(config).process(matches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        then:
+        writes.size()==2
+        drift.preview*.reason.contains('applied_plan_drift')
+
+        where:
+        provider << ['openai','jev']
+    }
+
+    def 'provider failure keeps matches metadata-only, dry run and link-only never request inference'() {
+        given:
+        Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','synthetic-not-live'.toCharArray())
+        config.walmartCategorization=WalmartRemoteClassifier.defaults('jev')+[credentials_file:key.toString(),categories:[[id:'g'],[id:'h']],
+            acceptance:[qualified:true,evidence_id:'mock-only',probability:0.8,confidence:0.8,margin:0.2]]
+        config.walmartCategorization.acceptance.qualified_for=new WalmartRemoteClassifier(config.walmartCategorization).qualificationFingerprint(
+            WalmartAllocation.categories(ynab.getWalmartCategories(),config.walmartCategorization.categories,'g'))
+        int calls=0
+        Closure transport={ a,b,c,d -> calls++; [status:401,body:'not logged'] }
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        def matches=new TransactionMatcher().findWalmartMatches(txs,[WalmartFixture.order()])
+
+        when:
+        new WalmartEnrichment(config).process(matches,ynab,true,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        then:
+        calls==0 && writes.empty
+
+        when:
+        new WalmartEnrichment(config).process(matches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        then:
+        calls==1
+        writes.every { it.change.keySet()==['memo'] as Set }
+        remote.values().every { !it.category_id && !it.subtransactions }
+
+        when:
+        config.walmartEnrichment='link_only'
+        new WalmartEnrichment(config).process(matches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        then:
+        calls==1
+    }
 
     @Unroll
     def 'Walmart #mode requires verified USD plan currency: #currency'() {

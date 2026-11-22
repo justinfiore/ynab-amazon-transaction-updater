@@ -138,15 +138,4 @@ class WalmartContracts_UT extends Specification {
         thrown(IllegalStateException)
     }
 
-    def 'resource recommendations require qualification measured headroom and exact byte ceilings'() {
-        given:
-        def profile=[qualified:true,provider:'laya-classic',hosts:['linux-amd64'],arch:'amd64',loading_peak_bytes:800000000L,inference_peak_bytes:900000000L,headroom_bytes:100000000L,warm_ms:100]
-
-        expect:
-        LayaDockerClassifier.profiles().empty
-        LayaDockerClassifier.fittingProfiles([profile],'linux-amd64','amd64',1000000000L)==[profile]
-        LayaDockerClassifier.fittingProfiles([profile],'linux-amd64','amd64',999999999L).empty
-        LayaDockerClassifier.fittingProfiles([profile+[qualified:false]],'linux-amd64','amd64',2000000000L).empty
-        LayaDockerClassifier.fittingProfiles([profile],'darwin-amd64','amd64',2000000000L).empty
-    }
 }

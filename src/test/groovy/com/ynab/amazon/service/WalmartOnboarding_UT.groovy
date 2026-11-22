@@ -8,6 +8,36 @@ import spock.lang.Unroll
 class WalmartOnboarding_UT extends Specification {
     @TempDir File directory
     def catalog=[[id:'a',group_name:'Food',name:'Same'],[id:'b',group_name:'Home',name:'Same']]
+    def 'provider activation is confirmed, atomic, scoped and never puts a key in YAML or output'() {
+        given:
+        File file=new File(directory,'config.yml'); file.text='walmart: {enabled: false, enrichment: link_only}\n'
+        def ynab=Stub(YNABService) { getWalmartCategories() >> catalog }
+        def output=new StringWriter()
+        Map pending=[provider:'jev',secret:'synthetic-fixture-secret'.toCharArray()]
+
+        when:
+        boolean saved=WalmartOnboarding.selectCategories(file.toPath(),ynab,new BufferedReader(new StringReader('1,2\n2\nyes\n')),new PrintWriter(output,true),pending)
+        Map config=new Yaml().load(file.text)
+
+        then:
+        saved
+        config.walmart.categorization.provider=='jev'
+        config.walmart.categorization.model=='jev-1.14.0'
+        !config.walmart.categorization.acceptance.qualified
+        config.walmart.default_category_id=='b'
+        !config.walmart.enabled && config.walmart.enrichment=='link_only'
+        WalmartProviderKeys.read(config.walmart.categorization.credentials_file,'jev').consent
+        !file.text.contains('synthetic-fixture-secret')
+        !output.toString().contains('synthetic-fixture-secret')
+        pending.secret.every { it==(char)0 }
+
+        when:
+        String before=file.text
+        boolean cancelled=WalmartOnboarding.selectCategories(file.toPath(),ynab,new BufferedReader(new StringReader('1\n1\nno\n')),new PrintWriter(output,true),[provider:'openai',secret:'cancelled-fixture'.toCharArray()])
+        then:
+        !cancelled && file.text==before
+        new File(directory,'.walmart-credentials').listFiles().size()==1
+    }
     def 'numbered category setup preserves unrelated values and mode, normalizes IDs and protects atomic save'() {
         given:
         File file=new File(directory,'config.yml')

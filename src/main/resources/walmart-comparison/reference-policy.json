@@ -1,0 +1,26 @@
+{
+  "threshold": 0.8,
+  "margin": 0.2,
+  "question": {
+    "category": {
+      "type": "choice",
+      "instructions": "Which existing budget category best describes this Walmart product? Use ABSTAIN when the product is unclear, mixed, a fee, or no category fits. Classify the product's intended use, not its brand.",
+      "criteria": {
+        "Groceries": "Food and drinks for people, including coffee and adult nutrition shakes; not infant formula",
+        "Pet food": "Animal food and edible pet treats",
+        "Pet supplies": "Non-food animal care, litter, pet shampoo, leads and training pads",
+        "Cleaning supplies": "Cleaning dishes, surfaces, trash handling and household odor control",
+        "Laundry": "Washing clothes, fabric softener and dryer sheets",
+        "Paper goods": "Disposable toilet paper, paper towels, napkins and paper plates",
+        "Personal care": "Human hygiene, soap, toothpaste, hand sanitizer and cotton swabs",
+        "Health and medicine": "Medicines, vitamins and first aid",
+        "Baby care": "Diapers, baby wipes and infant formula",
+        "Kitchen equipment": "Reusable cookware, utensils and kitchen tools",
+        "Home furnishings": "Bedding, curtains, pillows and home furnishings",
+        "Clothing": "Human apparel and socks",
+        "Electronics": "Electronic accessories, charging cables and batteries",
+        "ABSTAIN": "Insufficient information, ambiguous purpose, mixed categories, fees, gift cards or no matching category"
+      }
+    }
+  }
+}

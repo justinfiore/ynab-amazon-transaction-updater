@@ -14,13 +14,17 @@ class WalmartEnrichment {
 
     WalmartEnrichment(Configuration config) { this.config = config }
 
-    Map process(List<TransactionMatch> matches, YNABService ynab, boolean dryRun) {
+    Map process(List<TransactionMatch> matches, YNABService ynab, boolean dryRun, WalmartRemoteClassifier classifier = null) {
         def stats = [updated: 0, high_confidence: matches.size(), medium_confidence: 0, low_confidence: 0, preview: []]
         if (!matches) return stats
         // Recheck at the write boundary as well as before workflow matching.
         if (ynab.getWalmartPlanCurrency() != 'USD') {
             stats.preview << [reason:'unsupported_or_unknown_plan_currency']
             return stats
+        }
+        if (!classifier && !dryRun && config.walmartEnrichment == 'exception_first' && config.walmartCategorization.provider) {
+            try { classifier = new WalmartRemoteClassifier(config.walmartCategorization) }
+            catch (Exception ignored) { LOG.warn('Walmart provider connection unavailable; rerun setup or use mappings only') }
         }
         new WalmartJournal(config.walmartJournalFile).locked(dryRun) { Map state, Closure save ->
             Map categories = [:]
@@ -35,6 +39,7 @@ class WalmartEnrichment {
                 String key = config.ynabBudgetId + '/' + orderId
                 Map old = state.plans[key]
                 Map decisions = [:]
+                boolean inferenceFailed = false
                 def order = group[0].walmartOrder
                 if (config.walmartEnrichment == 'exception_first') {
                     order.items.each { item ->
@@ -44,21 +49,41 @@ class WalmartEnrichment {
                         decisions[item.itemId] = [category_id: category, source: choices ? 'approved_mapping' : 'unresolved', conflict: choices.size() > 1]
                     }
                     def pending = order.items.findAll { decisions[it.itemId].source == 'unresolved' }
-                    if (pending && config.walmartCategorization.model_manifest) {
+                    if (pending && !dryRun && config.walmartCategorization.provider && !classifier) inferenceFailed = true
+                    if (pending && classifier && !dryRun) {
                         try {
-                            def inferred = new LayaDockerClassifier(config.walmartCategorization).classify(pending, categories)
-                            inferred.each { id, decision -> decisions[id] = decision }
-                        } catch (Exception ignored) { LOG.warn('Walmart local classification unavailable; unresolved items remain exceptions') }
+                            String scope = classifier.scope(categories)
+                            state.inferred = state.inferred ?: [:]
+                            Map cacheKeys = pending.collectEntries { item -> [(item.itemId):fingerprint([config.ynabBudgetId,item.productId,item.title,scope])] }
+                            pending.each { item ->
+                                Map cached = state.inferred[cacheKeys[item.itemId]]
+                                if (cached?.scope == scope) decisions[item.itemId] = cached
+                            }
+                            def uncached = pending.findAll { decisions[it.itemId].source == 'unresolved' }
+                            if (uncached) {
+                                def inferred = classifier.classify(uncached, categories)
+                                inferred.each { id, decision ->
+                                    decisions[id] = decision
+                                    state.inferred[cacheKeys[id]] = decision
+                                }
+                                save(state)
+                            }
+                        } catch (Exception ignored) {
+                            inferenceFailed = true
+                            LOG.warn('Walmart remote classification unavailable/unqualified; allocation skipped. Check key setup, qualification and limits')
+                        }
                     }
                 }
-                Map plan = config.walmartEnrichment == 'exception_first' ?
+                Map plan = inferenceFailed ? [eligible:false, reason:'inference_unavailable'] : config.walmartEnrichment == 'exception_first' ?
                     WalmartAllocation.plan(order, group, config.walmartDefaultCategoryId, decisions, accounts) : [eligible: false, reason: 'link_only']
                 // Source/settings/mappings freeze even for operations already completed.
                 String fingerprint = fingerprint([order: [id: order.orderId, date: order.orderDate, total: order.totalAmount,
                     currency: order.currency, complete: order.complete, items: order.items.collect { [it.itemId, it.productId, it.title, it.grossCents] }.sort { it[0] },
                     charges: order.charges.sort(false) { it.key }, adjustments: order.adjustments],
                     assignments: group.collect { [it.walmartCharge?.key, it.ynabTransaction.id, it.ynabTransaction.account_id] }.sort { it[0] },
-                    default: config.walmartDefaultCategoryId, categories: categories, model: config.walmartCategorization, decisions: decisions])
+                    default: config.walmartDefaultCategoryId, categories: categories,
+                    model: config.walmartCategorization.findAll { k,v -> k in ['provider','model','policy_version','acceptance'] },
+                    connection: classifier?.connection?.connection_id, decisions: decisions])
                 if (old?.frozen && old.fingerprint != fingerprint) {
                     stats.preview << [order_id: orderId, reason: 'applied_plan_drift']; return
                 }

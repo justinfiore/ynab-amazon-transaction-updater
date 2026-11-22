@@ -9,8 +9,10 @@
 
 Leave `walmart.enabled: false` for the basic Amazon setup. Optional Walmart
 requires a `-Pwalmart` native helper and protected session; see [WALMART.md](WALMART.md).
-Removed browser guest/login paths have no fallback. Local Laya model profiles
-are not qualified; disabled/link-only operation needs no Docker or model.
+Removed browser guest/login paths have no fallback. Optional paid OpenAI
+Decisions/TypeSafe Jev inference requires separate key onboarding and consent;
+live provider quality is not qualified. Disabled/link-only needs no inference
+key. There is no Docker/local-model/OAuth requirement.
 
 ## 5-Minute Setup
 
