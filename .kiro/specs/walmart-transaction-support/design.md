@@ -1,5 +1,7 @@
 # Design Document: Walmart Transaction Support
 
+> Retired design: the nonworking Playwright guest/login fetchers and their configuration have been removed. This document is historical, not a compatibility contract. See [PR #15](https://github.com/justinfiore/ynab-amazon-transaction-updater/pull/15) for the replacement Go-backed proposal.
+
 ## Overview
 
 This design extends the YNAB Amazon Transaction Updater to support Walmart order data, following the established architecture patterns used for Amazon integration. The system will fetch Walmart orders using either API access (if available) or headless browser automation via Playwright, match them with YNAB transactions, and update transaction memos with Walmart order links.

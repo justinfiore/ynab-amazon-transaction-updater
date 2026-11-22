@@ -1,5 +1,7 @@
 # Requirements Document
 
+> Retired requirements: the nonworking Playwright guest/login fetchers and their configuration have been removed. This document is historical, not a compatibility contract. See [PR #15](https://github.com/justinfiore/ynab-amazon-transaction-updater/pull/15) for the replacement Go-backed proposal.
+
 ## Introduction
 
 This feature adds support for fetching Walmart order data and matching it with YNAB transactions. Walmart orders often result in multiple credit card charges for a single order, requiring intelligent association between YNAB transactions and Walmart orders. The system will update YNAB transaction memos with links to the corresponding Walmart order details page.
