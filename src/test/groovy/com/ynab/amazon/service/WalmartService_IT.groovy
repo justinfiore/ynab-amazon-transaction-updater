@@ -144,6 +144,24 @@ class WalmartService_IT extends Specification {
         writes.size()==4
         drift.preview*.reason.contains('applied_plan_drift')
 
+        when: 'an acceptance or connection change cannot reuse the previous inferred decision'
+        def freshOrder=WalmartFixture.order(); freshOrder.orderId='789'; freshOrder.orderUrl='https://www.walmart.com/orders/details?orderId=789'
+        def freshTransactions=WalmartFixture.transactions()
+        freshTransactions.each { it.id='fresh-'+it.id; remote[it.id]=WalmartFixture.remote(it) }
+        def freshMatches=new TransactionMatcher().findWalmartMatches(freshTransactions,[freshOrder])
+        config.walmartCategorization.acceptance.margin=0.3
+        def acceptanceChanged=new WalmartEnrichment(config).process(freshMatches,ynab,true,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        config.walmartCategorization.acceptance.margin=0.2
+        Path replacement=WalmartProviderKeys.stage(new File(directory,'replacement-config.yml').toPath(),provider,'synthetic-not-live'.toCharArray())
+        config.walmartCategorization.credentials_file=replacement.toString()
+        def connectionChanged=new WalmartEnrichment(config).process(freshMatches,ynab,true,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+
+        then:
+        acceptanceChanged.preview*.reason.contains('inference_unavailable')
+        connectionChanged.preview*.reason.contains('inference_unavailable')
+        calls==1
+        !new File(config.walmartJournalFile).text.contains('synthetic-not-live')
+
         where:
         provider << ['openai','jev']
     }
@@ -374,6 +392,34 @@ class WalmartService_IT extends Specification {
         remote.values().every { !it.approved && it.account_id=='account' && it.cleared=='cleared' && it.import_id=='bank-import' }
         remote.large.memo.startsWith('User note | 2026-11-20 | Total $100.00 | #123 | ')
         !remote.large.memo.contains('Soap')
+    }
+
+    def 'a completed category-only write is not repeated because it has no subtransactions'() {
+        given:
+        def order=WalmartFixture.order()
+        order.items=[new WalmartOrderItem(itemId:'a',productId:'food',title:'Apples',quantity:1,grossCents:10000L)]
+        order.adjustments=[]
+        order.charges=[[key:'c1',date:'2026-11-21',payment:'VISA',currency:'USD',cents:10000L]]
+        order.totalAmount=100.00
+        def tx=new YNABTransaction(id:'only',date:'2026-11-21',amount:-100000L,payee_name:'WALMART',payee_id:'payee',account_id:'account',cleared:'cleared',approved:'false',deleted:'false')
+        remote.only=WalmartFixture.remote(tx)
+        new WalmartJournal(config.walmartJournalFile).locked(false) { state, save ->
+            state.mappings=['plan/food':['g']]; save(state)
+        }
+        def matches=new TransactionMatcher().findWalmartMatches([tx],[order])
+
+        when:
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+        int firstWrites=writes.size()
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        firstWrites==1
+        writes.size()==1
+        writes[0].change.category_id=='g'
+        !writes[0].change.containsKey('subtransactions')
+        remote.only.category_id=='g'
+        !remote.only.subtransactions
     }
 
     def 'preview performs no writes and leaves journal unchanged'() {
@@ -637,14 +683,47 @@ class WalmartService_IT extends Specification {
 
         then:
         new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> state.mappings['plan/food']==['g'] }
+        writes.size()==2
+    }
+
+    def 'a changed fragment amount removes stale learning'() {
+        given:
+        def order=WalmartFixture.order()
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        def matches=new TransactionMatcher().findWalmartMatches(txs,[order])
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+        remote.large.approved=true
+        remote.small.approved=true
+        remote.small.subtransactions[0].category_id='h'
+        remote.small.subtransactions[1].category_id='g'
 
         when:
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
         remote.small.subtransactions.find { it.memo=='Apples' }.amount=-9990
         new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
 
         then:
         new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> !state.mappings['plan/food'] }
-        writes.size()==2
+    }
+
+    def 'a run under one plan removes another plans learned mapping'() {
+        given:
+        new WalmartJournal(config.walmartJournalFile).locked(false) { state, save ->
+            state.mappings['plan/soap']=['g']
+            state.mappings['other-plan/food']=['h']
+            state.learnedProducts=['plan/soap','other-plan/food']
+            save(state)
+        }
+
+        when:
+        config.ynabBudgetId='other-plan'
+        new TransactionProcessor(config).processWalmartMatches([],ynab,false)
+
+        then:
+        new WalmartJournal(config.walmartJournalFile).locked(true) { state, save ->
+            state.mappings['other-plan/food']==['h'] && !state.mappings.containsKey('plan/soap')
+        }
     }
 }
 

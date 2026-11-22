@@ -106,6 +106,42 @@ jobs:
         run: ./gradlew clean build installDist distZip distTar -Pwalmart --no-daemon
       - name: Cached offline lifecycle
         run: ./gradlew build installDist -Pwalmart --offline --no-daemon
+      - name: Launch packaged helper without Go on PATH
+        run: |
+          helper=$(find build/install -name walmart-helper -type f -perm -111 | head -n 1)
+          test -n "$helper"
+          set +e
+          env -u PATH PATH=/usr/bin:/bin "$helper" >/tmp/helper-out.json << 'EOF'
+          {"version":999}
+          EOF
+          set -e
+          python3 - "$helper" << 'PY'
+          import json, sys
+          from pathlib import Path
+          body = json.loads(Path('/tmp/helper-out.json').read_text() or '{}')
+          assert body.get('status') == 'fetch_failed', body
+          text = Path(sys.argv[1]).read_bytes().decode('latin1')
+          for forbidden in ['OPENAI_API_KEY', 'YNAB_API_TOKEN', 'category_id', 'gpt-6']:
+              assert forbidden not in text, forbidden
+          PY
+      - name: Reject a rewritten Go SDK digest without downloading
+        run: |
+          python3 - << 'PY'
+          import json
+          from pathlib import Path
+          path = Path('gradle/go-sdk-sha256.json')
+          data = json.loads(path.read_text())
+          data['linux-amd64'] = '0' * 64
+          data['linux-arm64'] = '0' * 64
+          path.write_text(json.dumps(data))
+          PY
+          set +e
+          ./gradlew help -Pwalmart --offline --no-daemon > /tmp/bad-sdk.log 2>&1
+          status=$?
+          set -e
+          test "$status" -ne 0
+          grep -q "no matching verified archive hash" /tmp/bad-sdk.log
+          git checkout -- gradle/go-sdk-sha256.json
       - name: Base lifecycle after enabled build excludes native helper
         run: |
           ./gradlew build installDist --offline --no-daemon

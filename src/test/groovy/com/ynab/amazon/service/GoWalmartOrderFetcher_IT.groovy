@@ -105,6 +105,13 @@ assert not any(k.startswith(('AMAZON_','YNAB_','HF_','AWS_','PYTHON')) for k in 
             assert result.status==ProcessResult.Status.NON_ZERO_EXIT
             assert json.readValue(result.stdout,Map)==[version:1,status:'fetch_failed']
             assert !result.stderr
+            byte[] binary=new File(helper).bytes
+            String text=new String(binary, java.nio.charset.StandardCharsets.ISO_8859_1)
+            assert !text.contains('OPENAI_API_KEY')
+            assert !text.contains('YNAB_API_TOKEN')
+            assert !text.contains('category_id')
+            assert !text.contains('gpt-6')
+            assert !text.contains('sk-')
         }
     }
 }
