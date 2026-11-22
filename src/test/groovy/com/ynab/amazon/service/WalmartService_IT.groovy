@@ -451,6 +451,7 @@ class WalmartService_IT extends Specification {
         then:
         writes.empty
         ambiguousPreview.updated==0
+        ambiguousPreview.preview*.reason.any { it }
         !new File(config.walmartJournalFile).exists()
     }
 
@@ -716,8 +717,9 @@ class WalmartService_IT extends Specification {
         given:
         new WalmartJournal(config.walmartJournalFile).locked(false) { state, save ->
             state.mappings['plan/food']=['h']
+            state.mappings['plan/soap']=['g']
             state.mappings['other-plan/food']=['h']
-            state.learnedProducts=['plan/food','other-plan/food']
+            state.learnedProducts=['plan/food','plan/soap','other-plan/food']
             save(state)
         }
         def order=WalmartFixture.order()
@@ -736,7 +738,26 @@ class WalmartService_IT extends Specification {
 
         then:
         new WalmartJournal(config.walmartJournalFile).locked(true) { state, save ->
-            !state.mappings.containsKey('plan/food') && state.mappings['other-plan/food']==['h']
+            !state.mappings.containsKey('plan/food') && !state.mappings.containsKey('plan/soap') && state.mappings['other-plan/food']==['h']
+        }
+
+    }
+
+    def 'an empty run does not learn or delete mappings'() {
+        given:
+        new WalmartJournal(config.walmartJournalFile).locked(false) { state, save ->
+            state.mappings['plan/food']=['h']
+            state.mappings['other-plan/food']=['h']
+            state.learnedProducts=['plan/food','other-plan/food']
+            save(state)
+        }
+
+        when:
+        new TransactionProcessor(config).processWalmartMatches([],ynab,false)
+
+        then:
+        new WalmartJournal(config.walmartJournalFile).locked(true) { state, save ->
+            state.mappings['plan/food']==['h'] && state.mappings['other-plan/food']==['h']
         }
     }
 }

@@ -178,6 +178,20 @@ class WalmartContracts_UT extends Specification {
         plan.operations*.transaction_id==['tx-early-a','tx-early-b','tx-late']
         plan.operations*.lines.collect { lines -> lines.collect { [it.cents,it.category_id] } }==[[[4000L,'h']],[[2000L,'h'],[1500L,'g']],[[2500L,'g']]]
         plan.operations.sum { it.lines.sum { it.cents } }==10000L
+
+        when:
+        order.charges=[
+            [key:'late',date:'2026-11-22',payment:'CREDITCARD:VISA:1234',currency:'USD',cents:5000L],
+            [key:'same-b',date:'2026-11-21',payment:'CREDITCARD:VISA:1234',currency:'USD',cents:2500L],
+            [key:'same-a',date:'2026-11-21',payment:'CREDITCARD:VISA:1234',currency:'USD',cents:2500L]
+        ]
+        txs=order.charges.collect { charge ->
+            new YNABTransaction(id:'tx-'+charge.key,date:charge.date,amount:-((long)charge.cents)*10L,payee_name:'WALMART',account_id:'account',cleared:'cleared',approved:'false',deleted:'false')
+        }
+        def tied=WalmartAllocation.plan(order,matcher.findWalmartMatches(txs.reverse(),[order]),'g',[a:[category_id:'g'],b:[category_id:'h']],['account'] as Set)
+
+        then:
+        tied.operations*.transaction_id==['tx-late','tx-same-b','tx-same-a']
     }
 
 }
