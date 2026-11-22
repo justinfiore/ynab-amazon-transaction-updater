@@ -580,8 +580,10 @@ class WalmartService_IT extends Specification {
         writes*.id==['large']
         !remote.small.category_id
         new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> !state.plans['plan/123'].operations.small?.allocation }
+    }
 
-        when:
+    def 'a second journal lock cannot enter while the first is held'() {
+        given:
         def held=new java.util.concurrent.CountDownLatch(1)
         def entered=new java.util.concurrent.CountDownLatch(1)
         def thread=Thread.start {
@@ -591,12 +593,16 @@ class WalmartService_IT extends Specification {
             }
         }
         entered.await(2, java.util.concurrent.TimeUnit.SECONDS)
+
+        when:
         new WalmartJournal(config.walmartJournalFile).locked(false) { state, save -> }
-        held.countDown()
-        thread.join(2000)
 
         then:
         thrown(IllegalStateException)
+
+        cleanup:
+        held.countDown()
+        thread.join(2000)
     }
 
     def 'a link-only run does not prevent later allocation with freshly fetched parents'() {
