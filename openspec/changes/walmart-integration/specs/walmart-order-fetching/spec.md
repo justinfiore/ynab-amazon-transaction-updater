@@ -24,7 +24,7 @@ The application SHALL provide the session-backed Go ledger helper as the sole Wa
 - **THEN** those settings do not select a source, become aliases or trigger a fallback, and documentation instructs the operator to remove them
 
 ### Requirement: Retrieved history and Groovy-owned charge normalization
-Go SHALL return bounded versioned order/item/pricing records and repeated ledger entries preserving amount, currency, date, payment identity and status/type. Groovy SHALL normalize final charges and completeness without substituting bank metadata. Go SHALL NOT perform inference/financial/category decisions or receive OpenAI/YNAB credentials. Failed retrieval SHALL NOT masquerade as complete empty data.
+Go SHALL return bounded versioned order/item/pricing records and repeated ledger entries preserving amount, currency, date, payment identity and status/type. Groovy SHALL normalize final charges and completeness without substituting bank metadata. Go SHALL NOT perform inference/financial/category decisions or receive inference-provider/YNAB credentials. Failed retrieval SHALL NOT masquerade as complete empty data.
 
 #### Scenario: Successful history contains no orders
 - **WHEN** retrieval succeeds with an empty history
