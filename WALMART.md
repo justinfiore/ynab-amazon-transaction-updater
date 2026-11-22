@@ -19,9 +19,9 @@ SDK archives are pinned in `gradle/go-sdk-sha256.json`, from the official Go
 download manifest. The module pins reviewed `walmart-client-go/v2` v2.2.1
 (`d908f3d31ae1be088ad4a02ebe7f0b3dd2f70244`), with checked-in `go.sum`.
 
-Native Linux amd64 is exercised here. SDK hashes also cover Linux arm64,
-macOS arm64 and Windows amd64; availability is not platform qualification.
-Windows session/journal/provider-key ACL support is **not implemented**: protected operations
+Native Linux amd64 is the qualified host. SDK hashes also cover Linux arm64,
+macOS arm64 and Windows amd64. Those hosts have best-effort implementations and
+were not manually tested. Windows session and provider-key ACLs fail closed.
 fail closed rather than writing insecure files. No Intel Mac SDK is offered.
 
 Log into Walmart manually in your own browser. In browser developer tools,

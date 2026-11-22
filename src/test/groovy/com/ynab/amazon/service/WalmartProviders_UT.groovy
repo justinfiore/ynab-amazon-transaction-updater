@@ -382,4 +382,48 @@ class WalmartProviders_UT extends Specification {
         decision.scores.Groceries == 0.73
         decision.confidence == 0.9
     }
+
+    def 'the real provider transport rejects a redirect and stops at its deadline without following another origin'() {
+        given:
+        def server=com.sun.net.httpserver.HttpServer.create(new InetSocketAddress('127.0.0.1', 0), 0)
+        int followed=0
+        server.createContext('/v1/decisions') { exchange ->
+            exchange.responseHeaders.set('Location','http://127.0.0.1:9/other-origin')
+            exchange.sendResponseHeaders(302, -1)
+            exchange.close()
+        }
+        server.createContext('/slow') { exchange ->
+            Thread.sleep(2000)
+            byte[] body='{}'.bytes
+            exchange.sendResponseHeaders(200, body.length)
+            exchange.responseBody.withCloseable { it.write(body) }
+            followed++
+        }
+        server.start()
+        Map config=settings('openai')+[connect_ms:300, read_ms:200, total_ms:400, max_response_bytes:1024]
+        String redirect="http://127.0.0.1:${server.address.port}/v1/decisions"
+        String slow="http://127.0.0.1:${server.address.port}/slow"
+        def post={ String target ->
+            new WalmartRemoteClassifier(config).invokeMethod('post', [target, 'fixture-key', '{}', config] as Object[])
+        }
+
+        when:
+        def redirected=post(redirect)
+
+        then:
+        redirected.status==302
+        followed==0
+
+        when:
+        long started=System.nanoTime()
+        post(slow)
+
+        then:
+        thrown(Exception)
+        followed==0
+        (System.nanoTime()-started)/1_000_000 < 1500
+
+        cleanup:
+        server.stop(0)
+    }
 }
