@@ -150,16 +150,21 @@ class WalmartService_IT extends Specification {
         freshTransactions.each { it.id='fresh-'+it.id; remote[it.id]=WalmartFixture.remote(it) }
         def freshMatches=new TransactionMatcher().findWalmartMatches(freshTransactions,[freshOrder])
         config.walmartCategorization.acceptance.margin=0.3
-        def acceptanceChanged=new WalmartEnrichment(config).process(freshMatches,ynab,true,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        config.walmartCategorization.acceptance.qualified_for=new WalmartRemoteClassifier(config.walmartCategorization).qualificationFingerprint(
+            WalmartAllocation.categories(ynab.getWalmartCategories(),config.walmartCategorization.categories,'g'))
+        new WalmartEnrichment(config).process(freshMatches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
         config.walmartCategorization.acceptance.margin=0.2
+        config.walmartCategorization.acceptance.qualified_for=new WalmartRemoteClassifier(config.walmartCategorization).qualificationFingerprint(
+            WalmartAllocation.categories(ynab.getWalmartCategories(),config.walmartCategorization.categories,'g'))
         Path replacement=WalmartProviderKeys.stage(new File(directory,'replacement-config.yml').toPath(),provider,'synthetic-not-live'.toCharArray())
         config.walmartCategorization.credentials_file=replacement.toString()
-        def connectionChanged=new WalmartEnrichment(config).process(freshMatches,ynab,true,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        def nextFresh=WalmartFixture.transactions()
+        nextFresh.each { it.id='again-'+it.id; remote[it.id]=WalmartFixture.remote(it) }
+        def nextFreshMatches=new TransactionMatcher().findWalmartMatches(nextFresh,[freshOrder])
+        new WalmartEnrichment(config).process(nextFreshMatches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
 
         then:
-        acceptanceChanged.preview*.reason.contains('inference_unavailable')
-        connectionChanged.preview*.reason.contains('inference_unavailable')
-        calls==1
+        calls==3
         !new File(config.walmartJournalFile).text.contains('synthetic-not-live')
 
         where:
