@@ -22,7 +22,7 @@ class WalmartEnrichment {
             stats.preview << [reason:'unsupported_or_unknown_plan_currency']
             return stats
         }
-        if (!classifier && !dryRun && config.walmartEnrichment == 'exception_first' && config.walmartCategorization.provider) {
+        if (!classifier && config.walmartEnrichment == 'exception_first' && config.walmartCategorization.provider) {
             try { classifier = new WalmartRemoteClassifier(config.walmartCategorization) }
             catch (Exception ignored) { LOG.warn('Walmart provider connection unavailable; rerun setup or use mappings only') }
         }
@@ -40,6 +40,7 @@ class WalmartEnrichment {
                 Map old = state.plans[key]
                 Map decisions = [:]
                 boolean inferenceFailed = false
+                String inferenceReason = 'inference_unavailable'
                 def order = group[0].walmartOrder
                 if (config.walmartEnrichment == 'exception_first') {
                     order.items.each { item ->
@@ -49,8 +50,8 @@ class WalmartEnrichment {
                         decisions[item.itemId] = [category_id: category, source: choices ? 'approved_mapping' : 'unresolved', conflict: choices.size() > 1]
                     }
                     def pending = order.items.findAll { decisions[it.itemId].source == 'unresolved' }
-                    if (pending && !dryRun && config.walmartCategorization.provider && !classifier) inferenceFailed = true
-                    if (pending && classifier && !dryRun) {
+                    if (pending && config.walmartCategorization.provider && !classifier) inferenceFailed = true
+                    if (pending && classifier) {
                         try {
                             String scope = classifier.scope(categories)
                             state.inferred = state.inferred ?: [:]
@@ -61,12 +62,17 @@ class WalmartEnrichment {
                             }
                             def uncached = pending.findAll { decisions[it.itemId].source == 'unresolved' }
                             if (uncached) {
-                                def inferred = classifier.classify(uncached, categories)
-                                inferred.each { id, decision ->
-                                    decisions[id] = decision
-                                    state.inferred[cacheKeys[id]] = decision
+                                if (dryRun) {
+                                    inferenceFailed = true
+                                    inferenceReason = classifier.qualified(categories) ? 'inference_required' : 'inference_unavailable'
+                                } else {
+                                    def inferred = classifier.classify(uncached, categories)
+                                    inferred.each { id, decision ->
+                                        decisions[id] = decision
+                                        state.inferred[cacheKeys[id]] = decision
+                                    }
+                                    save(state)
                                 }
-                                save(state)
                             }
                         } catch (Exception ignored) {
                             inferenceFailed = true
@@ -74,7 +80,7 @@ class WalmartEnrichment {
                         }
                     }
                 }
-                Map plan = inferenceFailed ? [eligible:false, reason:'inference_unavailable'] : config.walmartEnrichment == 'exception_first' ?
+                Map plan = inferenceFailed ? [eligible:false, reason:inferenceReason] : config.walmartEnrichment == 'exception_first' ?
                     WalmartAllocation.plan(order, group, config.walmartDefaultCategoryId, decisions, accounts) : [eligible: false, reason: 'link_only']
                 // Source/settings/mappings freeze even for operations already completed.
                 String fingerprint = fingerprint([order: [id: order.orderId, date: order.orderDate, total: order.totalAmount,

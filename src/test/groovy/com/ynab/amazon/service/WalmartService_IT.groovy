@@ -109,21 +109,61 @@ class WalmartService_IT extends Specification {
         !new File(config.walmartJournalFile).text.contains('synthetic-not-live')
         new WalmartJournal(config.walmartJournalFile).locked(true) { state,save -> state.inferred.size()==2 && state.inferred.values().every { it.source==provider } }
 
+        when: 'preview uses the same cached decisions and nonsecret provenance for an unchanged frozen plan'
+        byte[] beforePreview=new File(config.walmartJournalFile).bytes
+        def frozenPreview=new WalmartEnrichment(config).process(matches,ynab,true,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        then:
+        !frozenPreview.preview*.reason.contains('applied_plan_drift')
+        frozenPreview.preview[0].operations[0].lines*.category_id==['h','g']
+        calls==1 && writes.size()==2
+        Arrays.equals(beforePreview,new File(config.walmartJournalFile).bytes)
+
+        when: 'a new order previews the same cached financial plan as live execution, without uploading or saving'
+        def nextOrder=WalmartFixture.order(); nextOrder.orderId='456'; nextOrder.orderUrl='https://www.walmart.com/orders/details?orderId=456'
+        def nextTransactions=WalmartFixture.transactions()
+        nextTransactions.each { it.id='next-'+it.id; remote[it.id]=WalmartFixture.remote(it) }
+        def nextMatches=new TransactionMatcher().findWalmartMatches(nextTransactions,[nextOrder])
+        def cachedPreview=new WalmartEnrichment(config).process(nextMatches,ynab,true,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        then:
+        cachedPreview.preview[0].operations[0].lines*.category_id==['h','g']
+        cachedPreview.preview[0].operations[0].lines*.cents==[2000L,5000L]
+        calls==1 && writes.size()==2
+        Arrays.equals(beforePreview,new File(config.walmartJournalFile).bytes)
+
         when: 'a fresh classifier and process reuse protected decisions without remote calls or duplicate PUTs'
-        new WalmartEnrichment(config).process(matches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        def liveCached=new WalmartEnrichment(config).process(nextMatches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
         then:
         calls==1
-        writes.size()==2
+        writes.size()==4
+        liveCached.preview[0].operations==cachedPreview.preview[0].operations
 
         when:
         config.walmartCategorization.categories[1].description='Changed category boundary'
         def drift=new WalmartEnrichment(config).process(matches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
         then:
-        writes.size()==2
+        writes.size()==4
         drift.preview*.reason.contains('applied_plan_drift')
 
         where:
         provider << ['openai','jev']
+    }
+
+    def 'unqualified-provider preview is explicitly unavailable, not an executable uncategorized allocation'() {
+        given:
+        Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture'.toCharArray())
+        config.walmartCategorization=WalmartRemoteClassifier.defaults('jev')+[credentials_file:key.toString(),categories:[[id:'g'],[id:'h']]]
+        int calls=0
+        def classifier=new WalmartRemoteClassifier(config.walmartCategorization,{ a,b,c,d -> calls++; [:] })
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        def matches=new TransactionMatcher().findWalmartMatches(txs,[WalmartFixture.order()])
+        when:
+        def preview=new WalmartEnrichment(config).process(matches,ynab,true,classifier)
+        then:
+        preview.preview[0].reason=='inference_unavailable'
+        preview.preview[0].operations.every { !it.lines }
+        calls==0 && writes.empty
+        !new File(config.walmartJournalFile).exists()
     }
 
     def 'provider failure keeps matches metadata-only, dry run and link-only never request inference'() {
@@ -140,9 +180,10 @@ class WalmartService_IT extends Specification {
         def matches=new TransactionMatcher().findWalmartMatches(txs,[WalmartFixture.order()])
 
         when:
-        new WalmartEnrichment(config).process(matches,ynab,true,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        def preview=new WalmartEnrichment(config).process(matches,ynab,true,new WalmartRemoteClassifier(config.walmartCategorization,transport))
         then:
         calls==0 && writes.empty
+        preview.preview[0].reason=='inference_required'
 
         when:
         new WalmartEnrichment(config).process(matches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
