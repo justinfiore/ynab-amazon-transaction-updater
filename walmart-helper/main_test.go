@@ -102,6 +102,28 @@ func TestContractNormalize(t *testing.T) {
 		t.Fatal("currency guessed")
 	}
 }
+func TestContractGroupSavings(t *testing.T) {
+	detail := []byte(`{"currencyCode":"USD","data":{"order":{"id":"123","orderDate":"2026-11-20","priceDetails":{"grandTotal":{"value":95}},"groups_2101":[{"status":{"statusType":"DELIVERED"},"priceDetails":{"savings":{"value":5}},"items":[{"id":"food","quantity":1,"productInfo":{"name":"Food"},"priceInfo":{"linePrice":{"value":80}}},{"id":"soap","quantity":1,"productInfo":{"name":"Soap"},"priceInfo":{"linePrice":{"value":15}}}]}]}}}`)
+	ledger := []byte(`{"data":{"getOrderLedger":{"paymentMethodsLedgers":[{"paymentType":"CREDITCARD","transactions":[{"chargeType":"FINAL_CHARGES","transactionLines":[{"date":"Nov 21, 2026","rowLines":[{"lineType":"ORDER_CHARGE","displayValues":["$95.00"]}]}]}]}]}}}`)
+	var raw walmart.OrderResponse
+	if err := json.Unmarshal(detail, &raw); err != nil {
+		t.Fatal(err)
+	}
+	got, err := normalize(raw.Data.Order, detail, ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Complete || got.Reason != "discount_basis_unproven" {
+		t.Fatalf("net prices authorized allocation: %+v", got)
+	}
+	// No discount evidence is a separate control, not a reason to infer gross.
+	raw.Data.Order.Groups[0].PriceDetails.Savings.Value = 0
+	got, err = normalize(raw.Data.Order, detail, ledger)
+	if err != nil || !got.Complete {
+		t.Fatalf("zero-savings control rejected: %+v %v", got, err)
+	}
+}
+
 func TestContractSessionImport(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows ACL qualification pending; production import fails closed")

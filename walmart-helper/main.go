@@ -219,6 +219,10 @@ func normalize(o *walmart.Order, detail, ledger []byte) (Order, error) {
 	}
 	items := map[string]Item{}
 	for _, group := range o.Groups {
+		if group.PriceDetails != nil && group.PriceDetails.Savings != nil && group.PriceDetails.Savings.Value != 0 {
+			result.Complete = false
+			result.Reason = "discount_basis_unproven"
+		}
 		if group.Status.StatusType != "DELIVERED" && group.Status.StatusType != "PICKED_UP" {
 			result.Complete = false
 			result.Reason = "unfulfilled_or_unsupported"
