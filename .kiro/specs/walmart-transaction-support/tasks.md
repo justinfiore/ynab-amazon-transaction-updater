@@ -1,5 +1,7 @@
 # Implementation Plan
 
+> Retired plan: the nonworking Playwright guest/login fetchers and their configuration have been removed. Completed checkboxes below describe historical work, not supported functionality. See [PR #15](https://github.com/justinfiore/ynab-amazon-transaction-updater/pull/15) for the replacement Go-backed proposal.
+
 - [x] 1. Add Playwright dependency and create Walmart model classes
   - Add Playwright dependency to build.gradle
   - Create WalmartOrder model class with orderId, orderDate, orderStatus, totalAmount, finalChargeAmounts, items, and orderUrl fields

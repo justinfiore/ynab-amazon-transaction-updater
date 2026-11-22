@@ -6,7 +6,11 @@
 - YNAB Account ID
 - Amazon order history CSV export (or email credentials)
 - Optional: maintained, patched CPython >=3.11.5 for Amazon account-history fetching
-- (Optional) Walmart account credentials for Walmart integration
+
+Walmart fetching is unavailable pending the proposed Go integration. Leave
+`walmart.enabled: false` in the sample configuration; setting it to `true`
+reports an explicit unavailable error. No other Walmart settings are recognized,
+and the removed browser guest/login paths have no compatibility fallback.
 
 ## 5-Minute Setup
 
