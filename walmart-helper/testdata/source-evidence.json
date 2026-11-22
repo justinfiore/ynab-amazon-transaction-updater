@@ -1,0 +1,24 @@
+{
+  "detail": {
+    "currencyCode": "USD",
+    "data": {"order": {
+      "id": "123", "orderDate": "2026-11-20T10:00:00Z",
+      "priceDetails": {"grandTotal":{"value":100},"taxTotal":{"value":5},"fees":[{"value":3}],"driverTip":{"value":2},"totalWithTip":{"value":110}},
+      "groups_2101": [{"status":{"statusType":"DELIVERED"},"items":[
+        {"id":"a","quantity":1.25,"productInfo":{"name":"Weighted Apples","usItemId":"p1"},"priceInfo":{"linePrice":{"value":80}}},
+        {"id":"b","quantity":2,"productInfo":{"name":"Soap","usItemId":"p2"},"priceInfo":{"linePrice":{"value":20}}}
+      ],"categories":[{"items":[{"id":"a","quantity":1.25,"productInfo":{"name":"Weighted Apples","usItemId":"p1"},"priceInfo":{"linePrice":{"value":80}}}]}]}]
+    }}
+  },
+  "ledger": {"data":{"getOrderLedger":{"paymentMethodsLedgers":[{
+    "paymentType":"CREDITCARD","cardType":"VISA","description":"Ending in 1234",
+    "transactions":[
+      {"chargeType":"TEMPORARY_HOLDS","transactionLines":[{"date":"Nov 20, 2026","rowLines":[{"lineType":"ORDER_CHARGE","displayValues":["$999.00"]}]}]},
+      {"chargeType":"FINAL_CHARGES","transactionLines":[{"date":"Nov 21, 2026","rowLines":[
+        {"lineType":"ORDER_CHARGE","displayValues":["$55.00"]},
+        {"lineType":"ORDER_CHARGE","displayValues":["$55.00"]},
+        {"lineType":"ORDER_ADJUSTMENT_REFUND","displayValues":["-$5.00"]}
+      ]}]}
+    ]
+  }]}}}
+}

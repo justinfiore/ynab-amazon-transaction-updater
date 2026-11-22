@@ -1,4 +1,4 @@
-// The helper is a dedicated process. No browser, raw-response persistence or login.
+// Retrieval only. Financial interpretation belongs to the Groovy application.
 package main
 
 import (
@@ -8,14 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -41,40 +37,102 @@ type Envelope struct {
 	Orders  []Order `json:"orders"`
 }
 type Order struct {
-	ID          string       `json:"id"`
-	Date        string       `json:"date"`
-	URL         string       `json:"url"`
-	Currency    string       `json:"currency"`
-	Total       int64        `json:"total_cents"`
-	Complete    bool         `json:"complete"`
-	Reason      string       `json:"reason,omitempty"`
-	Items       []Item       `json:"items"`
-	Charges     []Charge     `json:"charges"`
-	Adjustments []Adjustment `json:"adjustments"`
-}
-type Item struct {
-	ID       string `json:"id"`
-	Product  string `json:"product_id"`
-	Title    string `json:"title"`
-	Quantity string `json:"quantity"`
-	Gross    int64  `json:"gross_cents"`
-}
-type Charge struct {
-	Key      string `json:"key"`
-	Date     string `json:"date"`
-	Currency string `json:"currency"`
-	Payment  string `json:"payment"`
-	Cents    int64  `json:"cents"`
-}
-type Adjustment struct {
-	Kind  string `json:"kind"`
-	Cents int64  `json:"cents"`
+	Detail map[string]any `json:"detail"`
+	Ledger map[string]any `json:"ledger"`
 }
 
-// Upstream has no public transport setter and uses http.DefaultTransport. Set it
-// once, in this single-purpose process, before constructing the reviewed client.
-// Keep bounded raw bodies only in memory to retain fields its DTOs omit (currency,
-// ledger lineType/refunds). Never print upstream errors or response bodies.
+// Preserve source numbers and repeated entries; discard private unused fields.
+// A nil leaf is a scalar; nested maps describe allowed object/array members.
+func project(value any, fields map[string]any) (any, error) {
+	if values, ok := value.([]any); ok {
+		out := make([]any, 0, len(values))
+		for _, v := range values {
+			p, err := project(v, fields)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, p)
+		}
+		return out, nil
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil, invalid
+	}
+	out := map[string]any{}
+	for key, shape := range fields {
+		v, present := object[key]
+		if !present {
+			continue
+		}
+		if v == nil {
+			out[key] = nil
+			continue
+		}
+		if nested, ok := shape.(map[string]any); ok {
+			p, err := project(v, nested)
+			if err != nil {
+				return nil, err
+			}
+			out[key] = p
+		} else {
+			switch x := v.(type) {
+			case string, json.Number, bool:
+				out[key] = x
+			case []any:
+				for _, item := range x {
+					if _, ok := item.(string); !ok {
+						return nil, invalid
+					}
+				}
+				out[key] = x
+			default:
+				return nil, invalid
+			}
+		}
+	}
+	return out, nil
+}
+
+func evidence(detail, ledger []byte) (Order, error) {
+	money := map[string]any{"value": nil, "currency": nil, "currencyCode": nil}
+	price := map[string]any{"grandTotal": money, "totalWithTip": money, "driverTip": money, "taxTotal": money, "fees": money, "savings": money,
+		"deliveryFee": money, "tax": map[string]any{"taxAmount": money}}
+	item := map[string]any{"id": nil, "returnId": nil, "quantity": nil, "productInfo": map[string]any{"name": nil, "usItemId": nil},
+		"priceInfo": map[string]any{"linePrice": money, "unitPrice": money}}
+	category := map[string]any{"items": item}
+	group := map[string]any{"id": nil, "status": map[string]any{"statusType": nil}, "priceDetails": price, "items": item,
+		"categories": category, "subGroups": map[string]any{"categories": category}}
+	detailFields := map[string]any{"currency": nil, "currencyCode": nil, "data": map[string]any{"order": map[string]any{
+		"id": nil, "orderDate": nil, "currency": nil, "currencyCode": nil, "priceDetails": price, "groups_2101": group}}}
+	ledgerFields := map[string]any{"data": map[string]any{"getOrderLedger": map[string]any{"paymentMethodsLedgers": map[string]any{
+		"paymentType": nil, "cardType": nil, "description": nil, "transactions": map[string]any{"chargeType": nil, "transactionLines": map[string]any{
+			"date": nil, "rowLines": map[string]any{"lineType": nil, "displayValues": nil}}}}}}}
+	decode := func(b []byte, fields map[string]any) (map[string]any, error) {
+		var raw any
+		d := json.NewDecoder(bytes.NewReader(b))
+		d.UseNumber()
+		if d.Decode(&raw) != nil {
+			return nil, invalid
+		}
+		p, err := project(raw, fields)
+		if err != nil {
+			return nil, err
+		}
+		return p.(map[string]any), nil
+	}
+	d, err := decode(detail, detailFields)
+	if err != nil {
+		return Order{}, err
+	}
+	l, err := decode(ledger, ledgerFields)
+	if err != nil {
+		return Order{}, err
+	}
+	return Order{d, l}, nil
+}
+
+// The reviewed client uses DefaultTransport; set it before constructing it.
 type guardedTransport struct {
 	base   http.RoundTripper
 	bodies map[string][]byte
@@ -99,12 +157,16 @@ func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if err != nil || len(b) > maxBytes || !json.Valid(b) {
 		return nil, invalid
 	}
+	var root struct {
+		Errors []json.RawMessage `json:"errors"`
+		Data   json.RawMessage   `json:"data"`
+	}
+	if json.Unmarshal(b, &root) != nil || len(root.Errors) != 0 {
+		return nil, invalid
+	}
 	if strings.Contains(r.URL.Path, "/PurchaseHistoryV2/") {
-		// The upstream value-typed DTO silently accepts missing/null objects.
-		// Preserve the difference between an empty history and a failed query.
 		var envelope struct {
-			Errors []json.RawMessage `json:"errors"`
-			Data   *struct {
+			Data *struct {
 				History *struct {
 					Groups *[]json.RawMessage `json:"orderGroups"`
 					Page   *struct {
@@ -113,9 +175,8 @@ func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 				} `json:"orderHistoryV2"`
 			} `json:"data"`
 		}
-		if json.Unmarshal(b, &envelope) != nil || len(envelope.Errors) != 0 || envelope.Data == nil ||
-			envelope.Data.History == nil || envelope.Data.History.Groups == nil || envelope.Data.History.Page == nil ||
-			len(envelope.Data.History.Page.Next) == 0 {
+		if json.Unmarshal(b, &envelope) != nil || envelope.Data == nil || envelope.Data.History == nil ||
+			envelope.Data.History.Groups == nil || envelope.Data.History.Page == nil || len(envelope.Data.History.Page.Next) == 0 {
 			return nil, errors.New("history_failed")
 		}
 		var cursor string
@@ -136,223 +197,13 @@ func (g *guardedTransport) body(operation string) []byte {
 	return nil
 }
 
-func cents(f float64) (int64, error) {
-	if math.IsNaN(f) || math.IsInf(f, 0) || math.Abs(f) > 1e9 {
-		return 0, invalid
-	}
-	scaled := f * 100
-	// Only floating representation error, not a monetary matching tolerance.
-	if math.Abs(scaled-math.Round(scaled)) > 1e-7 {
-		return 0, invalid
-	}
-	return int64(math.Round(scaled)), nil
-}
-func currency(b []byte) string {
-	var root any
-	if json.Unmarshal(b, &root) != nil {
-		return ""
-	}
-	found := map[string]bool{}
-	var walk func(any)
-	walk = func(v any) {
-		switch x := v.(type) {
-		case map[string]any:
-			for k, value := range x {
-				if k == "currency" || k == "currencyCode" {
-					if s, ok := value.(string); ok {
-						found[s] = true
-					}
-				} else {
-					walk(value)
-				}
-			}
-		case []any:
-			for _, value := range x {
-				walk(value)
-			}
-		}
-	}
-	walk(root)
-	if len(found) == 1 && found["USD"] {
-		return "USD"
-	}
-	return ""
-}
-func normalize(o *walmart.Order, detail, ledger []byte) (Order, error) {
-	result := Order{ID: o.ID, Currency: currency(detail), Complete: true,
-		Items: []Item{}, Charges: []Charge{}, Adjustments: []Adjustment{}}
-	if !idPattern.MatchString(o.ID) {
-		return result, invalid
-	}
-	result.URL = "https://www.walmart.com/orders/details?orderId=" + url.QueryEscape(o.ID)
-	if len(o.OrderDate) < 10 {
-		return result, invalid
-	}
-	result.Date = o.OrderDate[:10]
-	if _, err := time.Parse("2006-01-02", result.Date); err != nil {
-		return result, invalid
-	}
-	if result.Currency != "USD" {
-		result.Complete = false
-		result.Reason = "currency_unproven"
-	}
-	p := o.PriceDetails
-	if p == nil || p.GrandTotal == nil {
-		return result, invalid
-	}
-	total := p.GrandTotal.Value
-	if p.TotalWithTip != nil {
-		total = p.TotalWithTip.Value
-	} else if p.DriverTip != nil {
-		total += p.DriverTip.Value
-	}
-	var err error
-	result.Total, err = cents(total)
-	if err != nil || result.Total <= 0 {
-		return result, invalid
-	}
-	add := func(kind string, f float64) error {
-		c, e := cents(f)
-		if e != nil || c < 0 {
-			return invalid
-		}
-		if c != 0 {
-			result.Adjustments = append(result.Adjustments, Adjustment{kind, c})
-		}
-		return nil
-	}
-	if p.TaxTotal != nil {
-		if err = add("tax", p.TaxTotal.Value); err != nil {
-			return result, err
-		}
-	}
-	if p.DriverTip != nil {
-		if err = add("tip", p.DriverTip.Value); err != nil {
-			return result, err
-		}
-	}
-	for _, fee := range p.Fees {
-		if err = add("fee", fee.Value); err != nil {
-			return result, err
-		}
-	}
-	if p.Savings != nil && p.Savings.Value != 0 {
-		// Reviewed DTO cannot prove line-price gross/net semantics. No guessing.
-		result.Complete = false
-		result.Reason = "discount_basis_unproven"
-	}
-	items := map[string]Item{}
-	for _, group := range o.Groups {
-		if group.PriceDetails != nil && group.PriceDetails.Savings != nil && group.PriceDetails.Savings.Value != 0 {
-			result.Complete = false
-			result.Reason = "discount_basis_unproven"
-		}
-		if group.Status.StatusType != "DELIVERED" && group.Status.StatusType != "PICKED_UP" {
-			result.Complete = false
-			result.Reason = "unfulfilled_or_unsupported"
-		}
-		all := append([]walmart.OrderItem{}, group.Items...)
-		for _, c := range group.Categories {
-			all = append(all, c.Items...)
-		}
-		for _, sub := range group.SubGroups {
-			for _, c := range sub.Categories {
-				all = append(all, c.Items...)
-			}
-		}
-		for _, item := range all {
-			if item.ID == "" || item.ReturnID != "" || item.ProductInfo == nil || item.PriceInfo == nil || item.PriceInfo.LinePrice == nil ||
-				item.Quantity <= 0 || math.IsNaN(item.Quantity) || math.IsInf(item.Quantity, 0) {
-				return result, invalid
-			}
-			cost, e := cents(item.PriceInfo.LinePrice.Value)
-			if e != nil || cost < 0 || len(item.ProductInfo.Name) > 1000 {
-				return result, invalid
-			}
-			next := Item{item.ID, item.ProductInfo.USItemID, item.ProductInfo.Name, strconv.FormatFloat(item.Quantity, 'f', -1, 64), cost}
-			if prior, ok := items[item.ID]; ok && prior != next {
-				return result, invalid
-			}
-			items[item.ID] = next
-		}
-	}
-	keys := []string{}
-	for key := range items {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		result.Items = append(result.Items, items[key])
-	}
-	// Do not use upstream's simplified ledger: it also includes refund row types.
-	var raw walmart.OrderLedgerResponse
-	if json.Unmarshal(ledger, &raw) != nil {
-		return result, invalid
-	}
-	ordinal := map[string]int{}
-	for _, pm := range raw.Data.GetOrderLedger.PaymentMethodsLedgers {
-		last := regexp.MustCompile(`(?:^|\D)(\d{4})$`).FindStringSubmatch(pm.Description)
-		payment := pm.PaymentType + ":" + pm.CardType + ":"
-		if len(last) > 1 {
-			payment += last[1]
-		}
-		for _, tx := range pm.Transactions {
-			if tx.ChargeType != "FINAL_CHARGES" {
-				continue
-			}
-			for _, line := range tx.TransactionLines {
-				date, e := time.Parse("Jan 2, 2006", line.Date)
-				if e != nil {
-					date, e = time.Parse("January 2, 2006", line.Date)
-				}
-				if e != nil {
-					return result, invalid
-				}
-				for _, row := range line.RowLines {
-					if row.LineType != "ORDER_CHARGE" {
-						result.Complete = false
-						result.Reason = "refund_or_unsupported_ledger"
-						continue
-					}
-					if len(row.DisplayValues) != 1 {
-						return result, invalid
-					}
-					text := row.DisplayValues[0]
-					if !regexp.MustCompile(`^\$[0-9,]+\.[0-9]{2}$`).MatchString(text) {
-						return result, invalid
-					}
-					f, e := strconv.ParseFloat(strings.ReplaceAll(strings.TrimPrefix(text, "$"), ",", ""), 64)
-					if e != nil {
-						return result, invalid
-					}
-					c, e := cents(f)
-					if e != nil || c <= 0 {
-						return result, invalid
-					}
-					base := fmt.Sprintf("%s|%s|%s|%d", o.ID, payment, date.Format("2006-01-02"), c)
-					ordinal[base]++
-					result.Charges = append(result.Charges, Charge{fmt.Sprintf("%s|%d", base, ordinal[base]), date.Format("2006-01-02"), result.Currency, payment, c})
-				}
-			}
-		}
-	}
-	if len(result.Items) == 0 || len(result.Charges) == 0 {
-		result.Complete = false
-		result.Reason = "missing_items_or_charges"
-	}
-	return result, nil
-}
-
 func run(r Request) (Envelope, error) {
 	result := Envelope{Version: 1, Status: "ok", Orders: []Order{}}
 	if r.Version != 1 || !filepath.IsAbs(r.Session) {
 		return result, invalid
 	}
 	if r.Action == "import" {
-		if err := importSession(r.Capture, r.Session); err != nil {
-			return result, err
-		}
-		return result, nil
+		return result, importSession(r.Capture, r.Session)
 	}
 	if r.Action != "fetch" || r.Pages < 1 || r.Pages > 20 {
 		return result, invalid
@@ -390,18 +241,17 @@ func run(r Request) (Envelope, error) {
 				return result, invalid
 			}
 			transport.bodies = map[string][]byte{}
-			order, e := client.GetOrderWithGroup(ctx, summary.OrderID, summary.GroupID, false)
-			if e != nil {
+			if _, e = client.GetOrderWithGroup(ctx, summary.OrderID, summary.GroupID, false); e != nil {
 				return result, errors.New("details_failed")
 			}
 			if _, e = client.GetOrderLedger(ctx, summary.OrderID); e != nil {
 				return result, errors.New("ledger_failed")
 			}
-			normalized, e := normalize(order, transport.body("getOrder"), transport.body("getOrderLedger"))
+			order, e := evidence(transport.body("getOrder"), transport.body("getOrderLedger"))
 			if e != nil {
 				return result, e
 			}
-			result.Orders = append(result.Orders, normalized)
+			result.Orders = append(result.Orders, order)
 		}
 		cursor = history.Data.OrderHistoryV2.PageInfo.NextPageCursor
 		if cursor == "" {
@@ -417,9 +267,9 @@ func main() {
 		fail()
 		return
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(&request) != nil || decoder.Decode(new(any)) != io.EOF {
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.DisallowUnknownFields()
+	if d.Decode(&request) != nil || d.Decode(new(any)) != io.EOF {
 		fail()
 		return
 	}

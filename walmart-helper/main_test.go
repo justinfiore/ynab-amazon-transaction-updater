@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"io"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,20 +13,6 @@ import (
 
 	walmart "github.com/eshaffer321/walmart-client-go/v2"
 )
-
-func TestUnitMoney(t *testing.T) {
-	for _, f := range []float64{12.345, math.NaN(), math.Inf(1), 1e12} {
-		if _, e := cents(f); e == nil {
-			t.Fatalf("accepted unsupported money %v", f)
-		}
-	}
-	for f, want := range map[float64]int64{12.34: 1234, 0.29: 29, -5: -500} {
-		got, e := cents(f)
-		if e != nil || got != want {
-			t.Fatalf("money got %d %v", got, e)
-		}
-	}
-}
 
 type roundTrip func(*http.Request) (*http.Response, error)
 
@@ -73,55 +58,33 @@ func TestUnitTransportFailures(t *testing.T) {
 		}
 	}
 }
-func TestContractNormalize(t *testing.T) {
-	detail := []byte(`{"currencyCode":"USD","data":{"order":{"id":"123","orderDate":"2026-11-20T10:00:00Z","priceDetails":{"grandTotal":{"value":100},"taxTotal":{"value":5},"fees":[{"value":3}],"driverTip":{"value":2},"totalWithTip":{"value":110}},"groups_2101":[{"status":{"statusType":"DELIVERED"},"items":[{"id":"a","quantity":1.25,"productInfo":{"name":"Weighted Apples","usItemId":"p1"},"priceInfo":{"linePrice":{"value":80}}},{"id":"b","quantity":2,"productInfo":{"name":"Soap","usItemId":"p2"},"priceInfo":{"linePrice":{"value":20}}}],"categories":[{"items":[{"id":"a","quantity":1.25,"productInfo":{"name":"Weighted Apples","usItemId":"p1"},"priceInfo":{"linePrice":{"value":80}}}]}]}]}}}`)
-	ledger := []byte(`{"data":{"getOrderLedger":{"paymentMethodsLedgers":[{"paymentType":"CREDITCARD","cardType":"VISA","description":"Ending in 1234","transactions":[{"chargeType":"TEMPORARY_HOLDS","transactionLines":[{"date":"Nov 20, 2026","rowLines":[{"lineType":"ORDER_CHARGE","displayValues":["$999.00"]}]}]},{"chargeType":"FINAL_CHARGES","transactionLines":[{"date":"Nov 21, 2026","rowLines":[{"lineType":"ORDER_CHARGE","displayValues":["$55.00"]},{"lineType":"ORDER_CHARGE","displayValues":["$55.00"]},{"lineType":"ORDER_ADJUSTMENT_REFUND","displayValues":["-$5.00"]}]}]}]}]}}}`)
-	var raw walmart.OrderResponse
-	if json.Unmarshal(detail, &raw) != nil {
-		t.Fatal("fixture")
-	}
-	got, e := normalize(raw.Data.Order, detail, ledger)
-	if e != nil {
-		t.Fatal(e)
-	}
-	if len(got.Items) != 2 || got.Items[0].Quantity != "1.25" || got.Items[0].Gross != 8000 || got.Total != 11000 {
-		t.Fatalf("item normalization: %+v", got)
-	}
-	if len(got.Charges) != 2 || got.Charges[0].Cents != 5500 || got.Charges[0].Key == got.Charges[1].Key || got.Charges[0].Date != "2026-11-21" {
-		t.Fatalf("charges: %+v", got.Charges)
-	}
-	if got.Complete || got.Reason != "refund_or_unsupported_ledger" {
-		t.Fatal("refund incorrectly split ready")
-	}
-	encoded, _ := json.Marshal(got)
-	for _, secret := range []string{"customer", "address", "cookie", "TEMPORARY", "REFUND"} {
-		if strings.Contains(string(encoded), secret) {
-			t.Fatal("raw field leaked")
-		}
-	}
-	if currency([]byte(`{"value":100}`)) != "" || currency([]byte(`{"currency":"CAD"}`)) != "" {
-		t.Fatal("currency guessed")
-	}
-}
-func TestContractGroupSavings(t *testing.T) {
-	detail := []byte(`{"currencyCode":"USD","data":{"order":{"id":"123","orderDate":"2026-11-20","priceDetails":{"grandTotal":{"value":95}},"groups_2101":[{"status":{"statusType":"DELIVERED"},"priceDetails":{"savings":{"value":5}},"items":[{"id":"food","quantity":1,"productInfo":{"name":"Food"},"priceInfo":{"linePrice":{"value":80}}},{"id":"soap","quantity":1,"productInfo":{"name":"Soap"},"priceInfo":{"linePrice":{"value":15}}}]}]}}}`)
-	ledger := []byte(`{"data":{"getOrderLedger":{"paymentMethodsLedgers":[{"paymentType":"CREDITCARD","transactions":[{"chargeType":"FINAL_CHARGES","transactionLines":[{"date":"Nov 21, 2026","rowLines":[{"lineType":"ORDER_CHARGE","displayValues":["$95.00"]}]}]}]}]}}}`)
-	var raw walmart.OrderResponse
-	if err := json.Unmarshal(detail, &raw); err != nil {
-		t.Fatal(err)
-	}
-	got, err := normalize(raw.Data.Order, detail, ledger)
+func TestContractEvidence(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/source-evidence.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Complete || got.Reason != "discount_basis_unproven" {
-		t.Fatalf("net prices authorized allocation: %+v", got)
+	var expected map[string]json.RawMessage
+	if json.Unmarshal(fixture, &expected) != nil {
+		t.Fatal("fixture")
 	}
-	// No discount evidence is a separate control, not a reason to infer gross.
-	raw.Data.Order.Groups[0].PriceDetails.Savings.Value = 0
-	got, err = normalize(raw.Data.Order, detail, ledger)
-	if err != nil || !got.Complete {
-		t.Fatalf("zero-savings control rejected: %+v %v", got, err)
+	// Inject unused private fields without changing source pricing or ledger evidence.
+	detail := strings.Replace(string(expected["detail"]), `"id": "123"`, `"customer":{"email":"private"},"address":"private","id": "123"`, 1)
+	got, err := evidence([]byte(detail), expected["ledger"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(got)
+	var a, b any
+	json.Unmarshal(encoded, &a)
+	json.Unmarshal(fixture, &b)
+	if !reflect.DeepEqual(a, b) || strings.Contains(string(encoded), "private") {
+		t.Fatal("source evidence changed or private fields leaked")
+	}
+	// Preserve even unsupported fractional prices; only Groovy may reject them.
+	got, err = evidence([]byte(`{"data":{"order":{"priceDetails":{"grandTotal":{"value":12.345}}}}}`), expected["ledger"])
+	encoded, _ = json.Marshal(got)
+	if err != nil || !strings.Contains(string(encoded), "12.345") {
+		t.Fatal("retrieval rounded source money")
 	}
 }
 

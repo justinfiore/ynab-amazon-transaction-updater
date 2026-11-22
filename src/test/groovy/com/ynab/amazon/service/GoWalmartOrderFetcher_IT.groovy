@@ -12,9 +12,7 @@ class GoWalmartOrderFetcher_IT extends Specification {
     def 'bounded real child validates minimal schema and drops failed partial payloads'() {
         given:
         File executable=new File(directory,'fixture-helper')
-        Map root=[version:1,status:'ok',orders:[[id:'123',date:'2026-11-20',url:'https://www.walmart.com/orders/details?orderId=123',currency:'USD',
-            total_cents:1000,complete:true,items:[[id:'item',product_id:'p',title:'Weighted apples',quantity:'1.25',gross_cents:1000]],
-            charges:[[key:'charge',payment:'VISA:1234',date:'2026-11-21',currency:'USD',cents:1000]],adjustments:[]]]]
+        Map root=[version:1,status:'ok',orders:[json.readValue(new File('walmart-helper/testdata/source-evidence.json'),Map)]]
         String encoded=json.writeValueAsString(root)
         String prefix='''#!/usr/bin/env python3
 import sys, json, os
@@ -31,8 +29,10 @@ assert not any(k.startswith(('AMAZON_','YNAB_','HF_','AWS_','PYTHON')) for k in 
 
         then:
         orders[0].items[0].quantity==1.25G
-        orders[0].charges[0].cents==1000L
-        orders[0].totalAmount==10G
+        orders[0].charges[0].cents==5500L
+        orders[0].charges[0].key!=orders[0].charges[1].key
+        orders[0].totalAmount==110G
+        !orders[0].complete
 
         when:
         executable.text=prefix+"print(${json.writeValueAsString(encoded)})\nsys.exit(1)\n"
@@ -44,7 +44,7 @@ assert not any(k.startswith(('AMAZON_','YNAB_','HF_','AWS_','PYTHON')) for k in 
         failure.message.contains('NON_ZERO_EXIT')
 
         when:
-        root.orders[0].charges[0].cents=1000.1
+        root.orders[0].detail.data.order.groups_2101[0].items[0].priceInfo.linePrice.value=80.001
         executable.text=prefix+"print(${json.writeValueAsString(json.writeValueAsString(root))})\n"
         new GoWalmartOrderFetcher(config).fetchOrders()
 
