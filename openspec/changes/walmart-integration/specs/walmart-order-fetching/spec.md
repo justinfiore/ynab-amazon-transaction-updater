@@ -4,19 +4,27 @@ Provide optional, secret-safe Walmart consumer order history, item costs and fin
 
 ## ADDED Requirements
 
-### Requirement: Explicit ledger source selection
-The application SHALL offer an opt-in session-backed Walmart ledger source without changing existing guest/login defaults or Amazon behavior. Ledger mode SHALL NOT require Walmart passwords or email credentials in application YAML.
+### Requirement: Sole opt-in Go ledger source
+The application SHALL provide the session-backed Go ledger helper as the sole Walmart fetching source, gated by `walmart.enabled` defaulting to `false`, without changing Amazon behavior. It SHALL NOT restore removed browser fetchers, Playwright, source selectors, compatibility aliases or fallback sources. Fetching SHALL NOT require passwords or email credentials in application YAML.
 
-#### Scenario: Operator selects ledger mode
-- **WHEN** ledger mode has valid helper/session paths and positive time/output bounds
+#### Scenario: Operator enables the implemented Go integration
+- **WHEN** Walmart is enabled after implementation with valid helper/session paths and positive time/output bounds
 - **THEN** Walmart retrieval uses the ledger source without launching a login browser or connecting to IMAP
 
-#### Scenario: Operator keeps existing configuration
-- **WHEN** ledger mode is not selected
-- **THEN** existing source selection and Amazon hardening remain unchanged
+#### Scenario: Operator leaves Walmart disabled
+- **WHEN** `walmart.enabled` is false or omitted
+- **THEN** no Walmart helper or session is required and Amazon behavior and hardening remain unchanged
+
+#### Scenario: Operator enables Walmart before helper integration exists
+- **WHEN** `walmart.enabled` is true before the Go integration is implemented
+- **THEN** an explicit unavailable error is reported without attempting any removed browser path
+
+#### Scenario: Operator retains removed source settings
+- **WHEN** an old configuration contains Walmart guest/login or browser settings
+- **THEN** those settings do not select a source, become aliases or trigger a fallback, and documentation instructs the operator to remove them
 
 ### Requirement: Normalized history and complete charge evidence
-The source SHALL return versioned order/item records and distinct final purchase-charge occurrences with amount, currency, charge date and payment identity. It SHALL distinguish known-complete data from failed or unsupported retrieval and SHALL NOT treat missing data as zero charges.
+The source SHALL return versioned records with order ID/link, order placement date, full order total/currency, items and distinct final purchase charges with amount, currency, charge date and payment identity. It SHALL distinguish complete data from failed or unsupported retrieval, not treat missing data as zero charges, and not substitute bank dates/amounts for missing order metadata.
 
 #### Scenario: One order has multiple final charges
 - **WHEN** a fulfilled order has two final charges, a temporary hold and a refund

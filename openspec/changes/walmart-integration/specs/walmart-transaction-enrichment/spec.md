@@ -5,7 +5,7 @@ Associate individual YNAB purchases with Walmart final charges and provide order
 ## ADDED Requirements
 
 ### Requirement: Distinct final-charge matching
-In ledger mode the application SHALL match each eligible YNAB outflow to at most one final purchase-charge occurrence, using exact integer amount, charge-date proximity and compatible payment/account evidence. It SHALL consume each occurrence at most once across transactions and orders, skip unresolved ambiguity and never substitute an order-total match for a missing final charge.
+The application SHALL match each eligible YNAB outflow to at most one final purchase-charge occurrence from the sole Go-backed Walmart source, using exact integer amount, charge-date proximity and compatible payment/account evidence. It SHALL consume each occurrence at most once across transactions and orders, skip unresolved ambiguity and never substitute an order-total match for a missing final charge.
 
 #### Scenario: Several transactions belong to one order
 - **WHEN** two eligible YNAB transactions uniquely match two final charges of one order
@@ -19,12 +19,24 @@ In ledger mode the application SHALL match each eligible YNAB outflow to at most
 - **WHEN** equal amounts and dates cannot distinguish payment methods or orders using available account evidence
 - **THEN** the application leaves the ambiguous candidates unchanged and reports the need for disambiguation
 
-### Requirement: Durable direct order links
-Each linked parent transaction SHALL retain its existing memo and include the Walmart order number and a validated HTTPS Walmart order-details link within 500 characters. The application SHALL reserve space for the link before optional item summaries and skip a write rather than silently discard user memo content.
+### Requirement: Metadata-only parent memos and direct order links
+Each linked parent transaction SHALL preserve its existing memo and add only the order date, full order total with currency, order ID and validated direct HTTPS Walmart order-details URL. Generated parent metadata SHALL NOT contain items or product summaries. The total SHALL be labeled as the order total, not the matched charge amount. The entire memo SHALL fit 500 characters; otherwise the write SHALL be skipped without discarding user text. No third-party shortener SHALL be used.
 
-#### Scenario: Long product summary competes with the link
-- **WHEN** optional item text would exceed the memo limit
-- **THEN** optional item text is shortened while the order number, intact link and existing memo remain preserved
+#### Scenario: A charge belongs to a larger order
+- **WHEN** a $70 transaction matches one charge of a USD order dated 2026-11-20 with a full total of $100.00
+- **THEN** its generated metadata starts `2026-11-20 | Total $100.00 | #`, followed by the order ID and direct URL last, without item names or a `Walmart | ` prefix, and the transaction amount remains $70
+
+#### Scenario: A narrow phone preview truncates the metadata
+- **WHEN** the client shows only the beginning of the generated metadata
+- **THEN** the ISO order date and full order total precede the order ID and URL, without verbose date or ID labels or an assumed fixed preview length
+
+#### Scenario: Existing memo leaves insufficient space
+- **WHEN** the existing memo and required order metadata would exceed 500 characters
+- **THEN** no write occurs and the preview reports insufficient memo space without truncating user text or the order URL
+
+#### Scenario: Item splits are enabled
+- **WHEN** a proportional split is written
+- **THEN** the parent memo remains metadata-only and item descriptions appear only on their individual split lines
 
 ### Requirement: Explicit proportional allocation
 When proportional mode is enabled and pricing reconciles, the application SHALL allocate each item and explicit non-item component across the complete order's final purchase charges by charge amount. This SHALL be labeled an accounting allocation, not an item-to-shipment or item-to-charge fact. Link-only mode SHALL remain the default.

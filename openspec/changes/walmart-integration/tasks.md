@@ -12,7 +12,7 @@ All tasks are implementation work for a later apply phase. This proposal does no
 
 ## 2. Ledger source and exact normalization
 
-- [ ] 2.1 Add explicit ledger source, helper/session paths and positive time/output settings to configuration and `WalmartService`; document examples and verify legacy guest/login selection and Amazon environment isolation remain unchanged.
+- [ ] 2.1 Add helper/session paths and positive time/output settings to configuration and `WalmartService` as the sole fetching source gated by `walmart.enabled` (default `false`); document these new settings and verify disabled operation needs no helper, removed guest/login settings have no compatibility aliases or fallback, and Amazon environment isolation remains unchanged.
 - [ ] 2.2 Add the bounded Go-backed Groovy fetcher with source-scoped environment filtering; verify timeout, excess output, invalid schema, nonzero exit and stale-auth fixtures return no usable failed-fetch payload while other retailers continue.
 - [ ] 2.3 Normalize distinct payment-charge occurrences, dates, currency, completeness and stable keys; verify repeated equal-valued charges remain distinct, holds/refunds are excluded and malformed/misaligned ledgers fail split eligibility.
 - [ ] 2.4 Normalize items, decimal quantities, extended costs and supported discounts/tax/fees/tips; verify weighted items, duplicate display groups, cancellations, unsupported precision/currency and unexplained residuals with independently expected fixture totals.
@@ -20,7 +20,7 @@ All tasks are implementation work for a later apply phase. This proposal does no
 ## 3. Unique matching and durable links
 
 - [ ] 3.1 Extend `TransactionMatch` and ledger matching with global candidate resolution, exact cents, charge dates and optional account/payment mapping; document mapping and verify no charge reuse or order-total fallback, equal-charge multiplicity and cross-order/account ambiguity.
-- [ ] 3.2 Add link-only enrichment preserving existing memo content and reserving space for the validated order number/link; verify long memos, duplicate runs, unsafe URLs and optional summary truncation obey the 500-character limit.
+- [ ] 3.2 Replace generated Walmart parent item summaries with metadata-only enrichment: order date, full order total/currency, order ID and direct validated URL, preserving existing user memo; document an example and verify multi-charge totals, duplicate runs, unsafe URLs, no shortener calls, absence of item names and skip-on-overflow within 500 characters.
 - [ ] 3.3 Add ledger dry-run reporting and source-specific skip reasons without marking completion; document preview and verify representative matches, failures and ambiguous assignments produce no HTTP writes.
 
 ## 4. Exact proportional allocation
@@ -38,5 +38,5 @@ All tasks are implementation work for a later apply phase. This proposal does no
 
 ## 6. Integrated offline acceptance
 
-- [ ] 6.1 Exercise helper fixtures through source selection, matching, preview, allocation, mock YNAB updates and restart recovery; verify both capability specs' scenarios without real sessions, browser installation or live account writes.
-- [ ] 6.2 Run Go tests/build, the repository build and unit/integration test scripts plus strict OpenSpec validation; verify existing Amazon/legacy Walmart tests remain green and packaging remains usable without the optional helper.
+- [ ] 6.1 Exercise helper fixtures through Walmart enablement, matching, preview, allocation, mock YNAB updates and restart recovery; verify both capability specs' scenarios without real sessions, browser installation or live account writes, and without restoring removed browser modes or Playwright.
+- [ ] 6.2 Run Go tests/build, the repository build and unit/integration test scripts plus strict OpenSpec validation; verify unchanged Amazon coverage and retained Walmart model/matcher/processor coverage remain green, add replacement-source tests rather than restoring deleted fetcher tests, and ensure packaging remains usable with Walmart disabled and no helper installed.
