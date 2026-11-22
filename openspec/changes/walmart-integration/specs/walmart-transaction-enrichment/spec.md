@@ -39,7 +39,7 @@ Each linked parent transaction SHALL preserve its existing memo and add only the
 - **THEN** the parent memo remains metadata-only and exception item descriptions appear only on their individual split lines without itemizing default-category purchases
 
 ### Requirement: Existing categories and explicit default policy
-Exception-first mode SHALL require a valid Default Walmart Category ID and an explicit nonempty shortlist of existing eligible category IDs in that YNAB plan, including the default. The application SHALL reject duplicates/invalid targets, restrict all automatic decisions and mapping reuse to the shortlist, and never create, rename or suggest categories. Classification SHALL remain local.
+Exception-first mode SHALL require a valid default and nonempty shortlist of eligible existing category IDs in that plan, including the default. Groovy SHALL reject duplicate/invalid targets, restrict decisions/mapping reuse to the shortlist and never create, rename or suggest categories. Remote classification SHALL require explicit consent to minimal disclosure and paid billing for the selected OpenAI Decisions or Jev provider.
 
 #### Scenario: An approved product mapping exists
 - **WHEN** a product has unambiguous approved evidence for an allowed existing category
@@ -61,23 +61,42 @@ Exception-first mode SHALL require a valid Default Walmart Category ID and an ex
 - **WHEN** the configured shortlist excludes a previously learned category or omits the default
 - **THEN** the excluded mapping is not reused and an absent default prevents allocation, without expanding the list or suggesting a new category
 
-### Requirement: Qualified Laya classic classification
-The integration SHALL provide only Laya classic (322M/421M) CPU classification initially. Kev SHALL be deferred to a future proposal, not installed, selectable or used as a fallback. Support SHALL require reviewed loading, locked dependencies, licensing, CPU correctness, measured memory/latency and held-out Walmart quality tests per checkpoint. Unqualified profiles SHALL fail closed without model/GPU/cloud substitution. Hosted providers and fine-tuning SHALL be outside initial scope.
+### Requirement: Groovy-owned paid provider classification
+Groovy SHALL own inference, normalization, categorization, splitting and YNAB processing; Go SHALL only retrieve Walmart evidence and manage retrieval session/transport. OpenAI SHALL use API-key Decisions and Jev SHALL use direct TypeSafe API-key System One. OAuth, Responses, subscription inference, local Laya/Kev runtimes and automatic provider fallback SHALL NOT be supported.
 
-#### Scenario: A selected provider exceeds the resource budget
-- **WHEN** local inference exceeds configured positive memory, time or CPU-thread bounds
-- **THEN** it stops safely and retains unresolved items for review or link-only handling without loading another model or accepting a partial malformed result
+#### Scenario: A classification request fails
+- **WHEN** either provider returns an authentication, quota, network or model error
+- **THEN** Groovy retains unresolved items for review or link-only handling without changing endpoint/auth mode, silently billing another connection or accepting malformed results
 
-### Requirement: Guided model provisioning
-Onboarding SHALL check Docker prerequisites, offer numbered qualified Laya profiles and confirm pinned image/model downloads with hash verification and offline container readiness checks. Token input SHALL be hidden and used only for provisioning, without persistence, command arguments, logging, unrelated-host forwarding or global Hub login. Provisioning SHALL omit purchase/budget data and remain separate from inference.
+### Requirement: Guided provider and API-key onboarding
+The onboarding script SHALL launch Groovy setup, offer OpenAI Decisions versus Jev, explain endpoint/model, remote data/privacy and paid billing, and obtain consent before provider access. API-key input SHALL be hidden and keys SHALL use separate provider-scoped protected atomic records, not YAML. Setup SHALL NOT silently charge for validation or change active provider/config on cancellation/failure.
 
-#### Scenario: Model download succeeds or fails
-- **WHEN** the operator confirms provisioning with a token able to read required repositories
-- **THEN** the complete pinned artifacts are verified before becoming ready; interrupted, denied or corrupt downloads leave configuration unchanged and give non-secret retry/cancel guidance without requesting write/admin access
+#### Scenario: An operator chooses API-key authentication
+- **WHEN** hidden console input is available and the operator confirms the paid Decisions route
+- **THEN** setup captures the key without command arguments, echo or logs, stores only a credential-file reference in YAML and does not imply ChatGPT subscription coverage
 
-#### Scenario: Tokenizer compatibility needs normalization
-- **WHEN** a reviewed Laya tokenizer requires a compatibility rewrite
-- **THEN** setup verifies both original and transformed artifact hashes before readiness, without inference-time model writes
+#### Scenario: An operator chooses Jev
+- **WHEN** the operator confirms direct TypeSafe Jev
+- **THEN** setup requests a TypeSafe API key, selects versioned jev-1.14.0 and discloses TypeSafe billing/privacy without requesting an OpenRouter key or subscription login
+
+#### Scenario: Authentication is cancelled or unavailable
+- **WHEN** the operator cancels or hidden input requirements cannot be satisfied
+- **THEN** the existing connection/configuration remains active, staged credentials are cleaned up and safe retry/API-key/cancel guidance is given without insecure credential capture
+
+### Requirement: Provider-scoped credential isolation
+Groovy SHALL store each provider key in an owner-only POSIX or equivalently protected Windows ACL record with atomic updates. Keys SHALL NOT reach Go, YAML, arguments, logs, journal/cache fingerprints or other providers. Authentication rejection SHALL stop inference with replacement guidance, not refresh/retry loops or billing fallback. Disconnect SHALL remove only the selected local key and explain provider-console revocation.
+
+#### Scenario: Two provider keys are configured
+- **WHEN** the selected provider is OpenAI or Jev
+- **THEN** its requests use only its corresponding key and normal sync never contacts the other provider
+
+#### Scenario: A key is rejected
+- **WHEN** inference returns an authentication or permission rejection
+- **THEN** no token-refresh flow, repeated authentication replay or other provider/key fallback occurs
+
+#### Scenario: The operator disconnects
+- **WHEN** logout is confirmed
+- **THEN** selected-provider inference stops, its local key is removed and remote revocation is explained without claiming the provider key has already been revoked
 
 ### Requirement: Numbered existing-category onboarding
 Onboarding SHALL read eligible categories from the configured YNAB plan, display numbered group/name choices and accept comma-separated numbers for the shortlist. It SHALL resolve choices to the displayed IDs, reject invalid/empty/duplicate selections and ask for the default from the selected list. No manual ID copying, category creation or live transaction writes SHALL be required or performed.
@@ -87,40 +106,36 @@ Onboarding SHALL read eligible categories from the configured YNAB plan, display
 - **THEN** the group labels distinguish them and the configuration uses the corresponding stable IDs, not names or a newly fetched list's positions
 
 ### Requirement: Platform-qualified onboarding and documentation
-Initial host targets SHALL be Linux x86_64, macOS arm64 and Windows x86_64 using native onboarding and qualified CPU-only Linux containers. A documented host/engine/image/checkpoint matrix SHALL distinguish intended from verified support. Onboarding SHALL check prerequisites before token entry/download, without automatic Docker installation/reconfiguration, silent emulation, dependency downgrades or GPU/cloud substitution.
+Initial host targets SHALL be Linux x86_64, macOS arm64 and Windows x86_64 using the native Groovy/JVM launcher and packaged retrieval helper. A JVM/credential-permission matrix SHALL distinguish intended from verified support. OAuth/browser callbacks, Docker, Python inference, Hugging Face credentials and model downloads SHALL NOT be prerequisites.
 
-#### Scenario: Windows uses Docker Desktop
+#### Scenario: Windows credentials are saved
 - **WHEN** onboarding runs natively on Windows
-- **THEN** it explains Docker Desktop's possible WSL2/Hyper-V backend prerequisite without requiring application/onboarding commands in WSL
+- **THEN** protected credential ACLs are verified without requiring Docker Desktop or WSL commands
 
-#### Scenario: A Laya profile qualifies on the detected platform
-- **WHEN** onboarding detects a host/engine/image target with a qualified pinned Laya profile
-- **THEN** only qualified fitting Laya profiles are selectable, without offering Kev or treating helper binary availability as proof of model support
-
-#### Scenario: Intel Mac or another target has no qualified models
-- **WHEN** the detected platform has no qualified local provider, including initially unsupported Intel Macs
-- **THEN** onboarding explains the platform/dependency limitation, leaves config unchanged, requests no token/download and describes link-only operation without model provisioning
+#### Scenario: A host has not been verified
+- **WHEN** the platform lacks qualified launcher/helper/authentication support
+- **THEN** documentation identifies the unverified boundary rather than claiming support from helper binary availability alone
 
 ### Requirement: Confirmed safe onboarding configuration
-Onboarding SHALL preview and confirm model/shortlist/default settings, revalidate categories, and atomically save protected configuration preserving unrelated settings and detecting concurrent edits. Cancellation/failure SHALL preserve the original config. Reruns SHALL preselect valid saved choices. Setup SHALL NOT automatically enable fetching or allocation, change existing enablement/mode, or weaken disabled/link-only initial defaults.
+Onboarding SHALL confirm provider/endpoint/model/credential-location/shortlist/default without revealing secrets, revalidate categories and atomically save protected config preserving unrelated settings and detecting concurrent edits. Cancellation/failure SHALL preserve config; reruns SHALL preselect valid choices. Setup SHALL NOT change enablement/mode or migrate local settings into remote-data consent.
 
 #### Scenario: Selection is cancelled or becomes stale
 - **WHEN** the operator cancels, a selected category becomes ineligible or another process edits the config before save
 - **THEN** the original config is not overwritten, no partial settings are applied, and selection/retry guidance is given without silently replacing categories
 
-### Requirement: Resource-aware model recommendations
-Onboarding SHALL ask for model RAM before selection: default 1 GB, explicitly adjustable up to 2 GB, with decimal-byte units explained. It SHALL recommend only platform/quality-qualified profiles whose measured worker-tree loading/inference peaks plus documented headroom fit the budget, prioritizing lower memory then measured latency. It SHALL show download/disk size separately, require confirmation and persist/enforce `categorization.memory_limit_bytes`.
+### Requirement: Bounded remote requests and explicit billing
+Groovy SHALL use bounded TLS requests to exact public OpenAI/TypeSafe endpoints with isolated provider credentials and no redirects. Positive connect/read/total deadlines, JSON body limits, concurrency and per-run request/token budgets SHALL apply. Transient retries SHALL be bounded and account for potentially duplicate cost. Documentation SHALL explain paid billing; no automatic provider/model/endpoint fallback SHALL occur.
 
-#### Scenario: No model fits the preferred budget
-- **WHEN** no qualified profile fits 1 GB but one fits within 2 GB
-- **THEN** onboarding explains the measured requirement and offers an explicit budget increase or cancellation/link-only handling without silently raising the limit or downloading an over-budget model
+#### Scenario: A request exceeds its budget
+- **WHEN** a response is oversized, a deadline expires or the run exhausts its request/token allowance
+- **THEN** inference stops safely without accepting incomplete output, exceeding configured retry budgets or substituting another billing route
 
-#### Scenario: No fitting model or actual memory overrun
-- **WHEN** measurements are missing, no qualified profile fits within 2 GB or a worker exceeds its confirmed memory ceiling
-- **THEN** inference is not treated as supported/successful, no model/cloud substitution occurs and safe unresolved/link-only handling applies; documentation explains that Docker engine/VM and JVM/helper/OS require RAM beyond the model budget
+#### Scenario: Local processing needs no new inference
+- **WHEN** Walmart is disabled/link-only or trustworthy mappings/cache entries cover the items
+- **THEN** no unnecessary inference occurs and disabled/link-only operation requires no provider key or provider requests
 
 ### Requirement: Bounded choices and explicit abstention
-Providers SHALL score the entire shortlist plus an internal abstain choice using names and optional boundary descriptions. Results SHALL use stable choice IDs, validated membership/completeness/finite scores and qualified acceptance/margin thresholds. Token/choice limits SHALL be checked without silent omission/truncation. Uncertainty/failure SHALL NOT become default spending. Models SHALL NOT choose amounts or perform writes.
+Groovy SHALL submit the entire shortlist plus abstain with meaningful labels/descriptions mapped to stable local IDs. OpenAI and Jev scores SHALL be independently validated/calibrated, not assumed equivalent. Limits SHALL be checked without silent omission/truncation. Uncertainty SHALL NOT become default spending. Models SHALL NOT choose amounts or write.
 
 #### Scenario: Similar product names cross category boundaries
 - **WHEN** representative fixtures include human food, pet food, household supplies and ambiguous product names
@@ -131,54 +146,54 @@ Providers SHALL score the entire shortlist plus an internal abstain choice using
 - **THEN** the application rejects that result without creating categories, accepting partial malformed batch output or defaulting unresolved products to Groceries
 
 #### Scenario: All configured choices do not fit
-- **WHEN** product text and category descriptions exceed the selected checkpoint's token or choice budget
+- **WHEN** product text and category descriptions exceed the selected endpoint/model's token or choice budget
 - **THEN** classification abstains/reports the limit rather than dropping allowed categories or silently truncating potentially decisive input
 
-### Requirement: Private offline inference and reproducible artifacts
-Laya SHALL use a digest-pinned image, a locked runtime separate from Amazon and hash-verified immutable checkpoint/encoder/tokenizer artifacts. Loading SHALL use safetensors and explicit classic CPU/eager execution, not Vega/router dispatch. Review SHALL cover licenses/advisories and the full dependency closure including installed VegaML. Inference SHALL NOT request networks, pull images, download files, load remote code, use unsafe pickle fallback or emit telemetry.
+### Requirement: Minimal consented remote classification inputs
+Only bounded necessary product attributes and shortlisted labels/descriptions SHALL reach the selected provider after consent. Requests SHALL omit sessions, YNAB credentials/IDs, addresses, order IDs/links, payments, bank memos and the full budget. Models SHALL have no tools/write authority. Raw prompts/responses SHALL NOT be logged by default. Documentation SHALL disclose provider data policies without promising local-only or zero retention.
 
-#### Scenario: Offline inference sees only classification inputs
-- **WHEN** a provisioned provider classifies fixture products with external networking blocked and unrelated credentials present in the parent
-- **THEN** it succeeds locally without network attempts or leaked credentials, and its input/output/logs omit order/account secrets and raw purchase logs
-
-#### Scenario: A checkpoint is missing or modified
-- **WHEN** the image or a Laya classic checkpoint, encoder configuration or tokenizer artifact is absent or fails verification
-- **THEN** loading fails without image pull, Hub download, Vega/router dispatch, remote code or unsafe deserialization fallback
-
-### Requirement: Isolated minimal model inputs
-The worker SHALL receive only bounded necessary product attributes and shortlisted category labels/descriptions, not sessions, YNAB credentials, addresses, order links or payments. Execution SHALL enforce network/filesystem isolation, an environment allowlist, bounded local IPC and protected caches/journals without raw purchase logging or LAN/public service exposure. Offline flags SHALL NOT be represented as a sandbox.
-
-#### Scenario: Parent credentials are available on the host
-- **WHEN** the JVM starts classification while holding Walmart/YNAB credentials and protected journals
-- **THEN** only the minimal classification payload reaches the worker and host secrets/journals are neither mounted nor inherited
-
-### Requirement: Network-disabled Docker worker and streamed IPC
-The JVM SHALL directly launch one non-root Laya container per batch with structured arguments and image pull disabled. It SHALL disable networking, ports and persistent logs, enforce read-only root/model filesystems, drop capabilities and apply no-new-privileges plus memory/swap/CPU/thread/PID/temp limits. Only the verified model directory SHALL be mounted, never host home, secrets, journals or Docker socket.
-
-#### Scenario: Docker launch is inspected
-- **WHEN** a fixture batch starts
-- **THEN** its image digest, isolation flags, limits and sole read-only model mount are verified, with no host/application/provisioning credentials exposed
-
-### Requirement: Bounded batch worker protocol and cleanup
-Versioned bounded newline-delimited JSON with correlation IDs SHALL use stdin/stdout, not HTTP, shell interpolation or per-item exec. Startup/request/batch deadlines, result validation and bounded redacted diagnostics SHALL apply. Laya SHALL load once per batch. Completion/failure/cancellation SHALL stop and remove the identified container, including interruption recovery. Disabled/link-only operation SHALL NOT require or probe Docker or download images/models.
-
-#### Scenario: A classification batch completes or fails
-- **WHEN** several uncached items are classified, or a worker times out, exceeds memory or emits malformed/partial results
-- **THEN** a single isolated batch worker handles valid requests without reloading per item, is removed after completion/failure, and invalid/incomplete results do not authorize writes
-
-#### Scenario: Docker is unavailable during link-only use
-- **WHEN** Walmart is disabled or operates link-only without model classification
-- **THEN** no Docker probe/start, image/model download or model credential request occurs
+#### Scenario: Remote requests are inspected
+- **WHEN** mock OpenAI/TypeSafe endpoints capture classification requests while Walmart/YNAB credentials are configured
+- **THEN** only the consented minimal classification payload and the selected provider's key reach their intended origin without unrelated account data
 
 #### Scenario: Hostile product text is classified
-- **WHEN** product text contains instructions requesting credentials, network access or category creation
-- **THEN** it remains untrusted classification input without access to those capabilities, and results remain subject to application-side shortlist and score validation
+- **WHEN** product text requests credentials, tools or category creation
+- **THEN** it remains untrusted data with no such capabilities and all output still requires application-side membership/schema/acceptance validation
+
+### Requirement: Complete provider-specific inference validation
+Groovy SHALL adapt OpenAI question/answer arrays and Jev named questions/answers separately to a common decision contract. It SHALL reject unknown/duplicate/missing entries, malformed JSON including duplicate keys, refusals, invalid scores/distributions, choice/argmax inconsistencies and unqualified model drift. HTTP 200 alone SHALL NOT authorize classification/writes. Jev SHALL use explicit versioned models, not floating aliases.
+
+#### Scenario: A batch has incomplete or conflicting output
+- **WHEN** either provider omits a requested question/choice, returns duplicate keys or gives an invalid distribution
+- **THEN** the malformed batch is rejected without partial automatic assignments or monetary writes
+
+#### Scenario: Jev receives a valid classification request
+- **WHEN** Groovy calls https://api.typesafe.ai/v1/systemone with jev-1.14.0
+- **THEN** its state/questions/criteria payload and named answers are validated against the TypeSafe contract without assuming OpenAI wire compatibility or forwarding another provider's key
+
+### Requirement: Independently qualified remote categorization
+Each endpoint/model/acceptance policy SHALL be evaluated on independently labeled held-out Walmart-relevant examples before support is claimed. Report raw and accepted accuracy/coverage, exception recall, default precision, abstention, latency and usage/cost. Default tests SHALL use mock endpoints; live calibration SHALL require explicit permission and synthetic/public inputs, not production purchases. Passing HTTP integration tests SHALL NOT be represented as model-quality qualification.
+
+#### Scenario: An endpoint succeeds but quality is insufficient
+- **WHEN** a model returns valid responses but fails the agreed categorization quality criteria
+- **THEN** it remains unqualified and uncertain items remain unresolved rather than silently enabling exception-first inference
+
+### Requirement: Explicit comparable provider evaluation
+A separate Groovy command SHALL compare both providers on identical frozen synthetic/public inputs and category policy without Walmart sessions, YNAB writes or production-cache effects. Live runs SHALL require explicit consent and paid budgets for both providers. Reports SHALL include accuracy/accepted coverage, abstention, exception recall, default precision, latency, usage/retries and cost per 1,000 items, distinguishing actual cost from dated estimates and unknowns.
+
+#### Scenario: A comparison completes with usage data
+- **WHEN** both providers classify the frozen held-out dataset under recorded model/prompt/policy versions
+- **THEN** raw and independently calibrated results are reported with billed attempts and cost assumptions, not a cheapest claim based only on listed token rates
+
+#### Scenario: A comparison has no credentials or incomplete cost evidence
+- **WHEN** a key is absent or a provider does not report sufficient billing information
+- **THEN** live evaluation does not silently use another key and the report marks missing results/cost unknown rather than zero or a proven winner
 
 ### Requirement: Reproducible classification provenance
-The protected plan SHALL record mapping/model provenance, selected/abstained category, scores and model/artifact/threshold/shortlist fingerprints. Inferred caches SHALL be scoped to plan/product/relevant description and those fingerprints, invalidating on change. Corrections SHALL update mappings only through trustworthy YNAB provenance, not retrain weights or expand the shortlist. Model/shortlist drift after an allocation write SHALL stop further application.
+Protected plans SHALL record mapping/model provenance, choices/abstentions, available scores and route/model/prompt/acceptance/shortlist fingerprints. Caches SHALL include plan/product/description/account identity without tokens and these fingerprints, invalidating on change. Only trustworthy YNAB corrections SHALL update mappings, not weights or category lists. Drift after an allocation write SHALL stop application.
 
 #### Scenario: The category list or model changes
-- **WHEN** the operator changes a category description, shortlist, checkpoint or threshold
+- **WHEN** the operator changes a category description, shortlist, endpoint/model, account or acceptance policy
 - **THEN** incompatible inferred decisions are not reused and any partially applied order stops for review rather than being silently reclassified
 
 ### Requirement: Default-category adjustment accounting

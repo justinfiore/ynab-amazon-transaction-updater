@@ -23,8 +23,12 @@ The application SHALL provide the session-backed Go ledger helper as the sole Wa
 - **WHEN** an old configuration contains Walmart guest/login or browser settings
 - **THEN** those settings do not select a source, become aliases or trigger a fallback, and documentation instructs the operator to remove them
 
-### Requirement: Normalized history and complete charge evidence
-The source SHALL return versioned records with order ID/link, order placement date, full order total/currency, items and distinct final purchase charges with amount, currency, charge date and payment identity. It SHALL distinguish complete data from failed or unsupported retrieval, not treat missing data as zero charges, and not substitute bank dates/amounts for missing order metadata.
+### Requirement: Retrieved history and Groovy-owned charge normalization
+Go SHALL return bounded versioned order/item/pricing records and repeated ledger entries preserving amount, currency, date, payment identity and status/type. Groovy SHALL normalize final charges and completeness without substituting bank metadata. Go SHALL NOT perform inference/financial/category decisions or receive inference-provider/YNAB credentials. Failed retrieval SHALL NOT masquerade as complete empty data.
+
+#### Scenario: Successful history contains no orders
+- **WHEN** retrieval succeeds with an empty history
+- **THEN** the helper emits an explicit orders:[] array and Groovy accepts a successful empty result, while missing/null arrays remain schema failures
 
 #### Scenario: One order has multiple final charges
 - **WHEN** a fulfilled order has two final charges, a temporary hold and a refund
@@ -35,7 +39,7 @@ The source SHALL return versioned records with order ID/link, order placement da
 - **THEN** the order is marked ineligible for splitting and no apparently complete allocation input is produced
 
 ### Requirement: Exact normalized money and item identity
-The source SHALL preserve stable order/item identities, decimal quantities and extended prices without duplicate display groups or multiplying extended prices by quantity. It SHALL distinguish proven pre-discount prices, net prices and separately identified discounts without adding discounts back twice. Unknown pricing semantics, currency or precision SHALL prevent category allocation rather than silently manufacture evidence.
+Go SHALL preserve source identities, decimal quantities, prices and adjustments without financial rounding or collapsing ledger occurrences. Groovy SHALL deduplicate repeated item display groups and distinguish gross/net prices and explicit discounts without multiplying extended costs by quantity or adding discounts twice. Unknown pricing semantics, currency or precision SHALL prevent category allocation.
 
 #### Scenario: Weighted product and repeated presentation groups
 - **WHEN** one weighted product appears in multiple Walmart presentation groups
