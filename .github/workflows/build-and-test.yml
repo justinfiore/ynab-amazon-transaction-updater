@@ -111,10 +111,10 @@ jobs:
           helper=$(find build/install -name walmart-helper -type f -perm -111 | head -n 1)
           test -n "$helper"
           set +e
-          env -u PATH PATH=/usr/bin:/bin "$helper" >/tmp/helper-out.json << 'EOF'
-          {"version":999}
-          EOF
+          printf '%s' '{"version":999}' | env -u PATH PATH=/usr/bin:/bin "$helper" >/tmp/helper-out.json
+          helper_status=$?
           set -e
+          test "$helper_status" -ne 0
           python3 - "$helper" << 'PY'
           import json, sys
           from pathlib import Path
@@ -136,7 +136,7 @@ jobs:
           path.write_text(json.dumps(data))
           PY
           set +e
-          ./gradlew help -Pwalmart --offline --no-daemon > /tmp/bad-sdk.log 2>&1
+          ./gradlew walmartGoSdk -Pwalmart --offline --no-daemon > /tmp/bad-sdk.log 2>&1
           status=$?
           set -e
           test "$status" -ne 0
