@@ -96,9 +96,13 @@ class YNABAmazonTransactionUpdater {
         // Fetch Walmart orders if enabled
         def walmartOrders = []
         if (config.walmartEnabled && walmartService != null) {
-            logger.info("Fetching Walmart orders...")
-            try { walmartOrders = walmartService.getOrders() ?: [] }
-            catch (Exception ignored) { logger.warn('Walmart retrieval failed; continuing Amazon processing without Walmart data') }
+            if (ynabService.getWalmartPlanCurrency() == 'USD') {
+                logger.info("Fetching Walmart orders...")
+                try { walmartOrders = walmartService.getOrders() ?: [] }
+                catch (Exception ignored) { logger.warn('Walmart retrieval failed; continuing Amazon processing without Walmart data') }
+            } else {
+                logger.warn('Walmart requires a verified USD YNAB plan; skipping Walmart without changing Amazon processing')
+            }
             logger.info("Found ${walmartOrders.size()} Walmart orders")
         } else {
             logger.info("Walmart integration is disabled, skipping Walmart order fetching")

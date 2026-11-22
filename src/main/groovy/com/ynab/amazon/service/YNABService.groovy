@@ -142,6 +142,15 @@ class YNABService {
         walmartRequest('GET', "/transactions/${pathId(id)}").data.transaction as Map
     }
 
+    String getWalmartPlanCurrency() {
+        try {
+            walmartRequest('GET', '').data?.plan?.currency_format?.iso_code as String
+        } catch (Exception ignored) {
+            logger.warn('YNAB plan currency unavailable; Walmart matching and updates are disabled')
+            null
+        }
+    }
+
     List<Map> getWalmartCategories() {
         def groups = walmartRequest('GET', '/categories').data.category_groups
         groups.collectMany { group ->

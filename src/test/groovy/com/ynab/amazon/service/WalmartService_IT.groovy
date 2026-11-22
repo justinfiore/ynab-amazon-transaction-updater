@@ -2,10 +2,12 @@ package com.ynab.amazon.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpServer
+import com.ynab.amazon.YNABAmazonTransactionUpdater
 import com.ynab.amazon.config.Configuration
 import com.ynab.amazon.model.*
 import spock.lang.Specification
 import spock.lang.TempDir
+import spock.lang.Unroll
 
 /** Actual HTTP contract tests; account-free and independent of Docker/models. */
 class WalmartService_IT extends Specification {
@@ -22,6 +24,7 @@ class WalmartService_IT extends Specification {
     boolean rejectSmall
     boolean stopBeforeSmallIntent
     List<Map> categoryGroups
+    String planCurrency = 'USD'
 
     def setup() {
         remote = [:]; writes = []
@@ -30,7 +33,13 @@ class WalmartService_IT extends Specification {
         server.createContext('/v1/plans/plan') { exchange ->
             String suffix = exchange.requestURI.path - '/v1/plans/plan'
             Map body
-            if (suffix == '/categories') body = [data:[category_groups:categoryGroups]]
+            if (suffix == '') {
+                if (planCurrency=='unavailable') {
+                    exchange.sendResponseHeaders(503,-1); exchange.close(); return
+                }
+                body = [data:[plan:planCurrency ? [currency_format:[iso_code:planCurrency]] : [:]]]
+            }
+            else if (suffix == '/categories') body = [data:[category_groups:categoryGroups]]
             else if (suffix == '/accounts') body = [data:[accounts:[[id:'account',on_budget:true,deleted:false,closed:false]]]]
             else {
                 String id = suffix.tokenize('/').last()
@@ -63,6 +72,46 @@ class WalmartService_IT extends Specification {
         ynab = new YNABService(config)
     }
     def cleanup() { ynab.close(); server.stop(0) }
+
+    @Unroll
+    def 'Walmart #mode requires verified USD plan currency: #currency'() {
+        given:
+        planCurrency=currency
+        config.walmartEnabled=true
+        config.walmartEnrichment=mode
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        server.createContext('/v1/budgets/plan/transactions') { exchange ->
+            byte[] bytes=json.writeValueAsBytes([data:[transactions:remote.values()]])
+            exchange.sendResponseHeaders(200,bytes.length)
+            exchange.responseBody.withCloseable { it.write(bytes) }
+            exchange.close()
+        }
+        def amazon=Stub(AmazonService) { getOrders() >> []; isLoginRequired() >> false }
+        def walmart=Stub(WalmartService) { getOrders() >> [WalmartFixture.order()] }
+        def method=YNABAmazonTransactionUpdater.getDeclaredMethod('executeWorkflow',YNABService,AmazonService,WalmartService,TransactionMatcher,TransactionProcessor,Configuration)
+        method.accessible=true
+
+        when:
+        method.invoke(null,ynab,amazon,walmart,new TransactionMatcher(),new TransactionProcessor(config),config)
+
+        then:
+        writes.size()==(currency=='USD' ? 2 : 0)
+        currency=='USD' || !new File(config.walmartJournalFile).exists()
+
+        when: 'direct enrichment also refuses a precomputed match without supported currency'
+        if (currency!='USD') {
+            def matches=new TransactionMatcher().findWalmartMatches(txs,[WalmartFixture.order()])
+            new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+        }
+
+        then:
+        writes.size()==(currency=='USD' ? 2 : 0)
+        currency=='USD' || remote.values().every { !it.memo?.contains('walmart.com') && !it.category_id && !it.subtransactions }
+
+        where:
+        [currency, mode] << [['CAD',null,'unavailable','USD'],['link_only','exception_first']].combinations()
+    }
 
     def 'API internal flags exclude special categories in setup and runtime without reserving display names'() {
         given:

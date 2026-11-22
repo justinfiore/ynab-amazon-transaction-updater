@@ -170,6 +170,7 @@ class TransactionProcessor_UT extends Specification {
         result.updated == 0
         result.preview[0].operations[0].memo == 'User note | 2026-11-20 | Total $100.00 | #123 | https://www.walmart.com/orders/details?orderId=123'
         !new File(config.walmartJournalFile).exists()
+        1 * mockYnabService.getWalmartPlanCurrency() >> 'USD'
         0 * mockYnabService._
     }
     

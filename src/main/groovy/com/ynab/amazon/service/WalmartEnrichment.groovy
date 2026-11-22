@@ -17,6 +17,11 @@ class WalmartEnrichment {
     Map process(List<TransactionMatch> matches, YNABService ynab, boolean dryRun) {
         def stats = [updated: 0, high_confidence: matches.size(), medium_confidence: 0, low_confidence: 0, preview: []]
         if (!matches) return stats
+        // Recheck at the write boundary as well as before workflow matching.
+        if (ynab.getWalmartPlanCurrency() != 'USD') {
+            stats.preview << [reason:'unsupported_or_unknown_plan_currency']
+            return stats
+        }
         new WalmartJournal(config.walmartJournalFile).locked(dryRun) { Map state, Closure save ->
             Map categories = [:]
             Set accounts = [] as Set

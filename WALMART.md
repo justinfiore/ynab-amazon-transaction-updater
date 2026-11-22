@@ -51,6 +51,11 @@ be positive; `max_pages` is at most 20. Removed browser configuration has no
 aliases. Start with `app.dry_run: true`. The helper returns a version-1 minimal
 ledger (no addresses, cookies or raw HTTP payloads), not upstream diagnostics.
 
+Walmart requires a verified USD YNAB plan before fetching/matching and rechecks
+that currency before enrichment. Non-USD, missing or unavailable plan currency
+skips all Walmart links and allocation writes without affecting Amazon; no
+currency conversion or assumed USD fallback is performed.
+
 Charge amounts match exactly in cents within 14 days of the charge date, not
 the order date. Distinct equal charges are a multiset. Competing global
 assignments are skipped, not selected by list order; order totals are never a
