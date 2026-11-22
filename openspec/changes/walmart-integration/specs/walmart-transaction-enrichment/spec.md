@@ -61,19 +61,23 @@ Exception-first mode SHALL require a valid Default Walmart Category ID and an ex
 - **WHEN** the configured shortlist excludes a previously learned category or omits the default
 - **THEN** the excluded mapping is not reused and an absent default prevents allocation, without expanding the list or suggesting a new category
 
-### Requirement: Two qualified local decision-model providers
-The integration SHALL provide selectable Laya classic (322M/421M) and Kev (0.8B) adapters with only one resident CPU provider. Support SHALL require reviewed loading, locked dependencies, licensing, CPU correctness, measured memory/latency and held-out Walmart quality tests per checkpoint. Unqualified providers SHALL fail closed without model/GPU/cloud substitution. Hosted providers and fine-tuning SHALL be outside initial scope.
+### Requirement: Qualified Laya classic classification
+The integration SHALL provide only Laya classic (322M/421M) CPU classification initially. Kev SHALL be deferred to a future proposal, not installed, selectable or used as a fallback. Support SHALL require reviewed loading, locked dependencies, licensing, CPU correctness, measured memory/latency and held-out Walmart quality tests per checkpoint. Unqualified profiles SHALL fail closed without model/GPU/cloud substitution. Hosted providers and fine-tuning SHALL be outside initial scope.
 
 #### Scenario: A selected provider exceeds the resource budget
 - **WHEN** local inference exceeds configured positive memory, time or CPU-thread bounds
 - **THEN** it stops safely and retains unresolved items for review or link-only handling without loading another model or accepting a partial malformed result
 
 ### Requirement: Guided model provisioning
-An interactive onboarding script SHALL offer numbered Laya/Kev selection, prompt for a read-scoped Hugging Face token through hidden input, and confirm pinned model downloads with hash verification and offline CPU readiness checks. It SHALL NOT persist/echo the token, place it in arguments/config/logs, forward it to unrelated hosts or perform global Hub login. Downloads SHALL be separate from offline inference and omit purchase/budget data.
+Onboarding SHALL check Docker prerequisites, offer numbered qualified Laya profiles and confirm pinned image/model downloads with hash verification and offline container readiness checks. Token input SHALL be hidden and used only for provisioning, without persistence, command arguments, logging, unrelated-host forwarding or global Hub login. Provisioning SHALL omit purchase/budget data and remain separate from inference.
 
 #### Scenario: Model download succeeds or fails
 - **WHEN** the operator confirms provisioning with a token able to read required repositories
 - **THEN** the complete pinned artifacts are verified before becoming ready; interrupted, denied or corrupt downloads leave configuration unchanged and give non-secret retry/cancel guidance without requesting write/admin access
+
+#### Scenario: Tokenizer compatibility needs normalization
+- **WHEN** a reviewed Laya tokenizer requires a compatibility rewrite
+- **THEN** setup verifies both original and transformed artifact hashes before readiness, without inference-time model writes
 
 ### Requirement: Numbered existing-category onboarding
 Onboarding SHALL read eligible categories from the configured YNAB plan, display numbered group/name choices and accept comma-separated numbers for the shortlist. It SHALL resolve choices to the displayed IDs, reject invalid/empty/duplicate selections and ask for the default from the selected list. No manual ID copying, category creation or live transaction writes SHALL be required or performed.
@@ -83,11 +87,15 @@ Onboarding SHALL read eligible categories from the configured YNAB plan, display
 - **THEN** the group labels distinguish them and the configuration uses the corresponding stable IDs, not names or a newly fetched list's positions
 
 ### Requirement: Platform-qualified onboarding and documentation
-Initial CPU targets SHALL be Linux x86_64, Apple Silicon macOS arm64 and native Windows x86_64 without WSL. Documentation SHALL distinguish intended from verified support in a per-provider/checkpoint/runtime matrix. Onboarding SHALL detect OS/architecture and offer only qualified models before token entry/download. Unsupported targets SHALL receive an explanation, not dependency downgrades, incompatible downloads or GPU/cloud substitution.
+Initial host targets SHALL be Linux x86_64, macOS arm64 and Windows x86_64 using native onboarding and qualified CPU-only Linux containers. A documented host/engine/image/checkpoint matrix SHALL distinguish intended from verified support. Onboarding SHALL check prerequisites before token entry/download, without automatic Docker installation/reconfiguration, silent emulation, dependency downgrades or GPU/cloud substitution.
 
-#### Scenario: Only one provider qualifies on the detected platform
-- **WHEN** onboarding detects a target for which only one pinned provider/runtime has passed qualification
-- **THEN** only that provider is selectable and the other provider's limitations are explained without treating helper binary availability as proof of model support
+#### Scenario: Windows uses Docker Desktop
+- **WHEN** onboarding runs natively on Windows
+- **THEN** it explains Docker Desktop's possible WSL2/Hyper-V backend prerequisite without requiring application/onboarding commands in WSL
+
+#### Scenario: A Laya profile qualifies on the detected platform
+- **WHEN** onboarding detects a host/engine/image target with a qualified pinned Laya profile
+- **THEN** only qualified fitting Laya profiles are selectable, without offering Kev or treating helper binary availability as proof of model support
 
 #### Scenario: Intel Mac or another target has no qualified models
 - **WHEN** the detected platform has no qualified local provider, including initially unsupported Intel Macs
@@ -99,6 +107,17 @@ Onboarding SHALL preview and confirm model/shortlist/default settings, revalidat
 #### Scenario: Selection is cancelled or becomes stale
 - **WHEN** the operator cancels, a selected category becomes ineligible or another process edits the config before save
 - **THEN** the original config is not overwritten, no partial settings are applied, and selection/retry guidance is given without silently replacing categories
+
+### Requirement: Resource-aware model recommendations
+Onboarding SHALL ask for model RAM before selection: default 1 GB, explicitly adjustable up to 2 GB, with decimal-byte units explained. It SHALL recommend only platform/quality-qualified profiles whose measured worker-tree loading/inference peaks plus documented headroom fit the budget, prioritizing lower memory then measured latency. It SHALL show download/disk size separately, require confirmation and persist/enforce `categorization.memory_limit_bytes`.
+
+#### Scenario: No model fits the preferred budget
+- **WHEN** no qualified profile fits 1 GB but one fits within 2 GB
+- **THEN** onboarding explains the measured requirement and offers an explicit budget increase or cancellation/link-only handling without silently raising the limit or downloading an over-budget model
+
+#### Scenario: No fitting model or actual memory overrun
+- **WHEN** measurements are missing, no qualified profile fits within 2 GB or a worker exceeds its confirmed memory ceiling
+- **THEN** inference is not treated as supported/successful, no model/cloud substitution occurs and safe unresolved/link-only handling applies; documentation explains that Docker engine/VM and JVM/helper/OS require RAM beyond the model budget
 
 ### Requirement: Bounded choices and explicit abstention
 Providers SHALL score the entire shortlist plus an internal abstain choice using names and optional boundary descriptions. Results SHALL use stable choice IDs, validated membership/completeness/finite scores and qualified acceptance/margin thresholds. Token/choice limits SHALL be checked without silent omission/truncation. Uncertainty/failure SHALL NOT become default spending. Models SHALL NOT choose amounts or perform writes.
@@ -116,18 +135,40 @@ Providers SHALL score the entire shortlist plus an internal abstain choice using
 - **THEN** classification abstains/reports the limit rather than dropping allowed categories or silently truncating potentially decisive input
 
 ### Requirement: Private offline inference and reproducible artifacts
-Model execution SHALL use a locked environment separate from Amazon, immutable reviewed runtime/checkpoint/base/adapter/tokenizer revisions with verified hashes, restricted loaders and explicit CPU selection. Inference SHALL NOT request networks, download artifacts, load remote model code, use unsafe pickle fallback or emit telemetry. Provisioning SHALL be explicit and separate, with license/dependency/advisory review.
+Laya SHALL use a digest-pinned image, a locked runtime separate from Amazon and hash-verified immutable checkpoint/encoder/tokenizer artifacts. Loading SHALL use safetensors and explicit classic CPU/eager execution, not Vega/router dispatch. Review SHALL cover licenses/advisories and the full dependency closure including installed VegaML. Inference SHALL NOT request networks, pull images, download files, load remote code, use unsafe pickle fallback or emit telemetry.
 
 #### Scenario: Offline inference sees only classification inputs
 - **WHEN** a provisioned provider classifies fixture products with external networking blocked and unrelated credentials present in the parent
 - **THEN** it succeeds locally without network attempts or leaked credentials, and its input/output/logs omit order/account secrets and raw purchase logs
 
 #### Scenario: A checkpoint is missing or modified
-- **WHEN** an artifact is absent or fails its pinned hash, including Kev's required base/head or a Laya classic checkpoint
-- **THEN** loading fails without Hub download, Vega/router dispatch, smoke-checkpoint substitution, remote code or unsafe deserialization fallback
+- **WHEN** the image or a Laya classic checkpoint, encoder configuration or tokenizer artifact is absent or fails verification
+- **THEN** loading fails without image pull, Hub download, Vega/router dispatch, remote code or unsafe deserialization fallback
 
 ### Requirement: Isolated minimal model inputs
 The worker SHALL receive only bounded necessary product attributes and shortlisted category labels/descriptions, not sessions, YNAB credentials, addresses, order links or payments. Execution SHALL enforce network/filesystem isolation, an environment allowlist, bounded local IPC and protected caches/journals without raw purchase logging or LAN/public service exposure. Offline flags SHALL NOT be represented as a sandbox.
+
+#### Scenario: Parent credentials are available on the host
+- **WHEN** the JVM starts classification while holding Walmart/YNAB credentials and protected journals
+- **THEN** only the minimal classification payload reaches the worker and host secrets/journals are neither mounted nor inherited
+
+### Requirement: Network-disabled Docker worker and streamed IPC
+The JVM SHALL directly launch one non-root Laya container per batch with structured arguments and image pull disabled. It SHALL disable networking, ports and persistent logs, enforce read-only root/model filesystems, drop capabilities and apply no-new-privileges plus memory/swap/CPU/thread/PID/temp limits. Only the verified model directory SHALL be mounted, never host home, secrets, journals or Docker socket.
+
+#### Scenario: Docker launch is inspected
+- **WHEN** a fixture batch starts
+- **THEN** its image digest, isolation flags, limits and sole read-only model mount are verified, with no host/application/provisioning credentials exposed
+
+### Requirement: Bounded batch worker protocol and cleanup
+Versioned bounded newline-delimited JSON with correlation IDs SHALL use stdin/stdout, not HTTP, shell interpolation or per-item exec. Startup/request/batch deadlines, result validation and bounded redacted diagnostics SHALL apply. Laya SHALL load once per batch. Completion/failure/cancellation SHALL stop and remove the identified container, including interruption recovery. Disabled/link-only operation SHALL NOT require or probe Docker or download images/models.
+
+#### Scenario: A classification batch completes or fails
+- **WHEN** several uncached items are classified, or a worker times out, exceeds memory or emits malformed/partial results
+- **THEN** a single isolated batch worker handles valid requests without reloading per item, is removed after completion/failure, and invalid/incomplete results do not authorize writes
+
+#### Scenario: Docker is unavailable during link-only use
+- **WHEN** Walmart is disabled or operates link-only without model classification
+- **THEN** no Docker probe/start, image/model download or model credential request occurs
 
 #### Scenario: Hostile product text is classified
 - **WHEN** product text contains instructions requesting credentials, network access or category creation
