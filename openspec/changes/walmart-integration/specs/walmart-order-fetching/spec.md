@@ -35,11 +35,15 @@ The source SHALL return versioned records with order ID/link, order placement da
 - **THEN** the order is marked ineligible for splitting and no apparently complete allocation input is produced
 
 ### Requirement: Exact normalized money and item identity
-The source SHALL preserve stable order/item identities, decimal quantities and extended line prices without double-counting duplicate presentation groups or multiplying an already extended price by quantity. Monetary conversion SHALL reject unsupported currency or ambiguous precision rather than silently round a match into existence.
+The source SHALL preserve stable order/item identities, decimal quantities and extended prices without duplicate display groups or multiplying extended prices by quantity. It SHALL distinguish proven pre-discount prices, net prices and separately identified discounts without adding discounts back twice. Unknown pricing semantics, currency or precision SHALL prevent category allocation rather than silently manufacture evidence.
 
 #### Scenario: Weighted product and repeated presentation groups
 - **WHEN** one weighted product appears in multiple Walmart presentation groups
 - **THEN** its actual extended line cost is counted once and its decimal quantity is preserved
+
+#### Scenario: Net price includes a separately identified discount
+- **WHEN** the source supplies an item net price of $15 with an explicit corresponding $5 discount
+- **THEN** normalization can identify its $20 pre-discount basis and $5 discount separately, but does not add $5 again if the source already supplies the $20 gross price
 
 ### Requirement: Bounded and secret-safe retrieval
 Fetching SHALL use bounded requests/process execution, normal TLS verification and Walmart-only destinations without following external redirects. The helper SHALL receive only required runtime/session access, omit unrelated credentials, and omit cookies, addresses, raw responses and secrets from output/logs.
@@ -58,6 +62,24 @@ The optional helper SHALL be built from the reviewed pinned client source with v
 #### Scenario: Operator builds the helper
 - **WHEN** the documented optional build is followed
 - **THEN** it selects the reviewed source revision without dynamic latest-version resolution and requires no live account credentials
+
+### Requirement: Opt-in Gradle Go lifecycle
+Gradle SHALL integrate Go through `-Pwalmart`: compile/test compilation, unit/integration tests, check/build, clean and distribution tasks SHALL cover the helper with failures propagated. Base builds SHALL NOT resolve/download Go tooling/modules. Enabled builds SHALL use a pinned verified host SDK, read-only modules and no implicit SDK switching. Cached offline builds SHALL work; missing offline prerequisites SHALL fail without network access.
+
+#### Scenario: Existing build and test commands opt into Walmart
+- **WHEN** existing Gradle lifecycle tasks run with `-Pwalmart`
+- **THEN** corresponding Go compilation/tests run without manual Go commands, test compilation alone does not execute tests, aggregate tasks avoid duplicate Go runs and Go failures fail Gradle with published reports
+
+#### Scenario: Base and Walmart builds share a worktree
+- **WHEN** enabled and disabled builds run in either order, followed by clean or incremental builds
+- **THEN** declared inputs/outputs prevent stale helper reuse or packaging in base archives, clean removes generated outputs without deleting shared SDK caches, and base tasks require no Go installation
+
+### Requirement: Prebuilt target-specific Walmart distributions
+Walmart-enabled Gradle distributions SHALL contain the compiled helper and onboarding script, identify their supported OS/architecture and run without Go installed. They SHALL NOT contain compiler/toolchains, model weights or secrets, or compile/download Go at runtime. Base packages SHALL remain usable without the helper. CI SHALL verify both build variants and supported native release targets with offline account fixtures.
+
+#### Scenario: Operator installs a Walmart-enabled archive
+- **WHEN** the matching native distribution runs without Go on PATH
+- **THEN** it discovers and executes its bundled helper without compilation; unsupported/missing-helper cases report actionable errors rather than runtime downloads, and runtime Walmart enablement remains explicit
 
 ### Requirement: Protected session provisioning
 Session import SHALL parse browser-request data without executing copied shell commands, keep bearer material in protected local storage, and avoid secret-bearing process arguments. Documentation SHALL explain stale-session recovery, capture-file disposal and filesystem exposure.
