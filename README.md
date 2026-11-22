@@ -2,7 +2,7 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/justinfiore/ynab-amazon-transaction-updater)
 
-A Groovy application that automatically updates YNAB (You Need A Budget) transactions with retailer order details by matching transactions and updating the memo field with product summaries. Supports Amazon and Walmart orders.
+A Groovy application that automatically updates YNAB (You Need A Budget) transactions with retailer order details by matching transactions and updating the memo field with product summaries. Supports Amazon orders. Walmart fetching is unavailable pending the proposed Go integration.
 
 ## Features
 
@@ -15,12 +15,7 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
    - Optional Python order-history fetcher using `amazon-orders==6.0.0`
   - Special handling for Subscribe & Save orders with "S&S:" prefix
   - Automatic refund detection and processing with positive amounts
-- **Walmart Integration:**
-  - Browser automation to fetch order history
-  - Individual charge matching (matches transactions to specific final charge amounts)
-  - Automatic filtering of delivered orders only
-  - Extracts final charges (ignores temporary holds)
-  - Direct links to Walmart order details pages
+- **Walmart (unavailable):** Existing order models, matching and processing logic remain, but there is no working order-fetching source. A Go-backed replacement is proposed in [PR #15](https://github.com/justinfiore/ynab-amazon-transaction-updater/pull/15).
 - Intelligently matches YNAB transactions with retailer orders
 - Updates transaction memos with product summaries
 - Tracks processed transactions to avoid duplicates
@@ -35,7 +30,6 @@ A Groovy application that automatically updates YNAB (You Need A Budget) transac
 - YNAB API key
 - YNAB Budget ID
 - **For Amazon:** Order history (via email, optional Python history, or CSV export)
-- **For Walmart:** Walmart account credentials (email and password)
 - (Optional) Email credentials for automatic Amazon order fetching
 
 ## Setup
@@ -131,56 +125,11 @@ memo (appended once, preserving existing text). This is retryable, not a process
 marker: successful augmentation removes it. Dry runs never write it, and generic
 fetch failures do not trigger a login notice.
 
-#### Walmart Order Data Source (Optional)
+#### Walmart Order Data Source (Unavailable)
 
-The application can automatically fetch Walmart orders using two different modes:
+The nonworking browser guest/login fetchers and their configuration have been removed without backwards compatibility. Keep `walmart.enabled: false`: setting it to `true` reports an explicit unavailable error. Only `walmart.enabled` remains recognized; remove all other Walmart settings from existing configuration files.
 
-**Mode 1: Guest Mode (Recommended - No Walmart Password Required)**
-
-Requirements:
-- Email account to search for Walmart order notifications (Gmail or other IMAP provider) with app password
-- Walmart account email address (may be the same as above or different)
-- Playwright browser automation library (automatically installed)
-
-**Email Configuration:**
-- `walmart.email` - Email address to search for Walmart order notifications (IMAP)
-- `walmart.walmart_email` - Actual Walmart account email (used in order lookup form)
-- `walmart.email_password` - Email app password for IMAP access
-- `walmart.imap_host` - IMAP server (optional, defaults to `amazon.imap_host`)
-- `walmart.imap_port` - IMAP port (optional, defaults to `amazon.imap_port`)
-- If you only specify one email, it will be used for both purposes
-- If Walmart sends notifications to a different email than your account email, specify both
-
-How it works:
-1. Searches your email for Walmart order notifications (from help@walmart.com or configured forward address)
-2. Extracts order IDs and dates from emails
-3. For each order, uses Walmart's guest order lookup feature
-4. Fills in the Walmart account email and order number to access order details
-5. Extracts order information including:
-   - Order number and date
-   - Final charge amounts (ignores temporary holds)
-   - Product summaries
-   - Order status
-
-**Mode 2: Login Mode (Full Account Access)**
-
-Requirements:
-- Walmart account credentials (email and password)
-- Playwright browser automation library (automatically installed)
-
-How it works:
-1. Launches a headless browser
-2. Logs into your Walmart account
-3. Navigates to your order history
-4. Fetches delivered orders within the lookback period
-5. Extracts order details
-
-**Important Notes:**
-- Guest mode is recommended as it doesn't require storing your Walmart password
-- Only "Delivered" orders are processed
-- Orders with multiple charges are handled by matching each transaction to individual final charge amounts
-- The application extracts only "Final Order Charges" from the Charge History, ignoring "Temporary Hold" charges
-- Browser automation typically takes 10-15 seconds per fetch
+The [proposed Go integration](https://github.com/justinfiore/ynab-amazon-transaction-updater/pull/15) will provide a replacement source. It is not implemented and cannot currently fetch orders.
 
 ### 4. Configure the Application
 
@@ -216,16 +165,7 @@ amazon:
   #   max_output_bytes: 10485760
 
 walmart:
-  enabled: true  # Set to true to enable Walmart integration
-  mode: "guest"  # Mode: "guest" (email lookup, no Walmart password) or "login" (requires Walmart password)
-  email: "your_email@example.com"  # Email to search for Walmart order notifications (IMAP)
-  walmart_email: "your_walmart_account@example.com"  # Walmart account email (defaults to `email` if not specified)
-  email_password: "your_email_app_password"  # Email app password for IMAP (required for guest mode)
-  # password: "your_walmart_password"  # Walmart account password (only needed for login mode)
-  # forward_from_address: "some.email@example.com"  # Optional: for forwarded Walmart emails (guest mode only)
-  headless: true  # Set to false to see browser in action (default: true)
-  browser_timeout: 30000  # Optional: timeout in milliseconds (default: 30000)
-  orders_url: "https://www.walmart.com/orders"  # Optional: custom orders URL
+  enabled: false  # Fetching unavailable pending Go integration
 
 app:
   processed_transactions_file: "processed_transactions.json"
@@ -287,15 +227,15 @@ java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
 2. **YNAB Integration**: Fetches transactions from your YNAB budget within the lookback period
 3. **Retailer Data Fetching**:
    - **Amazon**: Fetches order history from email (automatic parsing of order confirmations and Subscribe & Save notifications) or CSV file (fallback or manual option)
-   - **Walmart**: Uses browser automation to fetch order history from walmart.com (if enabled)
+   - **Walmart**: Fetching is unavailable; keep disabled pending Go integration
 4. **Transaction Matching**: Uses intelligent algorithms to match YNAB transactions with retailer orders:
    - **Amazon**: Amount (40%), Date (30%), Payee (20%), Memo (10%)
-   - **Walmart**: Amount (70%), Date (20%), Payee (10%) - matches individual transactions to specific final charge amounts
+   - **Walmart (retained logic, not an available workflow)**: Amount (70%), Date (20%), Payee (10%) - matches individual transactions to specific final charge amounts
 5. **Memo Updates**: Updates matched transactions with product summaries:
    - **Amazon Regular**: "Product Name" or "3 items: Product A, Product B, Product C"
    - **Amazon Subscribe & Save**: "S&S: Product Name" or "S&S: 3 items: Product A, Product B, Product C"
    - **Amazon Refunds**: "REFUND: Product Name" with positive amounts
-   - **Walmart**: "[existing memo] | Walmart Order: [order_number] - [product_summary]"
+   - **Walmart (retained logic, not an available workflow)**: "[existing memo] | Walmart Order: [order_number] - [product_summary]"
 6. **Tracking**: Maintains a list of processed transactions to avoid duplicates
 
 ## Amazon Subscribe & Save Support
@@ -323,10 +263,10 @@ This ensures refunds are properly tracked in your budget without manual interven
 
 ## Walmart Individual Charge Matching
 
-Walmart often splits a single order into multiple credit card charges. The application handles this by matching each YNAB transaction to individual final charge amounts:
+Walmart often splits a single order into multiple credit card charges. The retained matcher supports individual final charge amounts, but fetching is unavailable, so this is not currently an end-to-end workflow. The proposed Go replacement will add stricter distinct-charge matching and optional proportional allocation.
 
-**How it works:**
-1. Fetches Walmart orders and extracts the "Charge History" for each order
+**Retained matching concept (requires a future data source):**
+1. Obtain Walmart orders and their final charge history from the future source
 2. Identifies only "Final Order Charges" (ignores "Temporary Hold" charges)
 3. Matches each YNAB transaction to a specific final charge amount from any order
 4. Updates matched transactions with Walmart order information
@@ -340,7 +280,7 @@ Walmart often splits a single order into multiple credit card charges. The appli
 - YNAB Transactions:
   - Transaction A: -$100.00, 2024-01-15, "WALMART.COM"
   - Transaction B: -$50.00, 2024-01-16, "WALMART.COM"
-- Result: Both transactions updated with "Walmart Order: 123 - [product_summary]"
+- Intended result once fetching is implemented: Both transactions linked to Walmart Order #123
 
 ## CSV Format
 
@@ -369,12 +309,7 @@ Note: CSV files do not automatically include Subscribe & Save orders. Use email 
 Note: At least one Amazon data source (email or CSV) must be configured.
 
 ### Walmart Settings
-- `enabled`: Enable/disable Walmart integration (default: false)
-- `email`: Your Walmart account email (required if enabled)
-- `password`: Your Walmart account password (required if enabled)
-- `headless`: Run browser in headless mode (default: true, set to false to see browser in action while testing)
-- `browser_timeout`: Browser operation timeout in milliseconds (optional, default: 30000)
-- `orders_url`: Walmart orders page URL (optional, default: "https://www.walmart.com/orders")
+- `enabled`: Keep `false` (default). Setting `true` reports that fetching is unavailable pending Go integration. No other Walmart settings are recognized; the removed browser configuration has no compatibility path.
 
 ### Application Settings
 - `processed_transactions_file`: File to track processed transactions (default: "processed_transactions.json")
@@ -404,12 +339,7 @@ amazon:
   csv_file_path: "amazon_orders.csv"
 
 walmart:
-  enabled: true  # Enable Walmart integration
-  email: "your_walmart_email@example.com"
-  password: "your_walmart_password"
-  headless: true  # Set to false to see browser in action (default: true)
-  browser_timeout: 30000  # Optional
-  orders_url: "https://www.walmart.com/orders"  # Optional
+  enabled: false  # Fetching unavailable pending Go integration
 
 app:
   processed_transactions_file: "processed_transactions.json"
@@ -435,6 +365,8 @@ The application uses a weighted scoring system to match transactions:
 - **Memo Matching (10%)**: Checks for Amazon references in existing memos
 
 ### Walmart Individual Charge Matching
+Retained matcher only; Walmart fetching is unavailable pending Go integration.
+
 - **Amount Matching (70%)**: Compares transaction amount with individual final charge amounts
 - **Date Matching (20%)**: Checks if dates are within 7 days of each other
 - **Payee Matching (10%)**: Looks for Walmart-related payee names
@@ -490,29 +422,15 @@ Confidence thresholds:
    - Check that the dates and amounts match your YNAB transactions
    - Try running in dry-run mode with DEBUG logging to see matching details
 
-8. **Walmart authentication fails**
-   - Verify your Walmart email and password are correct in `config.yml`
-   - Check that your Walmart account is accessible via web browser
-   - Ensure you don't have 2FA enabled (browser automation doesn't support 2FA yet)
-   - Try increasing `browser_timeout` if operations are timing out
+8. **Walmart fetching unavailable**
+   - Keep `walmart.enabled: false` until the proposed Go integration is implemented
+   - Remove all other Walmart settings; the browser guest/login paths have been removed without a compatibility fallback
 
-9. **Walmart browser automation issues**
-   - Ensure Playwright is properly installed (should happen automatically with Gradle)
-   - Check that you have sufficient disk space for browser downloads
-   - Try running with DEBUG logging to see browser automation details
-   - Verify your network connection is stable
-
-10. **Walmart transactions not matching**
-   - Verify that transaction amounts match individual final charge amounts (not order totals)
-   - Check that transaction dates are within 7 days of the order date
-   - Ensure transactions have Walmart-related payee names
-   - Review the Charge History in your Walmart order to confirm final charge amounts
-
-11. **API Rate Limits**
+9. **API Rate Limits**
    - YNAB has rate limits; the application includes delays between requests
     - If you get rate limit errors, wait a few minutes and try again
 
-12. **Python bridge preflight or fetch failure**
+10. **Python bridge preflight or fetch failure**
     - Verify the isolated interpreter and tested dependencies: `.venv-amazon-orders/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight`
     - Re-run the same bridge with `--login` instead of `--preflight` if the persisted session is stale. Custom classes/parsers and browser/CAPTCHA flows are intentionally refused; use email/CSV when required.
     - Check that `amazon.python.executable`, `bridge_script`, and `config_path` are absolute/resolved paths and that timeout/output bounds are positive.
@@ -562,7 +480,6 @@ YNABAmazonTransactionUpdater/
 │   │   │       ├── AmazonService.groovy            # Amazon data orchestration
 │   │   │       ├── AmazonOrderFetcher.groovy       # Email parsing service
 │   │   │       ├── WalmartService.groovy           # Walmart data orchestration
-│   │   │       ├── WalmartOrderFetcher.groovy      # Browser automation service
 │   │   │       ├── TransactionMatcher.groovy       # Matching logic
 │   │   │       └── TransactionProcessor.groovy     # Processing logic
 │   │   └── resources/

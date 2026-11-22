@@ -65,15 +65,18 @@ separately or download wrapper files by hand. Verify it with:
      csv_file_path: "your_amazon_orders.csv"
 
    walmart:
-     enabled: false  # Set to true to enable Walmart integration
-     email: "your_walmart_email@example.com"
-     password: "your_walmart_password"
+     enabled: false  # Fetching unavailable pending Go integration
 
    app:
      dry_run: true  # Set to false when ready
    ```
 
 2. Place your Amazon orders CSV file in the project directory
+
+Walmart fetching is unavailable until the proposed Go integration is implemented.
+Keep `walmart.enabled: false`; `true` reports an explicit unavailable error.
+Only `walmart.enabled` remains recognized. Remove all other Walmart settings;
+the browser guest/login fetchers have been removed without backwards compatibility.
 
 ### Optional: Python Amazon Order History
 
