@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -125,6 +126,10 @@ func TestContractGroupSavings(t *testing.T) {
 }
 
 func TestContractHistoryEnvelope(t *testing.T) {
+	emptyContract, err := os.ReadFile("testdata/empty-history.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, body := range []string{
 		`{"errors":[{"message":"session secret expired"}],"data":null}`,
 		`{"errors":[{"message":"expired"}],"data":{"orderHistoryV2":{"orderGroups":[],"pageInfo":{"nextPageCursor":""}}}}`,
@@ -160,6 +165,11 @@ func TestContractHistoryEnvelope(t *testing.T) {
 			t.Fatal("valid empty history not preserved")
 		}
 		response.Body.Close()
+		encoded, err := json.Marshal(Envelope{Version: 1, Status: "ok", Orders: []Order{}})
+		var actual, expected map[string]any
+		if err != nil || json.Unmarshal(encoded, &actual) != nil || json.Unmarshal(emptyContract, &expected) != nil || !reflect.DeepEqual(actual, expected) {
+			t.Fatalf("empty success violates JVM contract: %s %v", encoded, err)
+		}
 	}
 }
 

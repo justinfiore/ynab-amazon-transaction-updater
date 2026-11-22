@@ -66,6 +66,35 @@ assert not any(k.startswith(('AMAZON_','YNAB_','HF_','AWS_','PYTHON')) for k in 
         thrown(IllegalStateException)
     }
 
+    def 'shared Go success envelope accepts empty history but missing or null orders stay invalid'() {
+        given:
+        String emptyEnvelope=new File('walmart-helper/testdata/empty-history.json').getText('UTF-8')
+        File executable=new File(directory,'empty-helper')
+        executable.setText('#!/usr/bin/env python3\nimport sys,json\njson.load(sys.stdin)\nprint('+json.writeValueAsString(emptyEnvelope)+')\n','UTF-8')
+        executable.setExecutable(true)
+        def config=new Configuration(walmartHelperExecutable:executable.absolutePath,
+            walmartSessionFile:new File(directory,'not-read').absolutePath,walmartTimeoutSeconds:3,walmartMaxOutputBytes:1024)
+
+        expect:
+        new GoWalmartOrderFetcher(config).fetchOrders().empty
+
+        when:
+        executable.text='#!/usr/bin/env python3\nprint(\'{"version":1,"status":"ok"}\')\n'
+        new GoWalmartOrderFetcher(config).fetchOrders()
+
+        then:
+        def missing=thrown(IllegalStateException)
+        missing.message.endsWith('INVALID_SCHEMA')
+
+        when:
+        executable.text='#!/usr/bin/env python3\nprint(\'{"version":1,"status":"ok","orders":null}\')\n'
+        new GoWalmartOrderFetcher(config).fetchOrders()
+
+        then:
+        def absent=thrown(IllegalStateException)
+        absent.message.endsWith('INVALID_SCHEMA')
+    }
+
     def 'packaged native helper rejects malformed input without requiring Go or accounts'() {
         given:
         String helper=System.getProperty('walmart.helper')

@@ -38,7 +38,7 @@ type Request struct {
 type Envelope struct {
 	Version int     `json:"version"`
 	Status  string  `json:"status"`
-	Orders  []Order `json:"orders,omitempty"`
+	Orders  []Order `json:"orders"`
 }
 type Order struct {
 	ID          string       `json:"id"`
