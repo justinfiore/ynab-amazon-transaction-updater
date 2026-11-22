@@ -16,10 +16,7 @@ class WalmartEnrichment {
 
     Map process(List<TransactionMatch> matches, YNABService ynab, boolean dryRun, WalmartRemoteClassifier classifier = null) {
         def stats = [updated: 0, high_confidence: matches.size(), medium_confidence: 0, low_confidence: 0, preview: []]
-        if (!matches) {
-            if (!dryRun && config.walmartEnrichment == 'exception_first') isolate(ynab)
-            return stats
-        }
+        if (!matches) return stats
         // Recheck at the write boundary as well as before workflow matching.
         if (ynab.getWalmartPlanCurrency() != 'USD') {
             stats.preview << [reason:'unsupported_or_unknown_plan_currency']
@@ -187,13 +184,6 @@ class WalmartEnrichment {
             (expected.subtransactions ?: []).collect { [it.amount,it.category_id,it.memo,it.payee_id] }.sort { it.toString() }
     }
 
-    private void isolate(YNABService ynab) {
-        new WalmartJournal(config.walmartJournalFile).locked(false) { Map state, Closure save ->
-            learn(state, ynab)
-            save(state)
-        }
-    }
-
     private void learn(Map state, YNABService ynab) {
         Map observations = [:].withDefault { [] }
         state.plans.findAll { key, value -> key.startsWith(config.ynabBudgetId + '/') }.values().each { entry ->
@@ -229,17 +219,9 @@ class WalmartEnrichment {
         // do not leave a stale permanent vote. Other plans remain isolated.
         List learned = new ArrayList(state.learnedProducts ?: [])
         String prefix = String.valueOf(config.ynabBudgetId) + '/'
-        Map retained = [:]
-        state.mappings.each { raw, value ->
-            String key = String.valueOf(raw)
-            boolean otherPlan = key.contains('/') && !key.startsWith(prefix)
-            boolean ownPlan = observations && key.startsWith(prefix)
-            if (!(otherPlan || ownPlan)) retained[key] = value
-        }
-        observations.each { key, values -> retained[key] = values.unique().sort() }
-        state.mappings = retained
-        learned.removeAll { it.startsWith(prefix) }
-        state.learnedProducts = (learned + new ArrayList(observations.keySet())).unique().sort()
+        learned.findAll { String.valueOf(it).startsWith(prefix) }.each { state.mappings.remove(it) }
+        observations.each { key, values -> state.mappings[key] = values.unique().sort() }
+        state.learnedProducts = (learned.findAll { !String.valueOf(it).startsWith(prefix) } + new ArrayList(observations.keySet())).unique().sort()
     }
 
     static String fingerprint(Object value) { MessageDigest.getInstance('SHA-256').digest(JSON.writeValueAsBytes(value)).encodeHex().toString() }

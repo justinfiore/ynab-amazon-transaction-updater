@@ -707,22 +707,31 @@ class WalmartService_IT extends Specification {
         new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> !state.mappings['plan/food'] }
     }
 
-    def 'a run under one plan removes another plans learned mapping'() {
+    def 'a non-empty run recomputes only the current plan mapping'() {
         given:
         new WalmartJournal(config.walmartJournalFile).locked(false) { state, save ->
-            state.mappings['plan/soap']=['g']
+            state.mappings['plan/food']=['h']
             state.mappings['other-plan/food']=['h']
-            state.learnedProducts=['plan/soap','other-plan/food']
+            state.learnedProducts=['plan/food','other-plan/food']
             save(state)
         }
+        def order=WalmartFixture.order()
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        remote.large.approved=true
+        remote.small.approved=true
+        remote.small.subtransactions=[
+            [id:'s1',amount:-20000,memo:'Soap',category_id:'g',deleted:false],
+            [id:'s2',amount:-10000,memo:'Apples',category_id:'g',deleted:false]
+        ]
+        def matches=new TransactionMatcher().findWalmartMatches(txs,[order])
 
         when:
-        config.ynabBudgetId='other-plan'
-        new TransactionProcessor(config).processWalmartMatches([],ynab,false)
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
 
         then:
         new WalmartJournal(config.walmartJournalFile).locked(true) { state, save ->
-            state.mappings['other-plan/food']==['h'] && !state.mappings.containsKey('plan/soap')
+            !state.mappings.containsKey('plan/food') && state.mappings['other-plan/food']==['h']
         }
     }
 }
