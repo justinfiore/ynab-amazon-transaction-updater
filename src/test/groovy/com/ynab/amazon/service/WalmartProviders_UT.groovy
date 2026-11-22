@@ -230,6 +230,38 @@ class WalmartProviders_UT extends Specification {
         !new File(directory,'walmart-journal.json').exists()
     }
 
+    @Unroll
+    def 'OpenAI comparison stops after #failure and retains safe status and cache usage evidence'() {
+        given:
+        int requests=0
+        Map config=settings('openai')+[max_requests:10,max_tokens:163840,max_retries:0]
+        def classifier=new WalmartRemoteClassifier(config,{ endpoint,key,body,limits ->
+            requests++
+            Map response=envelope('openai')
+            response.usage.input_tokens_details=[cached_tokens:12,cache_write_tokens:3]
+            if (failure=='schema') response.answers=[]
+            [status:failure=='entitlement' ? 403 : 200,body:WalmartRemoteClassifier.JSON.writeValueAsString(response)]
+        })
+
+        when:
+        def report=WalmartProviderComparison.compare([openai:classifier]).providers.openai
+
+        then:
+        requests==1
+        report.usage.last_http_status==(failure=='entitlement' ? 403 : 200)
+        report.usage.cached_tokens==(failure=='entitlement' ? null : 12)
+        report.usage.cache_write_tokens==(failure=='entitlement' ? null : 3)
+        report.splits.calibration.failures==12
+        report.splits.heldout.failures==60
+        report.splits.heldout.batches.every { !it.attempted && it.elapsed_ms==null }
+        report.splits.heldout.per_item_completion_ms==[median:null,p95:null]
+        report.splits.calibration.batches[0].error=='classification_failed'
+        report.estimated_usd_per_1000_items==null
+
+        where:
+        failure << ['schema','entitlement']
+    }
+
     def 'explicit Jev-only comparison needs no OpenAI record and enforces its own consent and ten-request budget'() {
         given:
         File file=new File(directory,'comparison.yml')

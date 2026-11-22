@@ -26,7 +26,8 @@ class WalmartRemoteClassifier {
     final Map route
     final Map connection
     final Closure transport
-    final Map metrics = [requests:0, retries:0, input_tokens:0L, output_tokens:0L, usage_complete:true, failures:0, elapsed_ms:0L]
+    final Map metrics = [requests:0, retries:0, input_tokens:0L, output_tokens:0L, usage_complete:true, failures:0, elapsed_ms:0L,
+        cached_tokens:0L, cache_write_tokens:0L, cache_usage_complete:true, last_http_status:null]
     private long reservedTokens
     private boolean stopped
 
@@ -171,8 +172,10 @@ class WalmartRemoteClassifier {
                 metrics.requests++
                 response=transport(route.endpoint, connection.key, body, config + [total_ms:remaining,
                     connect_ms:Math.min(remaining,config.connect_ms as long), read_ms:Math.min(remaining,config.read_ms as long)])
+                metrics.last_http_status = response.status
                 if (!(response.status in [429,500,502,503,504]) || attempt >= config.max_retries) break
                 metrics.failures++; metrics.usage_complete=false
+                metrics.cache_usage_complete=false; metrics.cached_tokens=null; metrics.cache_write_tokens=null
                 long delay=250L*(1L<<attempt)
                 if (response.retry_after) {
                     try {
@@ -198,10 +201,22 @@ class WalmartRemoteClassifier {
                 long used = Math.addExact(usage.input_tokens.longValue(), usage.output_tokens.longValue())
                 metrics.input_tokens += usage.input_tokens.longValue(); metrics.output_tokens += usage.output_tokens.longValue()
                 if (used > config.max_request_tokens) { stopped = true; throw new IllegalStateException('Provider token allowance exceeded') }
+                Map cache = usage.input_tokens_details instanceof Map ? usage.input_tokens_details : [:]
+                if (['cached_tokens','cache_write_tokens'].every { cache[it] instanceof Number && cache[it] >= 0 &&
+                    cache[it] == cache[it].longValue() && cache[it] <= usage.input_tokens }) {
+                    if (metrics.cache_usage_complete) {
+                        metrics.cached_tokens += cache.cached_tokens.longValue()
+                        metrics.cache_write_tokens += cache.cache_write_tokens.longValue()
+                    }
+                } else {
+                    metrics.cache_usage_complete = false
+                    metrics.cached_tokens = null; metrics.cache_write_tokens = null
+                }
             } else { metrics.usage_complete = false; throw new IllegalStateException('Missing/invalid provider usage') }
             root
         } catch (Exception ignored) {
             metrics.failures++; metrics.usage_complete=false; stopped = true
+            metrics.cache_usage_complete=false; metrics.cached_tokens=null; metrics.cache_write_tokens=null
             throw new IllegalStateException('Provider inference failed; no decisions accepted. Replace rejected keys using setup; check limits/response contract. No automatic replay.')
         } finally { metrics.elapsed_ms += (System.nanoTime() - start).intdiv(1000000) }
     }

@@ -42,19 +42,25 @@ class WalmartProviderComparison {
                 qualification_fingerprint:classifier.qualificationFingerprint(categories),
                 calibration_note:'Configured gates are not automatically tuned; do not tune against held-out labels.', splits:[:]]
             long start = System.nanoTime()
+            boolean halted = false
             splits.each { split,data ->
                 Map predictions = [:]
                 List<Double> latencies = []
                 List<Map> batches = []
                 int failed = 0
                 data.collate(classifier.config.batch_size as int).each { batch ->
+                    if (halted) {
+                        failed += batch.size()
+                        batches << [item_ids:batch*.id,elapsed_ms:null,complete:false,attempted:false,error:'stopped_after_failure']
+                        return
+                    }
                     long tick = System.nanoTime()
                     try {
                         predictions.putAll(classifier.classify(batch.collect { row -> new WalmartOrderItem(itemId:row.id,title:row.product) }, categories, true))
-                    } catch (Exception ignored) { failed += batch.size() }
+                    } catch (Exception ignored) { failed += batch.size(); halted = true }
                     double elapsed = (System.nanoTime()-tick) / 1000000D
                     batch.each { latencies << elapsed } // user-visible batch completion latency, not divided by batch size
-                    batches << [item_ids:batch*.id,elapsed_ms:elapsed,complete:batch.every { predictions.containsKey(it.id) }]
+                    batches << [item_ids:batch*.id,elapsed_ms:elapsed,complete:!halted,attempted:true,error:halted ? 'classification_failed' : null]
                 }
                 result.splits[split] = [items:data.size(), failures:failed, predictions:predictions, batches:batches,
                     configured_gate:statistics(data,predictions,'Groceries',null),
@@ -64,9 +70,10 @@ class WalmartProviderComparison {
             result.elapsed_ms = (System.nanoTime()-start).intdiv(1000000)
             result.usage = new LinkedHashMap(classifier.metrics)
             int n = splits.values().sum { it.size() } as int
-            result.items_per_second = result.elapsed_ms ? n * 1000D / result.elapsed_ms : null
+            int completed = result.splits.values().sum { it.predictions.size() } as int
+            result.items_per_second = result.elapsed_ms ? completed * 1000D / result.elapsed_ms : null
             result.actual_billed_usd = null
-            result.estimated_usd_per_1000_items = classifier.metrics.usage_complete && !classifier.metrics.failures ?
+            result.estimated_usd_per_1000_items = !halted && classifier.metrics.usage_complete && !classifier.metrics.failures ?
                 classifier.metrics.input_tokens * (provider == 'openai' ? 0.10D : 0.042D) / 1000000D * 1000D / n : null
             report.providers[provider] = result
         }
@@ -100,7 +107,7 @@ class WalmartProviderComparison {
     }
 
     private static Double ratio(int a,int b) { b ? a/(double)b : null }
-    private static double percentile(List<Double> values,double p) { values.sort(false)[Math.max(0,(int)Math.ceil(values.size()*p)-1)] }
+    private static Double percentile(List<Double> values,double p) { values ? values.sort(false)[Math.max(0,(int)Math.ceil(values.size()*p)-1)] : null }
     private static String resource(String name) { WalmartProviderComparison.getResourceAsStream('/walmart-comparison/'+name).withCloseable { new String(it.readAllBytes(),'UTF-8') } }
     private static List<Map> rows(String name) { resource(name).readLines().drop(1).findAll { it }.collect { line ->
         def fields=line.split('\t',4); [id:fields[0],stratum:fields[1],expected:fields[2],product:fields[3]]
