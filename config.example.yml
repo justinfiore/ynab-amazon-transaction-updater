@@ -23,7 +23,8 @@ amazon:
   # Optional and additive: CSV orders are appended after the selected automatic source.
   # For CSV-only use, leave email blank and retain order_fetcher: "email".
   csv_file_path: "amazon_orders.csv"  # Your exported Amazon order history CSV file
-  # Optional Python 3.9+ history source. Do not put Amazon credentials here.
+  # Optional maintained Python >=3.11.5 history source with the hash-locked requirements.
+  # Do not put Amazon credentials here. Browser/CAPTCHA extensions are disabled.
   # python:
   #   executable: ".venv-amazon-orders/bin/python"
   #   bridge_script: "scripts/amazon_orders_bridge.py"

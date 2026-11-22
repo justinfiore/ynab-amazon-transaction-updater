@@ -2,6 +2,7 @@ import datetime as dt
 import importlib.util
 import io
 import json
+import logging
 import os
 import tempfile
 import sys
@@ -34,6 +35,8 @@ class Order:
         self.payment_method_last_4 = last_four
         self.recipient = "must-not-be-serialized"
         self.shipping_address = "must-not-be-serialized"
+        self.parsed = self
+        self.index = 0
 
 
 class Item:
@@ -44,6 +47,7 @@ class Item:
 class BridgeTests(unittest.TestCase):
     def run_bridge(self, history_by_year=None, arguments=(), session_error=None, history_error=None, household_orders=(), challenge=False):
         calls = []
+        self.details = []
         root = types.ModuleType("amazonorders")
         root.__version__ = "6.0.0"
         conf = types.ModuleType("amazonorders.conf")
@@ -53,10 +57,13 @@ class BridgeTests(unittest.TestCase):
             def __init__(self, **kwargs):
                 self.is_authenticated = False
                 self.io = kwargs.get("io")
+                self.config = object()
+                self.session = types.SimpleNamespace(close=lambda: None)
 
             def login(self):
                 if challenge:
                     self.io.echo("Authentication challenge")
+                    logging.getLogger("amazonauth.fixture").warning("sensitive challenge data")
                     self.io.prompt("sensitive challenge data", type=str)
                 if session_error:
                     raise session_error
@@ -77,7 +84,10 @@ class BridgeTests(unittest.TestCase):
                 if not amazon_session.is_authenticated:
                     raise RuntimeError("Call AmazonSession.login() to authenticate first.")
                 return history(**filters)
-            return types.SimpleNamespace(get_orders=authenticated_history)
+            def details(parsed, **kwargs):
+                self.details.append(parsed.order_number)
+                return parsed
+            return types.SimpleNamespace(get_orders=authenticated_history, _build_order=details)
 
         orders.AmazonOrders = order_client
         output, errors = io.StringIO(), io.StringIO()
@@ -86,7 +96,9 @@ class BridgeTests(unittest.TestCase):
         auth_errors.AmazonAuthRedirectError = RedirectError
         modules = {"amazonorders": root, "amazonorders.conf": conf, "amazonorders.session": session,
                    "amazonorders.orders": orders, "amazonauth.exception": auth_errors}
-        with patch.dict(sys.modules, modules), redirect_stdout(output), redirect_stderr(errors):
+        with patch.dict(sys.modules, modules), patch.object(bridge, "verify_runtime"), \
+                patch.object(bridge, "create_session", return_value=Session(io=bridge.NonInteractiveIO())), \
+                redirect_stdout(output), redirect_stderr(errors):
             code = bridge.main(["--config-path", "/safe/config.yml", *arguments])
         return code, output.getvalue(), errors.getvalue(), calls
 
@@ -109,8 +121,9 @@ class BridgeTests(unittest.TestCase):
                     code, output, errors, calls = self.run_bridge(history, ["--look-back-days", "400"])
                 self.assertEqual((0, ""), (code, errors))
                 self.assertEqual(expected_years, [call["year"] for call in calls])
-                self.assertTrue(all(call["full_details"] for call in calls))
+                self.assertTrue(all(not call["full_details"] for call in calls))
                 self.assertTrue(all(call["family_member_id"] is None for call in calls))
+                self.assertEqual(["first", "last"], self.details)
                 self.assertEqual(["first", "last"], [record["order_number"] for record in json.loads(output)["orders"]])
 
     def test_household_orders_are_included_by_default_and_can_be_excluded(self):
@@ -151,7 +164,7 @@ class BridgeTests(unittest.TestCase):
         with patch("builtins.input", side_effect=AssertionError("must not prompt")):
             code, output, errors, _ = self.run_bridge(challenge=True)
         self.assertEqual((3, ""), (code, output))
-        self.assertIn("Authentication challenge", errors)
+        self.assertNotIn("Authentication challenge", errors)
         self.assertIn("Amazon login required", errors)
         self.assertNotIn("sensitive challenge data", errors)
 
@@ -188,6 +201,8 @@ class BridgeTests(unittest.TestCase):
             ("unknown HTML", [response(200, "Unknown page: Amazon login required")], False, 1),
             ("error box without credential form", [response(200, rejected.split('<form')[0])], False, 1),
             ("interactive OTP", [response(200, otp)], False, 3),
+            ("CAPTCHA", [response(200, '<form action="/errors/validateCaptcha"><input id="captchacharacters"></form>')], False, 3),
+            ("browser challenge", [response(200, '<div id="aa-challenge-page-captcha-container"></div>')], False, 3),
             ("rejected credentials", [response(200, sign_in), response(200, rejected)], True, 3),
             ("503 with auth markup", [response(200, sign_in), response(503, rejected)], True, 1),
             ("503 with OTP markup", [response(503, otp)], False, 1),
@@ -226,29 +241,57 @@ class BridgeTests(unittest.TestCase):
                 self.assertEqual(1 + len(responses), http.call_count)
 
     @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install requirements-amazon-orders.txt for the real-library contract test")
-    def test_authenticates_with_real_library_before_fetching_history(self):
-        from amazonorders.orders import AmazonOrders
+    def test_real_library_fetches_details_only_inside_the_window(self):
         from requests import Response
 
-        response = Response()
-        response.status_code = 200
-        response.url = "https://www.amazon.com/"
-        response._content = b'<span id="nav-link-accountList-nav-line-1">Hello, Fixture</span>'
         today = dt.date.today()
-        order = Order("real-api", today, 12.34, last_four="0012")
+        cutoff = today - dt.timedelta(days=30)
+
+        def card(number, placed):
+            return f'''<div class="order-card">
+                <span data-component="orderId">{number}</span>
+                <span data-component="orderDate">{placed.isoformat()}</span>
+                <div class="yohtmlc-order-total"><span class="value">$12.34</span></div>
+                </div>'''
+
+        first, last, old = "123-1234567-1234567", "234-2345678-2345678", "345-3456789-3456789"
+        history = card(old, cutoff - dt.timedelta(days=1)) + card(first, cutoff) + card(last, today) + card(first, cutoff)
+        requested_details = []
+
+        def network(adapter, request, **kwargs):
+            result = Response()
+            result.status_code, result.url, result.request = 200, request.url, request
+            if "/your-orders/orders" in request.url:
+                html = history
+            elif "/gp/your-account/order-details" in request.url:
+                number = request.url.split("orderID=")[1]
+                requested_details.append(number)
+                html = '''<div id="orderDetails">
+                    <span data-testid="payment-instrument-name">Visa</span>
+                    <span data-testid="payment-instrument-number">ending in 0012</span>
+                    </div>'''
+            else:
+                html = '<span id="nav-link-accountList-nav-line-1">Hello, Fixture</span>'
+            result._content = html.encode()
+            return result
+
         output, errors = io.StringIO(), io.StringIO()
         with tempfile.TemporaryDirectory() as directory:
             config_path = os.path.join(directory, "config.yml")
             with open(config_path, "w") as config:
                 json.dump({"cookie_jar_path": os.path.join(directory, "cookies.json"), "output_dir": directory}, config)
-            # Stub HTTP/history retrieval, not session construction, login, or the
-            # public get_orders authentication guard. No real credentials/network.
-            with patch.dict(os.environ, {}, clear=True), patch("requests.sessions.Session.request", return_value=response), \
-                    patch.object(AmazonOrders, "_build_orders_async", new_callable=AsyncMock, return_value=([order], None, None, None)), \
+            # Real login, history/summary/detail parsing, transport and output;
+            # only the network is replaced. No real account or credentials.
+            with patch.dict(os.environ, {}, clear=True), \
+                    patch("requests.adapters.HTTPAdapter.send", autospec=True, side_effect=network), \
                     redirect_stdout(output), redirect_stderr(errors):
                 code = bridge.main(["--config-path", config_path])
         self.assertEqual((0, ""), (code, errors.getvalue()))
-        self.assertEqual("real-api", json.loads(output.getvalue())["orders"][0]["order_number"])
+        self.assertEqual([first, last], requested_details)
+        records = json.loads(output.getvalue())["orders"]
+        self.assertEqual([first, last], [order["order_number"] for order in records])
+        self.assertEqual([12.34, 12.34], [order["grand_total"] for order in records])
+        self.assertEqual(["0012", "0012"], [order["payment_method_last_4"] for order in records])
 
     def test_preflight_is_stdout_only_and_never_constructs_session(self):
         code, output, errors, calls = self.run_bridge(arguments=["--preflight"], session_error=RuntimeError("should not run"))
@@ -269,6 +312,138 @@ class BridgeTests(unittest.TestCase):
             code, output, errors, _ = self.run_bridge(session_error=session_error, history_error=history_error)
             self.assertEqual((1, ""), (code, output))
             self.assertIn("bridge failed", errors)
+
+    @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install the reviewed requirements lock")
+    def test_credentials_and_otp_never_reach_unsafe_form_destinations(self):
+        from amazonorders.orders import AmazonOrders
+        from requests import Response
+
+        destinations = ["https://collector.invalid/steal", "https://www.amazon.com.evil.invalid/steal",
+                        "https://seller.amazon.com/steal", "http://www.amazon.com/steal",
+                        "https://www.amazon.com:8443/steal", "https://user:pass@www.amazon.com/steal",
+                        "https://www.amazon.co.uk/steal", "/ap/signin"]
+        for kind in ("password", "otp", "interactive"):
+            for destination in destinations:
+                with self.subTest(kind=kind, destination=destination), tempfile.TemporaryDirectory() as directory:
+                    config_path = os.path.join(directory, "config.yml")
+                    with open(config_path, "w") as config:
+                        json.dump({"cookie_jar_path": os.path.join(directory, "cookies.json")}, config)
+                    sent = []
+
+                    def network(adapter, request, **kwargs):
+                        sent.append(request)
+                        self.assertTrue(request.url.startswith("https://www.amazon.com/"))
+                        self.assertEqual((10, 30), kwargs["timeout"])
+                        self.assertIs(True, kwargs["verify"])
+                        self.assertEqual({}, kwargs["proxies"])
+                        result = Response()
+                        result.status_code, result.url, result.request = 200, request.url, request
+                        if request.method == "POST":
+                            html = '<span id="nav-link-accountList-nav-line-1">Hello, Fixture</span>'
+                        elif "/ap/signin" in request.url:
+                            attrs = 'id="auth-mfa-form"' if kind == "otp" else 'name="signIn"'
+                            fields = '<input name="otpCode" value="">' if kind == "otp" else '<input name="email" value=""><input name="password" value="">'
+                            html = f'<form {attrs} method="post" action="{destination}">{fields}</form>'
+                        else:
+                            html = "Fixture home"
+                        result._content = html.encode()
+                        return result
+
+                    output, errors = io.StringIO(), io.StringIO()
+                    env = {"AMAZON_USERNAME": "fixture@example.invalid", "AMAZON_PASSWORD": "fixture-password",
+                           "AMAZON_OTP_SECRET_KEY": "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP", "HTTPS_PROXY": "http://proxy.invalid",
+                           "REQUESTS_CA_BUNDLE": "/nonexistent/ca.pem"}
+                    if kind == "interactive":
+                        env = {}
+                    with patch.dict(os.environ, env, clear=True), \
+                            patch("requests.adapters.HTTPAdapter.send", autospec=True, side_effect=network), \
+                            patch.object(AmazonOrders, "_build_orders_async", new_callable=AsyncMock, return_value=([], None, None, None)), \
+                            patch("builtins.input", return_value="fixture@example.invalid"), \
+                            patch.object(bridge.getpass, "getpass", return_value="fixture-password"), \
+                            redirect_stdout(output), redirect_stderr(errors):
+                        code = bridge.main(["--config-path", config_path, *(["--login"] if kind == "interactive" else [])])
+                    allowed = destination == "/ap/signin"
+                    self.assertEqual(0 if allowed else 1, code, errors.getvalue())
+                    self.assertEqual(1 if allowed else 0, sum(r.method == "POST" for r in sent))
+                    if allowed:
+                        if kind == "interactive":
+                            self.assertIn("Amazon session saved", output.getvalue())
+                            cookies = os.path.join(directory, "cookies.json")
+                            self.assertTrue(os.path.exists(cookies))
+                            if os.name == "posix":
+                                self.assertEqual(0o600, os.stat(cookies).st_mode & 0o777)
+                            with open(cookies) as saved:
+                                self.assertNotIn("fixture-password", saved.read())
+                        else:
+                            self.assertEqual([], json.loads(output.getvalue())["orders"])
+                        self.assertIn("otpCode=" if kind == "otp" else "password=fixture-password", sent[-1].body)
+                    else:
+                        self.assertEqual("", output.getvalue())
+                    self.assertNotIn("fixture-password", errors.getvalue())
+                    self.assertNotIn("JBSWY3DPEHPK3PXP", errors.getvalue())
+
+    @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install the reviewed requirements lock")
+    def test_bodyless_redirects_cannot_escape_the_selected_region(self):
+        from requests import Response
+
+        for destination in ["https://collector.invalid/", "https://www.amazon.com/", "https://www.amazon.co.uk/allowed"]:
+            with self.subTest(destination=destination), tempfile.TemporaryDirectory() as directory:
+                config_path = os.path.join(directory, "config.yml")
+                with open(config_path, "w") as config:
+                    json.dump({"domain": "amazon.co.uk", "cookie_jar_path": os.path.join(directory, "cookies.json")}, config)
+                sent = []
+
+                def network(adapter, request, **kwargs):
+                    sent.append(request.url)
+                    result = Response()
+                    result.url, result.request, result._content = request.url, request, b"Fixture"
+                    result.status_code = 302 if len(sent) == 1 else 200
+                    if len(sent) == 1:
+                        result.headers["Location"] = destination
+                    return result
+
+                with patch.dict(os.environ, {}, clear=True), patch("requests.adapters.HTTPAdapter.send", autospec=True, side_effect=network):
+                    session = bridge.create_session(config_path)
+                    try:
+                        if destination.endswith("/allowed"):
+                            self.assertEqual(200, session.session.get("https://www.amazon.co.uk/start").status_code)
+                            self.assertEqual(["https://www.amazon.co.uk/start", destination], sent)
+                        else:
+                            with self.assertRaises(ValueError):
+                                session.session.get("https://www.amazon.co.uk/start")
+                            self.assertEqual(["https://www.amazon.co.uk/start"], sent)
+                    finally:
+                        session.session.close()
+
+    @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install the reviewed requirements lock")
+    def test_executable_config_is_rejected_before_import_or_network(self):
+        overrides = [{key: "hostile.Payload"} for key in ("constants_class", "selectors_class", "order_class", "output_class")]
+        overrides += [{"auth_forms_classes": ["hostile.Payload"]}, {"language_package": "hostile"}, {"bs4_parser": "lxml"}]
+        for override in overrides:
+            for source in ("file", "environment"):
+                with self.subTest(override=override, source=source), tempfile.TemporaryDirectory() as directory:
+                    marker = os.path.join(directory, "executed")
+                    with open(os.path.join(directory, "hostile.py"), "w") as plugin:
+                        plugin.write(f"open({marker!r}, 'w').write('executed')\nclass Payload: pass\n")
+                    config_path = os.path.join(directory, "config.yml")
+                    with open(config_path, "w") as config:
+                        json.dump(override if source == "file" else {}, config)
+                    env = {"AMAZON_" + key.upper(): json.dumps(val) for key, val in override.items()} if source == "environment" else {}
+                    output, errors = io.StringIO(), io.StringIO()
+                    with patch.dict(os.environ, env, clear=True), patch.object(sys, "path", [directory, *sys.path]), \
+                            patch("requests.adapters.HTTPAdapter.send") as network, \
+                            redirect_stdout(output), redirect_stderr(errors):
+                        code = bridge.main(["--config-path", config_path])
+                    self.assertEqual((1, ""), (code, output.getvalue()))
+                    self.assertFalse(os.path.exists(marker))
+                    network.assert_not_called()
+
+    def test_preflight_rejects_unreviewed_auth_version(self):
+        output, errors = io.StringIO(), io.StringIO()
+        versions = {"amazon-orders": "6.0.0", "amazon-auth": "1.0.0"}
+        with patch("importlib.metadata.version", side_effect=versions.__getitem__), redirect_stdout(output), redirect_stderr(errors):
+            code = bridge.main(["--config-path", "unused.yml", "--preflight"])
+        self.assertEqual((1, ""), (code, output.getvalue()))
 
 
 if __name__ == "__main__":

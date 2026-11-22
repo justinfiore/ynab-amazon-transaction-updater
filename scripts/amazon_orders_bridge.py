@@ -2,9 +2,13 @@
 """Machine-readable, non-interactive adapter for amazon-orders history."""
 import argparse
 import datetime as dt
+import getpass
 import importlib
+import importlib.metadata
 import json
+import logging
 import sys
+from urllib.parse import urlsplit
 
 SCHEMA_VERSION = 1
 LOGIN_REQUIRED_EXIT_CODE = 3
@@ -16,10 +20,11 @@ class LoginRequired(Exception):
 
 class NonInteractiveIO:
     def echo(self, msg, **kwargs):
-        print(msg, file=sys.stderr)
+        # Upstream messages can contain page text or account information.
+        pass
 
     def prompt(self, msg, **kwargs):
-        raise LoginRequired("Amazon authentication requires interactive input; refresh the session with amazon-orders login")
+        raise LoginRequired("Amazon authentication requires interactive input")
 
 
 def value(source, *names):
@@ -66,17 +71,73 @@ def serialize(order):
     }
 
 
-def load_history(config_path, look_back_days, account_only=False):
-    module = importlib.import_module("amazonorders")
+def verify_runtime():
+    if sys.version_info < (3, 11, 5):
+        raise RuntimeError("Use a maintained Python runtime")
+    for package, version in (("amazon-orders", "6.0.0"), ("amazon-auth", "1.1.0")):
+        if importlib.metadata.version(package) != version:
+            raise RuntimeError("Install the reviewed requirements lock")
+
+
+def create_session(config_path, interactive=False):
     config_class = getattr(importlib.import_module("amazonorders.conf"), "AmazonOrdersConfig")
     session_class = getattr(importlib.import_module("amazonorders.session"), "AmazonSession")
-    orders_class = getattr(importlib.import_module("amazonorders.orders"), "AmazonOrders")
-    config = config_class(config_path=config_path)
+    from requests.adapters import HTTPAdapter
+    from amazonauth.exception import AmazonAuthSignInError
+    from amazonauth.forms import CaptchaForm, AcicAuthBlocker, JSAuthBlocker
+    from amazonauth.session import IODefault
+
+    class BridgeConfig(config_class):
+        def _validate_bs4_parser(self):
+            # This is the first validation hook, before configured modules load.
+            defaults = self.default_data()
+            for key in (*[k for k in defaults if k.endswith("_class")],
+                        "auth_forms_classes", "language_package", "bs4_parser"):
+                if self._get(key) != defaults[key]:
+                    raise ValueError("Custom Python classes/parsers are disabled in the bridge")
+            super()._validate_bs4_parser()
+
+    config = BridgeConfig(config_path=config_path)
+    origin = urlsplit(config.constants.BASE_URL)
+
+    class AmazonOnlyAdapter(HTTPAdapter):
+        def send(self, request, **kwargs):
+            target = urlsplit(request.url)
+            if (target.scheme != "https" or target.hostname != origin.hostname or
+                    target.port not in (None, 443) or target.username is not None or target.password is not None):
+                raise ValueError("Refused a request outside the configured Amazon HTTPS origin")
+            # Covers direct form/image requests and every redirect, not just the
+            # public AmazonSession.request wrapper. No unlimited network waits.
+            kwargs["timeout"] = (10, 30)
+            kwargs["verify"] = True
+            kwargs["proxies"] = {}
+            return super().send(request, **kwargs)
 
     class ObservedSession(session_class):
         # SignInError has no response metadata. Keep the structured response
         # from the public request API, not exception text, for classification.
         last_response = None
+
+        def _create_session(self):
+            client = super()._create_session()
+            # Ignore ambient proxy/CA settings and .netrc authentication.
+            client.trust_env = False
+            client.mount("https://", AmazonOnlyAdapter())
+            client.mount("http://", AmazonOnlyAdapter())
+            return client
+
+        def _process_forms(self, response):
+            for form in self.auth_forms:
+                if isinstance(form, (CaptchaForm, AcicAuthBlocker, JSAuthBlocker)):
+                    try:
+                        selected = form.select_form(self, response.parsed)
+                    except AmazonAuthSignInError as error:
+                        # The pinned JS/ACIC blockers raise on recognized markup.
+                        raise LoginRequired("Amazon browser challenge") from error
+                    if selected:
+                        # Do not open image viewers/browsers or contact paid solvers.
+                        raise LoginRequired("Amazon CAPTCHA challenge")
+            return super()._process_forms(response)
 
         def request(self, *args, **kwargs):
             self.last_response = None
@@ -86,7 +147,18 @@ def load_history(config_path, look_back_days, account_only=False):
             self.last_response.response.raise_for_status()
             return self.last_response
 
-    session = ObservedSession(config=config, io=NonInteractiveIO())
+    credentials = {}
+    if interactive:
+        credentials["username"] = config.username or input("Amazon email: ")
+        credentials["password"] = config.password or getpass.getpass("Amazon password: ")
+    return ObservedSession(config=config, io=IODefault() if interactive else NonInteractiveIO(),
+                           debug=False, **credentials)
+
+
+def load_history(config_path, look_back_days, account_only=False):
+    session = create_session(config_path)
+    config = session.config
+    orders_class = getattr(importlib.import_module("amazonorders.orders"), "AmazonOrders")
     auth_errors = importlib.import_module("amazonauth.exception")
     try:
         session.login()
@@ -95,9 +167,19 @@ def load_history(config_path, look_back_days, account_only=False):
         # Fetch all calendar years covering the window, then filter locally.
         # None selects the whole Household; "self" selects only this account.
         history = []
+        seen = set()
         for year in range(cutoff.year, dt.date.today().year + 1):
-            history.extend(orders.get_orders(year=year, full_details=True,
-                                            family_member_id="self" if account_only else None))
+            summaries = orders.get_orders(year=year, full_details=False,
+                                          family_member_id="self" if account_only else None)
+            for order in summaries:
+                placed = date_value(value(order, "order_placed_date"))
+                number = value(order, "order_number")
+                if not placed or placed < cutoff or not number or number in seen or value(order, "cancelled"):
+                    continue
+                seen.add(number)
+                # Reuse the pinned parser's detail builder so Whole Foods and
+                # unsupported summary types keep their existing semantics.
+                history.append(orders._build_order(order.parsed, full_details=True, current_index=order.index))
         return history
     except auth_errors.AmazonAuthRedirectError as error:
         raise LoginRequired("Amazon sign-in is required") from error
@@ -114,6 +196,8 @@ def load_history(config_path, look_back_days, account_only=False):
                      select_one(response.parsed, selectors.CLAIM_FORM_SELECTOR) is not None)):
                 raise LoginRequired("Amazon rejected sign-in") from error
         raise
+    finally:
+        session.session.close()
 
 
 def preflight(config_path):
@@ -126,11 +210,24 @@ def main(argv=None):
     parser.add_argument("--config-path", required=True)
     parser.add_argument("--look-back-days", type=int, default=30)
     parser.add_argument("--account-only", action="store_true", help="Exclude other Amazon Household members' orders.")
-    parser.add_argument("--preflight", action="store_true", help="Verify package/schema without fetching account data.")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--preflight", action="store_true", help="Verify package/schema without fetching account data.")
+    mode.add_argument("--login", action="store_true", help="Interactive password/OTP login with the bridge's network restrictions.")
     args = parser.parse_args(argv)
+    previous_logging_level = logging.root.manager.disable
+    logging.disable(logging.CRITICAL)  # Upstream diagnostics can include account/page data.
     try:
+        verify_runtime()
         if args.preflight:
             preflight(args.config_path)
+            return 0
+        if args.login:
+            session = create_session(args.config_path, interactive=True)
+            try:
+                session.login()
+            finally:
+                session.session.close()
+            print("Amazon session saved; protect its cookie file as a password.")
             return 0
         if args.look_back_days <= 0:
             raise ValueError("look-back-days must be positive")
@@ -146,11 +243,13 @@ def main(argv=None):
         print(json.dumps({"schema_version": SCHEMA_VERSION, "orders": list(unique.values())}, default=str, separators=(",", ":")))
         return 0
     except LoginRequired:
-        print("Amazon login required; run amazon-orders login with the configured account and config path", file=sys.stderr)
+        print("Amazon login required; run this bridge with --login and the same --config-path; browser/CAPTCHA flows are disabled", file=sys.stderr)
         return LOGIN_REQUIRED_EXIT_CODE
     except Exception:
         print("amazon-orders bridge failed; check runtime configuration and Amazon availability", file=sys.stderr)
         return 1
+    finally:
+        logging.disable(previous_logging_level)
 
 
 if __name__ == "__main__":

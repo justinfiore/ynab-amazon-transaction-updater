@@ -37,6 +37,14 @@ class ProcessResult {
 /** Executes an argument-list process with bounded, concurrently drained output. */
 class BoundedProcessRunner implements ProcessRunner {
     private static final Duration TERMINATION_GRACE = Duration.ofSeconds(1)
+    // This runner launches only the Amazon bridge. Never hand it YNAB/email/cloud
+    // secrets, Python injection hooks, proxy settings or remote-browser overrides.
+    private static final Set<String> ENVIRONMENT_KEYS = [
+        'PATH', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'SYSTEMROOT', 'WINDIR',
+        'TEMP', 'TMP', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ',
+        'AMAZON_DOMAIN', 'AMAZON_ACCOUNT', 'AMAZON_COOKIE_JAR_PATH',
+        'AMAZON_USERNAME', 'AMAZON_PASSWORD', 'AMAZON_OTP_SECRET_KEY'
+    ] as Set
 
     @Override
     ProcessResult run(List<String> command, Duration timeout, int maxOutputBytes) {
@@ -56,7 +64,10 @@ class BoundedProcessRunner implements ProcessRunner {
                 launchCommand = ['/usr/bin/setsid', '--', executable.absolutePath] + command.drop(1)
                 if (!new File('/bin/kill').canExecute()) throw new IOException('Process group signalling unavailable')
             }
-            process = new ProcessBuilder(launchCommand).start()
+            ProcessBuilder builder = new ProcessBuilder(launchCommand)
+            // Windows environment keys such as SystemRoot are case-insensitive.
+            builder.environment().keySet().removeIf { !ENVIRONMENT_KEYS.contains(it.toUpperCase(Locale.ROOT)) }
+            process = builder.start()
             process.outputStream.close() // The bridge is non-interactive.
         } catch (IOException e) {
             return new ProcessResult(ProcessResult.Status.START_FAILED, -1, '', '', e.message ?: e.class.simpleName)

@@ -28,14 +28,14 @@ class PythonAmazonOrderFetcher implements AmazonOrderFetcher {
     @Override
     List<AmazonOrder> fetchOrders() {
         loginRequired = false
-        List<String> command = [config.amazonPythonExecutable, config.amazonPythonBridgeScript,
+        List<String> command = [config.amazonPythonExecutable, '-I', config.amazonPythonBridgeScript,
                                 '--config-path', config.amazonPythonConfigPath,
                                 '--look-back-days', String.valueOf(config.lookBackDays)]
         if (!config.amazonPythonIncludeHouseholdOrders) command.add('--account-only')
         ProcessResult result = processRunner.run(command, Duration.ofSeconds(config.amazonPythonTimeoutSeconds), config.amazonPythonMaxOutputBytes)
         if (!result.success) {
             loginRequired = result.status == ProcessResult.Status.NON_ZERO_EXIT && result.exitCode == 3
-            if (loginRequired) logger.warn('Amazon login required; run amazon-orders login with the configured account and config path')
+            if (loginRequired) logger.warn('Amazon login required; run the configured bridge with --login and --config-path')
             else logger.warn("Python Amazon fetch failed (${result.status}, exit ${result.exitCode}); check runtime configuration and Amazon availability")
             return []
         }

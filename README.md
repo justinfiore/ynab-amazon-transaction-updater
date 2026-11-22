@@ -95,7 +95,7 @@ Note: CSV export does not include Subscribe & Save orders automatically.
 
 **Option C: Python order history (optional)**
 
-Python 3.9+ can fetch account history through the unofficial `amazon-orders`
+A maintained, patched CPython >=3.11.5 can fetch account history through the unofficial `amazon-orders`
 website-parsing package. It supports English pages across Amazon regions and can
 break when Amazon changes its site. By default, the bridge includes all Amazon
 Household orders visible to the signed-in account. Set
@@ -105,17 +105,23 @@ the default and retains its refund and Subscribe & Save notification semantics.
 
 ```bash
 python3 -m venv .venv-amazon-orders
-.venv-amazon-orders/bin/python -m pip install --upgrade pip
-.venv-amazon-orders/bin/python -m pip install -r requirements-amazon-orders.txt
-.venv-amazon-orders/bin/amazon-orders --config-path ~/.config/amazonorders/config.yml login
-.venv-amazon-orders/bin/python scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight
+.venv-amazon-orders/bin/python -m pip install --require-hashes -r requirements-amazon-orders.txt
+.venv-amazon-orders/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --login
+.venv-amazon-orders/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight
 ```
 
-The stock login persists its session outside this project. Do not commit its
+Use a **fresh virtual environment**, not an existing environment with extra plugins.
+The full dependency closure is version/hash-locked and wheel-only; installation
+fails where compatible wheels are unavailable. The guarded bridge login persists
+its session outside this project. Do not use the stock CLI for this workflow: it
+does not enforce the bridge's transport/configuration restrictions. Do not commit its
 config/cookies or place passwords, OTP secrets, or cookies in YAML. Supported
-upstream environment credentials are inherited without being printed. Use
-restrictive permissions for the upstream configuration. Browser challenges may
-need `amazon-orders[browser]` and `playwright install chromium`.
+Amazon credential environment variables are allowlisted without being printed.
+Use restrictive permissions for the upstream configuration. Browser/CAPTCHA
+automation, paid solvers, custom Python classes and parser plugins are disabled;
+do not install unconstrained browser extras over this lock. If a challenge cannot
+be completed using the guarded password/OTP login, use email/CSV until a separate
+browser workflow has been reviewed and locked.
 
 For cookie/config locations, session lifetime, Amp credential secrets, and the
 interactive recovery command, see [Amazon authentication](SETUP.md#amazon-authentication-storage-lifetime-and-recovery).
@@ -444,7 +450,9 @@ Confidence thresholds:
 - **Transaction Tracking**: Prevents duplicate processing
 - **Confidence Thresholds**: Only updates high-confidence matches
 - **Error Handling**: Graceful handling of API errors and invalid data
-- **Python isolation**: Python mode runs an argument-list child process with a timeout, bounded stdout/stderr, process-tree cleanup, and fixed-category failure diagnostics (upstream stderr is not logged). It never logs bridge JSON or passes Amazon secrets as arguments.
+- **Python hardening**: Python mode uses isolated interpreter mode (`-I`) and an environment allowlist: OS runtime/location variables plus `AMAZON_DOMAIN`, `AMAZON_ACCOUNT`, `AMAZON_COOKIE_JAR_PATH`, `AMAZON_USERNAME`, `AMAZON_PASSWORD`, and `AMAZON_OTP_SECRET_KEY`. Unrelated YNAB/email/cloud credentials and Python/remote-browser/proxy overrides are not inherited. The argument-list child has a timeout, bounded output, process-tree cleanup and fixed failure diagnostics; upstream messages and bridge JSON are not logged. Amazon secrets are never command arguments.
+- **Amazon network/data boundaries**: The bridge allows only the configured Amazon HTTPS origin, including initial form submissions, direct requests and redirects. TLS verification is mandatory, proxy/CA environment and `.netrc` are ignored, and connect/read timeouts are 10/30 seconds. Custom Python classes, language/parser plugins, CAPTCHA/browser automation and paid solvers are disabled; debug HTML capture stays off. It retrieves calendar-year summaries but only fetches details for dated, non-cancelled, deduplicated orders within the look-back window. Household scope remains configurable and unchanged.
+- **Not an OS sandbox**: A virtual environment, `-I`, transport checks and process groups cannot contain malicious installed code. The child still has the OS user's filesystem access, including readable configuration files. For that threat model, use a dedicated unprivileged user/container with only its Amazon session/configuration available, without mounting YNAB/email/cloud secrets. Use a clean environment for manual login, too. Cookies remain plaintext bearer credentials protected by filesystem permissions, not encryption.
 - **Linux subprocess cleanup**: Linux runs the Python bridge in a separate process group using `/usr/bin/setsid` (util-linux) and `/bin/kill`. These tools are required on Linux; if unavailable, fetching fails safely rather than launching without group containment. Timeouts and failures terminate the group, including children whose parent has already exited; remaining group members are also cleaned up after normal completion. A helper that deliberately starts a new session/group can escape this boundary. macOS and Windows retain best-effort descendant tracking and daemon output readers; they do not have the Linux group-containment guarantee.
 - **Source semantics**: Select one automatic source (`email` or `python`); an optional CSV is appended after it. A failed Python source returns no Python orders rather than silently falling back to another credential source.
 
@@ -505,8 +513,8 @@ Confidence thresholds:
     - If you get rate limit errors, wait a few minutes and try again
 
 12. **Python bridge preflight or fetch failure**
-    - Verify the isolated interpreter and tested dependency: `.venv-amazon-orders/bin/python scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight`
-    - Re-run the stock `amazon-orders --config-path ~/.config/amazonorders/config.yml login` command if the persisted session is stale.
+    - Verify the isolated interpreter and tested dependencies: `.venv-amazon-orders/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight`
+    - Re-run the same bridge with `--login` instead of `--preflight` if the persisted session is stale. Custom classes/parsers and browser/CAPTCHA flows are intentionally refused; use email/CSV when required.
     - Check that `amazon.python.executable`, `bridge_script`, and `config_path` are absolute/resolved paths and that timeout/output bounds are positive.
     - Do not paste cookies, passwords, OTP values, stderr payloads, or order JSON into logs or issue reports. Select `email` or CSV if an upstream Amazon challenge cannot run unattended.
 

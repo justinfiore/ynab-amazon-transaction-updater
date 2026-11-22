@@ -20,6 +20,66 @@ class BoundedProcessRunner_UT extends Specification {
         result.stderr == 'stderr'
     }
 
+    def "child inherits only Amazon credentials and essential runtime variables"() {
+        given:
+        File source = new File(tempDir, 'EnvironmentProbe.java')
+        source.text = '''
+import com.ynab.amazon.service.BoundedProcessRunner;
+import java.time.Duration;
+import java.util.List;
+class EnvironmentProbe {
+    public static void main(String[] args) {
+        var result = new BoundedProcessRunner().run(
+            List.of("python3", "-I", "-c", "import json,os; print(json.dumps(dict(os.environ)))"),
+            Duration.ofSeconds(5), 65536);
+        if (!result.isSuccess()) throw new RuntimeException(result.getStatus().name());
+        System.out.print(result.getStdout());
+    }
+}
+'''
+        String classpath = [BoundedProcessRunner, GroovyObject].collect {
+            new File(it.protectionDomain.codeSource.location.toURI()).absolutePath
+        }.join(File.pathSeparator)
+        def builder = new ProcessBuilder(
+            new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+            '--class-path', classpath, source.absolutePath
+        ).redirectErrorStream(true)
+        // Use a completely synthetic environment; never inspect actual secrets.
+        builder.environment().clear()
+        builder.environment().putAll([
+            PATH: System.getenv('PATH'), HOME: tempDir.absolutePath,
+            AMAZON_USERNAME: 'fixture@example.invalid', AMAZON_PASSWORD: 'fixture-password',
+            AMAZON_OTP_SECRET_KEY: 'fixture-seed', AMAZON_ACCOUNT: 'spouse', AMAZON_DOMAIN: 'amazon.co.uk',
+            AMAZON_COOKIE_JAR_PATH: new File(tempDir, 'session.json').absolutePath,
+            YNAB_API_TOKEN: 'fake-ynab', EMAIL_PASSWORD: 'fake-email', AWS_SECRET_ACCESS_KEY: 'fake-cloud',
+            SELENIUM_REMOTE_URL: 'https://remote.invalid', AMAZON_DEBUG: 'true',
+            AMAZON_AUTH_FORMS_CLASSES: '[hostile.Payload]', PYTHONPATH: '/untrusted',
+            PYTHONSTARTUP: '/untrusted.py', HTTPS_PROXY: 'https://proxy.invalid', NODE_OPTIONS: '--inspect'
+        ])
+
+        when:
+        Process probe = builder.start()
+        boolean finished = probe.waitFor(15, TimeUnit.SECONDS)
+
+        then:
+        finished
+        probe.exitValue() == 0
+        def environment = new com.fasterxml.jackson.databind.ObjectMapper().readValue(probe.inputStream.text, Map)
+        environment.AMAZON_USERNAME == 'fixture@example.invalid'
+        environment.AMAZON_PASSWORD == 'fixture-password'
+        environment.AMAZON_OTP_SECRET_KEY == 'fixture-seed'
+        environment.AMAZON_ACCOUNT == 'spouse'
+        environment.AMAZON_DOMAIN == 'amazon.co.uk'
+        environment.AMAZON_COOKIE_JAR_PATH == new File(tempDir, 'session.json').absolutePath
+        environment.HOME == tempDir.absolutePath
+        environment.keySet().intersect(['YNAB_API_TOKEN', 'EMAIL_PASSWORD', 'AWS_SECRET_ACCESS_KEY',
+            'SELENIUM_REMOTE_URL', 'AMAZON_DEBUG', 'AMAZON_AUTH_FORMS_CLASSES', 'PYTHONPATH',
+            'PYTHONSTARTUP', 'HTTPS_PROXY', 'NODE_OPTIONS']).empty
+
+        cleanup:
+        probe?.destroyForcibly()
+    }
+
     def "contains output beyond the configured stream limit"() {
         when:
         def result = runner.run(['/bin/sh', '-c', 'dd if=/dev/zero bs=256 count=1 2>/dev/null'], Duration.ofSeconds(1), 32)

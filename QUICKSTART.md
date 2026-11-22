@@ -5,7 +5,7 @@
 - YNAB API key
 - YNAB Account ID
 - Amazon order history CSV export (or email credentials)
-- Optional: Python 3.9+ for Amazon account-history fetching
+- Optional: maintained, patched CPython >=3.11.5 for Amazon account-history fetching
 - (Optional) Walmart account credentials for Walmart integration
 
 ## 5-Minute Setup
@@ -68,15 +68,18 @@ recreate email refund or Subscribe & Save notification semantics.
 
 ```bash
 python3 -m venv .venv-amazon-orders
-.venv-amazon-orders/bin/python -m pip install -r requirements-amazon-orders.txt
-.venv-amazon-orders/bin/amazon-orders --config-path ~/.config/amazonorders/config.yml login
-.venv-amazon-orders/bin/python scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight
+.venv-amazon-orders/bin/python -m pip install --require-hashes -r requirements-amazon-orders.txt
+.venv-amazon-orders/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --login
+.venv-amazon-orders/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight
 ```
 
 Then set `amazon.order_fetcher: "python"` and the commented `amazon.python`
 paths from `config.example.yml`. Keep `dry_run: true` for the first updater run.
-Credentials and cookies belong only to the upstream session/configuration, not
-to this repository or command arguments.
+Start with a fresh virtual environment; the lock requires wheels and excludes
+browser/CAPTCHA extensions. Use guarded login, not the stock upstream CLI. If
+password/OTP login cannot finish, use email/CSV rather than adding browser/solver
+plugins. Credentials and cookies must not enter this repository, YAML, or command
+arguments. See [authentication and isolation limits](SETUP.md#amazon-authentication-storage-lifetime-and-recovery).
 
 ### 5. Test and Run
 ```bash

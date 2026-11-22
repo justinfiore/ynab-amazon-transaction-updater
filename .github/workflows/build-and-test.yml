@@ -34,10 +34,16 @@ jobs:
       - name: Verify Gradle wrapper
         uses: gradle/actions/wrapper-validation@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
 
+      - name: Set up maintained Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+
       - name: Run Python bridge and pinned-library contract tests
         run: |
           python3 -m venv .venv-amazon-orders
-          .venv-amazon-orders/bin/python -m pip install -r requirements-amazon-orders.txt
+          .venv-amazon-orders/bin/python -m pip install --require-hashes -r requirements-amazon-orders.txt
+          .venv-amazon-orders/bin/python -m pip check
           .venv-amazon-orders/bin/python -m unittest scripts/test_amazon_orders_bridge.py
 
       - name: Run unit and integration tests

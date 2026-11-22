@@ -77,14 +77,16 @@ separately or download wrapper files by hand. Verify it with:
 
 ### Optional: Python Amazon Order History
 
-Python mode requires Python 3.9+ on Windows, macOS, or Linux, but is not needed
-for email or CSV mode. Create an isolated environment and install the tested pin:
+Python mode requires maintained, patched CPython >=3.11.5 on a platform with
+compatible wheels, but is not needed for email or CSV mode. Create a **fresh**
+virtual environment and install the complete reviewed version/hash lock. Do not
+layer it over an old environment containing browser/solver plugins:
 
 ```bash
 python3 -m venv .venv-amazon-orders
-.venv-amazon-orders/bin/python -m pip install -r requirements-amazon-orders.txt
-.venv-amazon-orders/bin/amazon-orders --config-path ~/.config/amazonorders/config.yml login
-.venv-amazon-orders/bin/python scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight
+.venv-amazon-orders/bin/python -m pip install --require-hashes -r requirements-amazon-orders.txt
+.venv-amazon-orders/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --login
+.venv-amazon-orders/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight
 ```
 
 Use the equivalent `Scripts\\python.exe` paths on Windows. Configure
@@ -92,8 +94,22 @@ Use the equivalent `Scripts\\python.exe` paths on Windows. Configure
 `config.example.yml`; set a positive timeout and output bound. The upstream
 config/cookies should be owner-readable only. Its supported `AMAZON_USERNAME`,
 `AMAZON_PASSWORD`, and optional `AMAZON_OTP_SECRET_KEY` environment variables
-may be inherited, but must never be written to YAML or logs. Browser challenges
-can require `amazon-orders[browser]` and `playwright install chromium`.
+are explicitly allowlisted for the child, but must never be written to YAML or
+logs. Prefer persisted sessions without password/TOTP environment secrets when
+possible. Only runtime/location variables and `AMAZON_DOMAIN`, `AMAZON_ACCOUNT`,
+`AMAZON_COOKIE_JAR_PATH` are additionally inherited. YNAB/email/cloud credentials,
+proxy settings, `PYTHONPATH` and remote-browser overrides are not inherited.
+
+The bridge refuses configured Python class/language/parser extensions before
+importing them, including browser/paid CAPTCHA forms. Remove such overrides from
+the upstream config to use the bridge; it does not silently load them. Both
+fetching and guarded login require the configured Amazon HTTPS origin for every
+request and redirect, enforce TLS verification and 10/30-second connect/read
+timeouts, ignore proxy/CA environment settings and `.netrc`, and keep debug HTML
+capture off. Some Amazon challenges/cross-origin flows will therefore fail closed.
+Do not add unconstrained `amazon-orders[browser]` to this environment; browser
+support requires a separate reviewed full lock and stronger OS isolation. Use
+email/CSV when guarded login cannot complete.
 
 `amazon-orders` is an unofficial website parser supporting English pages across Amazon regions and may fail
 when Amazon changes. A failed Python fetch returns no Python orders; refresh the
@@ -103,10 +119,13 @@ Save notification dates.
 
 #### Amazon authentication: storage, lifetime, and recovery
 
-The stock `amazon-orders login` command above signs in interactively and persists
+The guarded bridge `--login` command above signs in interactively and persists
 cookies outside this repository. The bridge calls the library's `login()` on each
 fetch, reusing the persisted session or attempting authentication as needed.
-`--preflight` only verifies imports/schema; it does **not** check whether you are
+The stock upstream CLI bypasses the bridge's restrictions; do not use it for this
+workflow. Run manual login in a clean environment without unrelated secrets.
+`--preflight` verifies Python and the reviewed orders/auth versions and schema;
+it does **not** check the config, whether you are
 signed in or can retrieve orders.
 
 With `amazon-orders==6.0.0`, the defaults are:
@@ -127,6 +146,16 @@ TOTP seed, not a short-lived OTP code). These can help automatic login, but cann
 guarantee that CAPTCHA, browser, or other interactive challenges will succeed.
 A fresh orb also needs its own secure session provisioning or interactive login;
 setting credentials does not copy another machine's cookie jar.
+
+Current auth writes new cookie/config files atomically with mode 0600 and creates
+missing directories with 0700 on POSIX; existing files/directories and Windows
+ACLs still need checking. Cookie contents are plaintext, not encrypted. A virtual
+environment and isolated Python mode are **not an OS/filesystem sandbox**: a
+compromised dependency still runs as your OS user and can read that user's files.
+For stronger isolation, provision a dedicated unprivileged user/container with
+only the Amazon cookie/config files available and no YNAB/email/cloud secret
+files or unrelated home-directory mounts. The in-process network guard protects
+the reviewed library's requests, not arbitrary malicious code making its own sockets.
 
 There is **no guaranteed session lifetime**. Individual cookies have expiry times,
 and Amazon can reject a session earlier or require a new challenge. Do not assume
@@ -162,16 +191,16 @@ does not stop other transactions. The notice does not mark a transaction as
 processed: later runs retry it, and successful augmentation removes the notice
 while retaining the original memo.
 
-To recover, run the stock login command interactively using the **same upstream
+To recover, run guarded login interactively using the **same upstream
 configuration, Amazon site, account, and cookie location as the bridge**:
 
 ```bash copy Copy Amazon Login
-.venv-amazon-orders/bin/amazon-orders --config-path ~/.config/amazonorders/config.yml login
+.venv-amazon-orders/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --login
 ```
 
 If using a named account, select that same account in the upstream configuration
 or its supported environment settings for both commands. Complete any requested
-challenges, then run the updater again (optionally dry-run first). If the session
+password/OTP prompts, then run the updater again (optionally dry-run first). If the session
 cannot be restored, choose email/CSV mode rather than repeatedly raising timeouts.
 
 ### 3. Build and Run
@@ -252,7 +281,7 @@ docker run -v $(pwd):/app ynab-amazon-updater
 
 6. **Python bridge errors**
     - Run the documented `--preflight` command to verify interpreter/package/schema.
-    - Re-authenticate with the stock `amazon-orders ... login` command if the session is stale.
+    - Re-authenticate with the guarded bridge's `--login` option if the session is stale. Browser/CAPTCHA automation is disabled.
     - Do not paste stderr containing account data into issue reports.
 
 ### Getting Help
