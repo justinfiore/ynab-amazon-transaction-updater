@@ -99,6 +99,30 @@ func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if err != nil || len(b) > maxBytes || !json.Valid(b) {
 		return nil, invalid
 	}
+	if strings.Contains(r.URL.Path, "/PurchaseHistoryV2/") {
+		// The upstream value-typed DTO silently accepts missing/null objects.
+		// Preserve the difference between an empty history and a failed query.
+		var envelope struct {
+			Errors []json.RawMessage `json:"errors"`
+			Data   *struct {
+				History *struct {
+					Groups *[]json.RawMessage `json:"orderGroups"`
+					Page   *struct {
+						Next json.RawMessage `json:"nextPageCursor"`
+					} `json:"pageInfo"`
+				} `json:"orderHistoryV2"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(b, &envelope) != nil || len(envelope.Errors) != 0 || envelope.Data == nil ||
+			envelope.Data.History == nil || envelope.Data.History.Groups == nil || envelope.Data.History.Page == nil ||
+			len(envelope.Data.History.Page.Next) == 0 {
+			return nil, errors.New("history_failed")
+		}
+		var cursor string
+		if json.Unmarshal(envelope.Data.History.Page.Next, &cursor) != nil {
+			return nil, errors.New("history_failed")
+		}
+	}
 	g.bodies[r.URL.Path] = b
 	response.Body = io.NopCloser(bytes.NewReader(b))
 	return response, nil

@@ -124,6 +124,45 @@ func TestContractGroupSavings(t *testing.T) {
 	}
 }
 
+func TestContractHistoryEnvelope(t *testing.T) {
+	for _, body := range []string{
+		`{"errors":[{"message":"session secret expired"}],"data":null}`,
+		`{"errors":[{"message":"expired"}],"data":{"orderHistoryV2":{"orderGroups":[],"pageInfo":{"nextPageCursor":""}}}}`,
+		`{}`, `null`, `{"data":null}`, `{"data":{}}`,
+		`{"data":{"orderHistoryV2":null}}`,
+		`{"data":{"orderHistoryV2":{"orderGroups":[]}}}`,
+		`{"data":{"orderHistoryV2":{"orderGroups":[],"pageInfo":null}}}`,
+		`{"data":{"orderHistoryV2":{"orderGroups":null,"pageInfo":{"nextPageCursor":""}}}}`,
+		`{"data":{"orderHistoryV2":{"pageInfo":{"nextPageCursor":""}}}}`,
+		`{"data":{"orderHistoryV2":{"orderGroups":[],"pageInfo":{}}}}`,
+		`{"data":{"orderHistoryV2":{"orderGroups":[],"pageInfo":{"nextPageCursor":5}}}}`,
+	} {
+		g := &guardedTransport{roundTrip(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
+		}), map[string][]byte{}}
+		r, _ := http.NewRequest("GET", "https://www.walmart.com/orchestra/cph/graphql/PurchaseHistoryV2/hash", nil)
+		if _, err := g.RoundTrip(r); err == nil || strings.Contains(err.Error(), "secret") {
+			t.Fatalf("accepted invalid history or leaked response: %s", body)
+		}
+	}
+	for _, cursor := range []string{`""`, `null`, `"next-page"`} {
+		body := `{"errors":[],"data":{"orderHistoryV2":{"orderGroups":[],"pageInfo":{"nextPageCursor":` + cursor + `}}}}`
+		g := &guardedTransport{roundTrip(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
+		}), map[string][]byte{}}
+		r, _ := http.NewRequest("GET", "https://www.walmart.com/orchestra/cph/graphql/PurchaseHistoryV2/hash", nil)
+		response, err := g.RoundTrip(r)
+		if err != nil {
+			t.Fatalf("valid empty history rejected: %v", err)
+		}
+		var history walmart.PurchaseHistoryResponse
+		if json.NewDecoder(response.Body).Decode(&history) != nil || len(history.Data.OrderHistoryV2.OrderGroups) != 0 {
+			t.Fatal("valid empty history not preserved")
+		}
+		response.Body.Close()
+	}
+}
+
 func TestContractSessionImport(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows ACL qualification pending; production import fails closed")
