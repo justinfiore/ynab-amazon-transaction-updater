@@ -69,11 +69,23 @@ real fake-server YNAB allocation, restart/cache reuse and frozen-policy drift.
 
 Checked provider-adapter tasks mean official schema plus mock verification,
 not paid endpoint access or qualified predictive quality. Setup leaves both
-providers unqualified; production inference refuses that state. No live paid
-inference or account writes have been performed or authorized by apply.
+providers unqualified; production inference refuses that state. A separately
+authorized, one-time Jev-only synthetic comparison completed with 12/12 raw
+calibration accuracy and 58/60 raw held-out accuracy; 48/48 held-out accepted
+predictions were correct at 80% coverage. The frozen gates were not tuned, and
+no production qualification was activated. It used 10 requests, no retries or
+errors and a listed-base-rate estimated $0.001414812; actual billed cost is
+unknown. No OpenAI calls, private purchase uploads or live account writes
+occurred. This completed authorization does not permit further paid runs.
+
+Post-push review found and corrected cached-decision/provenance dry-run drift
+and duplicate-name category wire labels in separate regression-backed commits.
+Previews now resolve local caches without inference or persistence, explicitly
+reporting required/unavailable inference; colliding category names use their
+existing group names for meaningful labels mapped locally to stable IDs.
 
 Unchecked tasks still include partially implemented contracts, not just absent
-code: actual paid quality/calibration/latency/cost, Windows owner-only ACLs,
+code: broader provider quality qualification and actual billed cost, Windows owner-only ACLs,
 hidden-console/native host matrix and real HTTPS deadline/containment tests;
 the broader normalization/category/learning/diagnostic acceptance matrices;
 and cross-platform CI/packaging execution. Groovy fails closed on unproven

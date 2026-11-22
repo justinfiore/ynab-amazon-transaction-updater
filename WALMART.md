@@ -254,4 +254,13 @@ remain model-download/account-free. See `openspec/changes/walmart-integration/ta
 for tasks still incomplete, especially paid quality qualification and
 native cross-platform/ACL verification. Passing app fixtures are not live-account
 or model readiness claims. Go has no inference dependency; both paid wire
-contracts and comparison are tested only with synthetic fake transports.
+contracts and comparison use synthetic fake transports in the default tests.
+
+A separately authorized one-time Jev-only synthetic test on 2026-11-22 used the
+unchanged 12 calibration and 60 held-out titles, batch 8, concurrency 1, at most
+10 requests and no retries. Calibration raw accuracy was 12/12; held-out raw
+accuracy was 58/60 and accepted accuracy 48/48 at 80% coverage. Fixed gates were
+not tuned. It consumed 33,686 input and 10,199 output tokens; the listed-base-rate
+estimate was $0.001414812, with actual billed cost unavailable. No OpenAI calls,
+private purchases or live YNAB writes occurred. Neither provider is production
+qualified, and that one-time authorization does not permit further paid runs.
