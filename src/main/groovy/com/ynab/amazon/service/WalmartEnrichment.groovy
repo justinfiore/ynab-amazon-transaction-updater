@@ -66,10 +66,12 @@ class WalmartEnrichment {
                                     inferenceFailed = true
                                     inferenceReason = classifier.qualified(categories) ? 'inference_required' : 'inference_unavailable'
                                 } else {
-                                    def inferred = classifier.classify(uncached, categories)
-                                    inferred.each { id, decision ->
-                                        decisions[id] = decision
-                                        state.inferred[cacheKeys[id]] = decision
+                                    Map occurrences = uncached.groupBy { cacheKeys[it.itemId] }
+                                    def inferred = classifier.classify(occurrences.values().collect { it.first() }, categories)
+                                    occurrences.each { cacheKey, items ->
+                                        Map decision = inferred[items.first().itemId]
+                                        items.each { decisions[it.itemId] = decision }
+                                        state.inferred[cacheKey] = decision
                                     }
                                     save(state)
                                 }

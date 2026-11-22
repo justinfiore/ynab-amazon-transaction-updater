@@ -148,6 +148,74 @@ class WalmartService_IT extends Specification {
         provider << ['openai','jev']
     }
 
+    @Unroll
+    def '#provider repeated products share inference and recover a partial write without false plan drift'() {
+        given:
+        Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),provider,'synthetic-not-live'.toCharArray())
+        config.walmartCategorization=WalmartRemoteClassifier.defaults(provider)+[credentials_file:key.toString(),categories:[[id:'g'],[id:'h']],
+            acceptance:[qualified:true,evidence_id:'mock-only',probability:0.8,confidence:0.8,margin:0.2]]
+        config.walmartCategorization.acceptance.qualified_for=new WalmartRemoteClassifier(config.walmartCategorization).qualificationFingerprint(
+            WalmartAllocation.categories(ynab.getWalmartCategories(),config.walmartCategorization.categories,'g'))
+        int calls=0
+        int questions=0
+        Closure transport={ endpoint,secret,body,limits ->
+            calls++
+            Map request=json.readValue(body,Map)
+            List names=provider=='openai' ? request.questions*.name : request.questions.keySet().toList()
+            questions+=names.size()
+            Map answers=names.collectEntries { name ->
+                String label=name=='item_0' ? 'Groceries' : 'Household'
+                // Repeated titles would receive individually valid but different provenance if sent twice.
+                BigDecimal probability=name=='item_2' ? 0.94G : 0.96G
+                Map scores=['Groceries':label=='Groceries' ? probability : 0.98G-probability,
+                    'Household':label=='Household' ? probability : 0.98G-probability,(WalmartRemoteClassifier.ABSTAIN):0.02G]
+                [(name):[name:name,type:'choice',choice:label,confidence:probability-0.01G,
+                    probabilities:provider=='openai' ? scores.collect { k,v -> [value:k,probability:v] } : scores]]
+            }
+            [status:200,body:json.writeValueAsString([model:request.model,answers:provider=='openai' ? answers.values().toList() : answers,
+                usage:[input_tokens:100,output_tokens:0]])]
+        }
+        def order=WalmartFixture.order()
+        order.items[1].grossCents=1000L
+        order.items[1].quantity=1G
+        order.items << new WalmartOrderItem(itemId:'c',productId:'soap',title:'Soap',quantity:1,grossCents:1000L)
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        def matches=new TransactionMatcher().findWalmartMatches(txs,[order])
+        failReadback=true
+
+        when: 'the first write succeeds remotely but its readback is unavailable'
+        new WalmartEnrichment(config).process(matches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        then:
+        thrown(IllegalStateException)
+        writes*.id==['large']
+
+        when: 'an unchanged preview resolves the same decisions without calls or persistent changes'
+        byte[] beforePreview=new File(config.walmartJournalFile).bytes
+        def preview=new WalmartEnrichment(config).process(matches,ynab,true,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        then:
+        !preview.preview*.reason.contains('applied_plan_drift')
+        preview.preview[0].operations[0].lines*.category_id==['h','h','g']
+        Arrays.equals(beforePreview,new File(config.walmartJournalFile).bytes)
+        writes*.id==['large']
+        calls==1
+
+        when: 'restart recognizes the first intent and completes only the unfinished payment'
+        def resumed=new WalmartEnrichment(config).process(matches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+        then:
+        !resumed.preview*.reason.contains('applied_plan_drift')
+        writes*.id==['large','small']
+        remote.large.subtransactions*.amount==[-10000L,-10000L,-50000L]
+        remote.small.category_id=='g'
+        calls==1 && questions==2
+        new WalmartJournal(config.walmartJournalFile).locked(true) { state,save ->
+            state.inferred.size()==2 && state.plans['plan/123'].operations.values().every { it.allocation && !it.pending }
+        }
+
+        where:
+        provider << ['openai','jev']
+    }
+
     def 'unqualified-provider preview is explicitly unavailable, not an executable uncategorized allocation'() {
         given:
         Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture'.toCharArray())
