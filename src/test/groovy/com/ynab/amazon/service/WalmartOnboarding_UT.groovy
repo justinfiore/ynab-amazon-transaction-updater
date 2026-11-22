@@ -140,6 +140,18 @@ class WalmartOnboarding_UT extends Specification {
         output.toString().contains('Hidden input unavailable')
         !new File(directory,'.walmart-credentials').exists()
 
+        when:
+        file.text='walmart: {enabled: true, enrichment: exception_first, default_category_id: b, categorization: {categories: [{id: a}, {id: b}]}}\n'
+        boolean rerun=WalmartOnboarding.selectCategories(file.toPath(),Stub(YNABService) { getWalmartCategories() >> catalog },
+            new BufferedReader(new StringReader('\n\nyes\n')),new PrintWriter(new StringWriter()),[:])
+        Map rerunConfig=new Yaml().load(file.text)
+        then:
+        rerun
+        rerunConfig.walmart.enabled
+        rerunConfig.walmart.enrichment=='exception_first'
+        rerunConfig.walmart.categorization.categories*.id==['a','b']
+        rerunConfig.walmart.default_category_id=='b'
+
         cleanup:
         System.setIn(previousIn)
         System.setOut(previousOut)
