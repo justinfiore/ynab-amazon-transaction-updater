@@ -20,6 +20,7 @@ class WalmartService_IT extends Specification {
     boolean failReadback
     boolean pendingReadback
     boolean rejectSmall
+    boolean stopBeforeSmallIntent
 
     def setup() {
         remote = [:]; writes = []
@@ -31,6 +32,9 @@ class WalmartService_IT extends Specification {
             else if (suffix == '/accounts') body = [data:[accounts:[[id:'account',on_budget:true,deleted:false,closed:false]]]]
             else {
                 String id = suffix.tokenize('/').last()
+                if (stopBeforeSmallIntent && exchange.requestMethod=='GET' && id=='small' && writes.size()==1) {
+                    exchange.sendResponseHeaders(503,-1); exchange.close(); return
+                }
                 if ((exchange.requestMethod=='GET' && pendingReadback) || (exchange.requestMethod=='PUT' && rejectSmall && id=='small')) {
                     pendingReadback=false; exchange.sendResponseHeaders(503,-1); exchange.close(); return
                 }
@@ -152,6 +156,36 @@ class WalmartService_IT extends Specification {
         then:
         writes*.id==['large','small']
         new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> state.plans['plan/123'].operations.values().every { it.allocation && !it.pending } }
+    }
+
+    def 'restart never rebases an unattempted payment over human changes'() {
+        given:
+        def order=WalmartFixture.order()
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        stopBeforeSmallIntent=true
+
+        when:
+        new TransactionProcessor(config).processWalmartMatches(new TransactionMatcher().findWalmartMatches(txs,[order]),ynab,false)
+
+        then:
+        thrown(IllegalStateException)
+        writes*.id==['large']
+        new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> state.plans['plan/123'].operations.large.allocation && !state.plans['plan/123'].operations.small }
+
+        when:
+        stopBeforeSmallIntent=false
+        remote.small.memo='Human note'
+        remote.small.category_id='h'
+        def refreshed=WalmartFixture.transactions()
+        refreshed.each { it.memo=remote[it.id].memo; it.category_id=remote[it.id].category_id; it.subtransactions=remote[it.id].subtransactions }
+        def result=new TransactionProcessor(config).processWalmartMatches(new TransactionMatcher().findWalmartMatches(refreshed,[order]),ynab,false)
+
+        then:
+        result.preview*.reason.contains('parent_changed')
+        writes*.id==['large']
+        remote.small.memo=='Human note'
+        remote.small.category_id=='h'
     }
 
     def 'a link-only run does not prevent later allocation with freshly fetched parents'() {

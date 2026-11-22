@@ -73,8 +73,15 @@ class WalmartEnrichment {
                     Map saved = entry.operations[op.transaction_id]
                     saved?.pending && saved.allocating ? !(same(remote[op.transaction_id], saved.intent) || same(remote[op.transaction_id], saved.baseline)) :
                     saved?.allocation ? !same(remote[op.transaction_id], saved.result ?: saved.intent) :
+                    entry.frozen ? !same(remote[op.transaction_id], entry.baselines?.get(op.transaction_id)) :
                         !initial(group.find { it.ynabTransaction.id == op.transaction_id }.ynabTransaction, remote[op.transaction_id], accounts)
                 }) { stats.preview << [order_id: orderId, reason: 'parent_changed']; return }
+                if (plan.eligible && !entry.frozen) {
+                    // Freeze every original parent, including operations not yet attempted.
+                    entry.baselines = remote
+                    entry.frozen = true
+                    save(state)
+                }
                 for (Map op : operations) {
                     String id = op.transaction_id
                     Map previous = entry.operations[id]
@@ -93,7 +100,8 @@ class WalmartEnrichment {
                         if (!same(current, previous.baseline)) break
                     }
                     def match = group.find { it.ynabTransaction.id == id }
-                    if (!initial(match.ynabTransaction, current, plan.eligible ? accounts : null)) break
+                    if (plan.eligible ? (!accounts.contains(current.account_id) || !same(current, entry.baselines?.get(id))) :
+                        !initial(match.ynabTransaction, current, null)) break
                     Map changes = plan.eligible ? WalmartAllocation.payload(current, op) : [memo: op.memo]
                     if (current.memo == op.memo && !plan.eligible) continue
                     Map intent = current + changes
