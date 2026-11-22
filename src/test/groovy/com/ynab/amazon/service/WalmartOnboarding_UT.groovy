@@ -120,4 +120,28 @@ class WalmartOnboarding_UT extends Specification {
         thrown(IllegalStateException)
         file.text=='other: changed\n'
     }
+
+    def 'setup without a console does not save a key or send an inference request'() {
+        given:
+        File file=new File(directory,'config.yml')
+        file.text=new File('config.example.yml').text.replace('your_actual_ynab_api_key_here','fixture').replace('your_actual_ynab_budget_id_here','plan')
+        String before=file.text
+        def previousIn=System.in
+        def previousOut=System.out
+        def output=new ByteArrayOutputStream()
+        System.setIn(new ByteArrayInputStream('1\nyes\n'.bytes))
+        System.setOut(new PrintStream(output))
+
+        when:
+        WalmartOnboarding.run(file, false)
+
+        then:
+        file.text==before
+        output.toString().contains('Hidden input unavailable')
+        !new File(directory,'.walmart-credentials').exists()
+
+        cleanup:
+        System.setIn(previousIn)
+        System.setOut(previousOut)
+    }
 }
