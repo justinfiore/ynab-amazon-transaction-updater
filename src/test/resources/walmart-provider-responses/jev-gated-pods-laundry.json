@@ -1,0 +1,31 @@
+{
+  "model": "jev-1.14.0",
+  "answers": {
+    "item_0": {
+      "type": "choice",
+      "name": "item_0",
+      "choice": "Laundry",
+      "confidence": 0.46,
+      "probabilities": {
+        "Groceries": 0.0,
+        "Pet food": 0.0,
+        "Pet supplies": 0.0,
+        "Cleaning supplies": 0.36,
+        "Laundry": 0.5,
+        "Paper goods": 0.0,
+        "Personal care": 0.01,
+        "Health and medicine": 0.0,
+        "Baby care": 0.0,
+        "Kitchen equipment": 0.0,
+        "Home furnishings": 0.01,
+        "Clothing": 0.0,
+        "Electronics": 0.0,
+        "Insufficient or ambiguous evidence": 0.12
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0
+  }
+}

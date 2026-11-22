@@ -1,0 +1,65 @@
+{
+  "note": "Wire envelopes reconstructed from credential-free saved synthetic decisions. Scores, confidence, model and choice are the recorded values. Question names, usage totals and HTTP framing were not retained and are test correlation only.",
+  "cases": [
+    {
+      "file": "openai-accepted-cleaning.json",
+      "provider": "openai",
+      "source_id": "c03",
+      "title": "Clorox Toilet Bowl Cleaner, 24 fl oz",
+      "expected": "Cleaning supplies",
+      "recorded_raw": "Cleaning supplies",
+      "recorded_accepted": "Cleaning supplies",
+      "confidence": 0.92
+    },
+    {
+      "file": "openai-abstain-chicken.json",
+      "provider": "openai",
+      "source_id": "52",
+      "title": "Chicken, 12 oz",
+      "expected": "ABSTAIN",
+      "recorded_raw": null,
+      "recorded_accepted": null,
+      "confidence": 0.84
+    },
+    {
+      "file": "openai-abstain-pods.json",
+      "provider": "openai",
+      "source_id": "58",
+      "title": "Fresh Scent Pods, 20 count",
+      "expected": "ABSTAIN",
+      "recorded_raw": null,
+      "recorded_accepted": null,
+      "confidence": 0.99
+    },
+    {
+      "file": "jev-accepted-pet-food.json",
+      "provider": "jev",
+      "source_id": "12",
+      "title": "Milk-Bone Original Dog Biscuits, Medium",
+      "expected": "Pet food",
+      "recorded_raw": "Pet food",
+      "recorded_accepted": "Pet food",
+      "confidence": 0.99
+    },
+    {
+      "file": "jev-gated-chicken-groceries.json",
+      "provider": "jev",
+      "source_id": "52",
+      "title": "Chicken, 12 oz",
+      "expected": "ABSTAIN",
+      "recorded_raw": "Groceries",
+      "recorded_accepted": null,
+      "confidence": 0.71
+    },
+    {
+      "file": "jev-gated-pods-laundry.json",
+      "provider": "jev",
+      "source_id": "58",
+      "title": "Fresh Scent Pods, 20 count",
+      "expected": "ABSTAIN",
+      "recorded_raw": "Laundry",
+      "recorded_accepted": null,
+      "confidence": 0.46
+    }
+  ]
+}

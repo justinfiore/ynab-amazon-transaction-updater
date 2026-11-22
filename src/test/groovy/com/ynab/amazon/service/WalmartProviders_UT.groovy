@@ -302,4 +302,49 @@ class WalmartProviders_UT extends Specification {
         cleanup:
         System.setIn(previousIn); System.setOut(previousOut)
     }
+
+    @Unroll
+    def '#fixture recorded #provider response maps through the mock boundary without a live call'() {
+        given:
+        Map catalog = ['Groceries','Pet food','Pet supplies','Cleaning supplies','Laundry','Paper goods','Personal care',
+            'Health and medicine','Baby care','Kitchen equipment','Home furnishings','Clothing','Electronics']
+            .collectEntries { [(it): [id:it, name:it, description:it]] }
+        Map config = settings(provider)
+        config.acceptance.qualified_for = new WalmartRemoteClassifier(config).qualificationFingerprint(catalog)
+        String recorded = WalmartProviders_UT.getResource("/walmart-provider-responses/${fixture}").text
+        Map envelope = WalmartRemoteClassifier.JSON.readValue(recorded, Map)
+        int calls = 0
+        List endpoints = []
+        def classifier = new WalmartRemoteClassifier(config, { endpoint, key, body, limits ->
+            calls++
+            endpoints << endpoint
+            assert body.contains(title)
+            assert !body.contains('sk-') && !body.contains('Bearer ')
+            [status:200, body:recorded]
+        })
+        def item = new WalmartOrderItem(itemId:'local-only', title:title)
+
+        when:
+        Map decision = classifier.classify([item], catalog)['local-only']
+
+        then:
+        calls == 1
+        endpoints == [WalmartRemoteClassifier.ROUTES[provider].endpoint]
+        envelope.model == WalmartRemoteClassifier.ROUTES[provider].model
+        decision.model == envelope.model
+        decision.source == provider
+        decision.raw_category_id == expectedRaw
+        decision.category_id == expectedAccepted
+        decision.confidence == confidence
+        !recorded.contains('Bearer ') && !recorded.contains('sk-')
+
+        where:
+        fixture | provider | title | confidence | expectedRaw | expectedAccepted
+        'openai-accepted-cleaning.json' | 'openai' | 'Clorox Toilet Bowl Cleaner, 24 fl oz' | 0.92 | 'Cleaning supplies' | 'Cleaning supplies'
+        'openai-abstain-chicken.json' | 'openai' | 'Chicken, 12 oz' | 0.84 | null | null
+        'openai-abstain-pods.json' | 'openai' | 'Fresh Scent Pods, 20 count' | 0.99 | null | null
+        'jev-accepted-pet-food.json' | 'jev' | 'Milk-Bone Original Dog Biscuits, Medium' | 0.99 | 'Pet food' | 'Pet food'
+        'jev-gated-chicken-groceries.json' | 'jev' | 'Chicken, 12 oz' | 0.71 | 'Groceries' | null
+        'jev-gated-pods-laundry.json' | 'jev' | 'Fresh Scent Pods, 20 count' | 0.46 | 'Laundry' | null
+    }
 }
