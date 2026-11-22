@@ -136,6 +136,41 @@ class WalmartContracts_UT extends Specification {
 
         then:
         thrown(IllegalStateException)
+
+        when:
+        WalmartAllocation.categories(catalog,[[id:'g']],'missing')
+
+        then:
+        thrown(IllegalStateException)
+
+        when:
+        WalmartAllocation.categories(catalog,[], 'g')
+
+        then:
+        thrown(IllegalStateException)
+    }
+
+    def 'three charges fill exceptions in descending capacity and equal capacities tie by date then key'() {
+        given:
+        def order=WalmartFixture.order()
+        order.items[0].grossCents=4000L
+        order.items[1].grossCents=6000L
+        order.totalAmount=100.00
+        order.charges=[[key:'late',date:'2026-11-22',payment:'CREDITCARD:VISA:1234',currency:'USD',cents:2500L],
+            [key:'early-b',date:'2026-11-21',payment:'CREDITCARD:VISA:1234',currency:'USD',cents:3500L],
+            [key:'early-a',date:'2026-11-21',payment:'CREDITCARD:VISA:1234',currency:'USD',cents:4000L]]
+        def txs=order.charges.collect { charge ->
+            new YNABTransaction(id:'tx-'+charge.key,date:charge.date,amount:-((long)charge.cents)*10L,payee_name:'WALMART',account_id:'account',cleared:'cleared',approved:'false',deleted:'false')
+        }
+        def matches=matcher.findWalmartMatches(txs.reverse(),[order])
+
+        when:
+        def plan=WalmartAllocation.plan(order,matches,'g',[a:[category_id:'g'],b:[category_id:'h']],['account'] as Set)
+
+        then:
+        plan.operations*.transaction_id==['tx-early-a','tx-early-b','tx-late']
+        plan.operations*.lines.collect { lines -> lines.collect { [it.cents,it.category_id] } }==[[[4000L,'h']],[[2000L,'h'],[1500L,'g']],[[2500L,'g']]]
+        plan.operations.sum { it.lines.sum { it.cents } }==10000L
     }
 
 }

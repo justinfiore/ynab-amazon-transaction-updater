@@ -91,3 +91,17 @@ the broader normalization/category/learning/diagnostic acceptance matrices;
 and cross-platform CI/packaging execution. Groovy fails closed on unproven
 currency/discount semantics rather than claiming a reconstructed gross basis.
 Do not archive this change as fully accepted or call this a qualified release.
+
+## Archive blockers
+
+These tasks stay unchecked because this Linux orb cannot honestly complete them:
+
+- 1.1 still needs a recorded `go mod verify` and a credential-free advisory review of the pinned module. The version is required; the reviewed commit is documented, not a `replace` pin.
+- 1.3 and 1.6 cover POSIX session permissions and the opt-in Gradle lifecycle. Windows owner-only ACLs, base-build Go-resolution proof, SDK hash rejection, and uncached-offline failure are not executed checks.
+- 4.8 and 4.10 are not complete. The comparison command and mock tests exist. The authorized runs were one Jev invocation and one OpenAI invocation, not one consented two-provider paid comparison, and neither provider has an independent qualification record. Production stays `qualified: false`.
+- 4.9 Windows ACL and a real HTTPS deadline/origin test are not executed. POSIX records and injected-transport bounds are tested.
+- 6.3 CI covers Linux amd64 and arm64 only. It does not launch a packaged distribution on macOS or Windows, and it does not reject a bad SDK hash.
+- 6.4 is blocked. Apple Silicon macOS and Windows x86_64, including hidden key input and Windows ACLs, were not run. Linux helper tests do not qualify those hosts.
+- 6.5 has no packaged-flow execution proving the Go/Groovy boundary beyond the unit and integration fixtures.
+
+Added Linux-verifiable coverage for net-versus-gross discount fail-closed behavior, cancelled groups, empty and absent-default shortlists, and a three-charge descending-capacity fill with an equal-date tie. Those additions do not close the tasks above.

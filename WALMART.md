@@ -77,7 +77,12 @@ User note | 2026-11-20 | Total $100.00 | #123 | https://www.walmart.com/orders/d
 
 The whole memo must fit 500 characters; overflow skips the write. Matching and
 allocation previews are returned by the processing API; normal logs include
-counts only, not raw purchase details. Dry runs never PUT or save completion.
+counts only, not raw purchase details. A dry run reports the planned category
+lines or a source-specific skip reason such as an ambiguous charge, an
+unqualified provider, or a changed parent. It does not PUT, mark the order
+complete, or save a journal. Compact memos keep the existing user text, the
+order date, the full order total, the order ID, and the direct Walmart URL.
+They do not list item names.
 
 ## Categories, allocation and YNAB review
 

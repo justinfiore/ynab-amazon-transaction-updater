@@ -57,6 +57,38 @@ class WalmartEvidenceNormalizer_UT extends Specification {
         value << [12.345G, Double.NaN, Double.POSITIVE_INFINITY,1000000001G,'12.34',null]
     }
 
+    def 'a net line plus a separately identified discount is not treated as a proven gross basis'() {
+        given:
+        def source=fixture()
+        def raw=source.detail.data.order
+        raw.priceDetails=[grandTotal:[value:95], savings:[value:5]]
+        raw.groups_2101[0].categories=[]
+        raw.groups_2101[0].items[1].priceInfo.linePrice.value=15
+        def payment=source.ledger.data.getOrderLedger.paymentMethodsLedgers[0]
+        payment.transactions=[[chargeType:'FINAL_CHARGES',transactionLines:[[date:'Nov 21, 2026',rowLines:[[lineType:'ORDER_CHARGE',displayValues:['$95.00']]]]]]]
+
+        when:
+        def order=WalmartEvidenceNormalizer.normalize(source)
+
+        then:
+        order.items*.grossCents==[8000L,1500L]
+        order.totalAmount==95G
+        !order.complete
+        order.ineligibleReason=='discount_basis_unproven'
+    }
+
+    def 'a cancelled group is incomplete rather than a delivered charge basis'() {
+        given:
+        def source=fixture()
+        source.detail.data.order.groups_2101[0].status.statusType='CANCELED'
+        def lines=source.ledger.data.getOrderLedger.paymentMethodsLedgers[0].transactions[1].transactionLines[0].rowLines
+        lines.removeAll { it.lineType!='ORDER_CHARGE' }
+
+        expect:
+        !WalmartEvidenceNormalizer.normalize(source).complete
+        WalmartEvidenceNormalizer.normalize(source).ineligibleReason=='unfulfilled_or_unsupported'
+    }
+
     def 'only bounded floating representation noise is tolerated, not fractional cents'() {
         expect:
         WalmartEvidenceNormalizer.money(0.29000000000000004d)==29L
