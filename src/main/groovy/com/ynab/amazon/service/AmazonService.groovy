@@ -45,13 +45,13 @@ class AmazonService {
         
         if (orderFetcher) {
             logger.info("Attempting to fetch Amazon orders using ${orderFetcher.class.simpleName}...")
-            List<AmazonOrder> emailOrders = orderFetcher.fetchOrders()
+            List<AmazonOrder> fetchedOrders = orderFetcher.fetchOrders()
             
-            if (emailOrders) {
-                logger.info("Successfully fetched ${emailOrders.size()} orders from email")
-                allOrders.addAll(emailOrders)
+            if (fetchedOrders) {
+                logger.info("Successfully fetched ${fetchedOrders.size()} orders using ${orderFetcher.class.simpleName}")
+                allOrders.addAll(fetchedOrders)
             } else {
-                logger.warn("No orders found via email fetching")
+                logger.warn("No orders found using ${orderFetcher.class.simpleName}")
             }
         }
         
