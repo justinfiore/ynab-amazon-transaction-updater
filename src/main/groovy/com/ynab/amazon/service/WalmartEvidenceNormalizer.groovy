@@ -3,6 +3,7 @@ package com.ynab.amazon.service
 import com.ynab.amazon.model.*
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.format.ResolverStyle
 
 /** All financial interpretation of the retrieval-only helper's source evidence. */
 class WalmartEvidenceNormalizer {
@@ -67,8 +68,8 @@ class WalmartEvidenceNormalizer {
                 if (!(transaction.transactionLines instanceof List)) invalid()
                 transaction.transactionLines.each { line ->
                     LocalDate charged
-                    try { charged=LocalDate.parse(line.date,DateTimeFormatter.ofPattern('MMM d, uuuu',Locale.US)) }
-                    catch (Exception ignored) { charged=LocalDate.parse(line.date,DateTimeFormatter.ofPattern('MMMM d, uuuu',Locale.US)) }
+                    try { charged=LocalDate.parse(line.date,DateTimeFormatter.ofPattern('MMM d, uuuu',Locale.US).withResolverStyle(ResolverStyle.STRICT)) }
+                    catch (Exception ignored) { charged=LocalDate.parse(line.date,DateTimeFormatter.ofPattern('MMMM d, uuuu',Locale.US).withResolverStyle(ResolverStyle.STRICT)) }
                     if (!(line.rowLines instanceof List)) invalid()
                     line.rowLines.each { row ->
                         if (row.lineType!='ORDER_CHARGE') { incomplete('refund_or_unsupported_ledger'); return }

@@ -62,4 +62,33 @@ class WalmartEvidenceNormalizer_UT extends Specification {
         WalmartEvidenceNormalizer.money(0.29000000000000004d)==29L
         WalmartEvidenceNormalizer.money(-5G)==-500L
     }
+
+    @Unroll
+    def 'invalid final-charge dates cannot become supported charges: #date'() {
+        given:
+        def source=fixture()
+        source.ledger.data.getOrderLedger.paymentMethodsLedgers[0].transactions[1].transactionLines[0].date=date
+
+        when:
+        WalmartEvidenceNormalizer.normalize(source)
+
+        then:
+        thrown(java.time.format.DateTimeParseException)
+
+        where:
+        date << ['Feb 29, 2025','February 29, 2025','Apr 31, 2026','April 31, 2026']
+    }
+
+    @Unroll
+    def 'valid leap-day final charges retain the exact source date: #date'() {
+        given:
+        def source=fixture()
+        source.ledger.data.getOrderLedger.paymentMethodsLedgers[0].transactions[1].transactionLines[0].date=date
+
+        expect:
+        WalmartEvidenceNormalizer.normalize(source).charges*.date==['2024-02-29','2024-02-29']
+
+        where:
+        date << ['Feb 29, 2024','February 29, 2024']
+    }
 }
