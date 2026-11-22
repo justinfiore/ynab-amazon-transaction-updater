@@ -144,10 +144,12 @@ class WalmartRemoteClassifier {
 
     private Map choices(Map categories) {
         Map result = [:]
+        Map nameCounts = categories.values().countBy { it.name?.toString() }
         categories.values().each { c ->
             String label = c.name?.toString()
+            if (label && nameCounts[label] > 1 && c.group_name) label = "${c.group_name} / ${label}"
             if (!label || label == ABSTAIN || label.getBytes('UTF-8').length > 256 ||
-                (c.description ?: '').toString().getBytes('UTF-8').length > 1024 || result.containsKey(label)) throw new IllegalStateException('Ambiguous/oversized category labels; choose distinct eligible names')
+                (c.description ?: '').toString().getBytes('UTF-8').length > 1024 || result.containsKey(label)) throw new IllegalStateException('Ambiguous/oversized category labels after group disambiguation')
             result[label] = [id:c.id, description:c.description ?: '']
         }
         result[ABSTAIN] = [id:null,description:'The product evidence is missing, ambiguous, or outside the listed categories.']

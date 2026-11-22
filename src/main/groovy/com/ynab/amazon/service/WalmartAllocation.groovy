@@ -10,7 +10,7 @@ class WalmartAllocation {
         }
         def eligible = catalog.findAll { !it.deleted && !it.hidden && !it.internal && !it.group_internal && !it.group_hidden && !it.group_deleted }.collectEntries { [(it.id): it] }
         if (selected.any { !eligible[it.id] }) throw new IllegalStateException('Walmart category is absent, hidden, deleted or special')
-        selected.collectEntries { [(it.id): [id: it.id, name: eligible[it.id].name, description: it.description ?: '']] }
+        selected.collectEntries { [(it.id): [id: it.id, name: eligible[it.id].name, group_name: eligible[it.id].group_name, description: it.description ?: '']] }
     }
 
     static Map plan(WalmartOrder order, List<TransactionMatch> matches, String defaultId, Map decisions, Set eligibleAccounts) {

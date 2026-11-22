@@ -8,12 +8,13 @@ import spock.lang.Unroll
 class WalmartOnboarding_UT extends Specification {
     @TempDir File directory
     def catalog=[[id:'a',group_name:'Food',name:'Same'],[id:'b',group_name:'Home',name:'Same']]
-    def 'provider activation is confirmed, atomic, scoped and never puts a key in YAML or output'() {
+    @Unroll
+    def '#provider activation preserves duplicate category names through qualification and inference without leaking IDs'() {
         given:
         File file=new File(directory,'config.yml'); file.text='walmart: {enabled: false, enrichment: link_only}\n'
         def ynab=Stub(YNABService) { getWalmartCategories() >> catalog }
         def output=new StringWriter()
-        Map pending=[provider:'jev',secret:'synthetic-fixture-secret'.toCharArray()]
+        Map pending=[provider:provider,secret:'synthetic-fixture-secret'.toCharArray()]
 
         when:
         boolean saved=WalmartOnboarding.selectCategories(file.toPath(),ynab,new BufferedReader(new StringReader('1,2\n2\nyes\n')),new PrintWriter(output,true),pending)
@@ -21,15 +22,37 @@ class WalmartOnboarding_UT extends Specification {
 
         then:
         saved
-        config.walmart.categorization.provider=='jev'
-        config.walmart.categorization.model=='jev-1.14.0'
+        config.walmart.categorization.provider==provider
+        config.walmart.categorization.model==WalmartRemoteClassifier.ROUTES[provider].model
         !config.walmart.categorization.acceptance.qualified
         config.walmart.default_category_id=='b'
         !config.walmart.enabled && config.walmart.enrichment=='link_only'
-        WalmartProviderKeys.read(config.walmart.categorization.credentials_file,'jev').consent
+        WalmartProviderKeys.read(config.walmart.categorization.credentials_file,provider).consent
         !file.text.contains('synthetic-fixture-secret')
         !output.toString().contains('synthetic-fixture-secret')
         pending.secret.every { it==(char)0 }
+
+        when: 'the saved duplicate names become distinct meaningful choices and return their original stable ID'
+        Map normalized=WalmartAllocation.categories(catalog,config.walmart.categorization.categories,'b')
+        Map providerConfig=config.walmart.categorization
+        String wire
+        def classifier=new WalmartRemoteClassifier(providerConfig,{ endpoint,key,body,limits ->
+            wire=body
+            Map scores=['Food / Same':0.01,'Home / Same':0.97,(WalmartRemoteClassifier.ABSTAIN):0.02]
+            Map answer=[type:'choice',name:'item_0',choice:'Home / Same',confidence:0.95,
+                probabilities:provider=='openai' ? scores.collect { k,v -> [value:k,probability:v] } : scores]
+            [status:200,body:WalmartRemoteClassifier.JSON.writeValueAsString([model:providerConfig.model,
+                answers:provider=='openai' ? [answer] : [item_0:answer],usage:[input_tokens:50,output_tokens:0]])]
+        })
+        providerConfig.acceptance.qualified_for=classifier.qualificationFingerprint(normalized)
+        providerConfig.acceptance.qualified=true
+        providerConfig.acceptance.evidence_id='mock-only'
+        def decisions=classifier.classify([new com.ynab.amazon.model.WalmartOrderItem(itemId:'private-item',title:'A household product')],normalized)
+        then:
+        decisions['private-item'].category_id=='b'
+        wire.contains('Food / Same') && wire.contains('Home / Same')
+        !wire.contains('"a"') && !wire.contains('"b"') && !wire.contains('private-item')
+        catalog*.id==['a','b']
 
         when:
         String before=file.text
@@ -37,6 +60,9 @@ class WalmartOnboarding_UT extends Specification {
         then:
         !cancelled && file.text==before
         new File(directory,'.walmart-credentials').listFiles().size()==1
+
+        where:
+        provider << ['openai','jev']
     }
     def 'numbered category setup preserves unrelated values and mode, normalizes IDs and protects atomic save'() {
         given:
