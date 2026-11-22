@@ -306,18 +306,21 @@ class WalmartProviders_UT extends Specification {
     @Unroll
     def '#fixture recorded #provider response maps through the mock boundary without a live call'() {
         given:
-        Map catalog = ['Groceries','Pet food','Pet supplies','Cleaning supplies','Laundry','Paper goods','Personal care',
-            'Health and medicine','Baby care','Kitchen equipment','Home furnishings','Clothing','Electronics']
-            .collectEntries { [(it): [id:it, name:it, description:it]] }
+        Map policy = WalmartRemoteClassifier.JSON.readValue(WalmartProviders_UT.getResource('/walmart-comparison/reference-policy.json').text, Map)
+        Map catalog = policy.question.category.criteria.findAll { k, v -> k != 'ABSTAIN' }.collectEntries { k, v -> [(k): [id:k, name:k, description:v]] }
         Map config = settings(provider)
         config.acceptance.qualified_for = new WalmartRemoteClassifier(config).qualificationFingerprint(catalog)
         String recorded = WalmartProviders_UT.getResource("/walmart-provider-responses/${fixture}").text
         Map envelope = WalmartRemoteClassifier.JSON.readValue(recorded, Map)
+        Map expectedCriteria = new LinkedHashMap(policy.question.category.criteria.findAll { k, v -> k != 'ABSTAIN' })
+        expectedCriteria[WalmartRemoteClassifier.ABSTAIN] = 'The product evidence is missing, ambiguous, or outside the listed categories.'
         int calls = 0
         List endpoints = []
+        List bodies = []
         def classifier = new WalmartRemoteClassifier(config, { endpoint, key, body, limits ->
             calls++
             endpoints << endpoint
+            bodies << body
             assert body.contains(title)
             assert !body.contains('sk-') && !body.contains('Bearer ')
             [status:200, body:recorded]
@@ -337,6 +340,9 @@ class WalmartProviders_UT extends Specification {
         decision.category_id == expectedAccepted
         decision.confidence == confidence
         !recorded.contains('Bearer ') && !recorded.contains('sk-')
+        Map sent = WalmartRemoteClassifier.JSON.readValue(bodies[0], Map)
+        Map sentCriteria = provider == 'openai' ? sent.questions[0].choices.collectEntries { [(it.value): it.description] } : sent.questions.item_0.criteria
+        sentCriteria == expectedCriteria
 
         where:
         fixture | provider | title | confidence | expectedRaw | expectedAccepted
