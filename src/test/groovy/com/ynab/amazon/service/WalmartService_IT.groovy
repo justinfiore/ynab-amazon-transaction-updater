@@ -451,7 +451,7 @@ class WalmartService_IT extends Specification {
         then:
         writes.empty
         ambiguousPreview.updated==0
-        ambiguousPreview.preview*.reason.any { it }
+        ambiguousPreview.preview.empty
         !new File(config.walmartJournalFile).exists()
     }
 
