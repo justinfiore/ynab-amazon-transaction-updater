@@ -148,6 +148,13 @@ class WalmartContracts_UT extends Specification {
 
         then:
         thrown(IllegalStateException)
+
+        when:
+        def renamed=WalmartAllocation.categories([[id:'g',name:'Renamed',group_name:'Food']],[[id:'g']],'g')
+
+        then:
+        renamed.g.id=='g'
+        renamed.g.name=='Renamed'
     }
 
     def 'three charges fill exceptions in descending capacity and equal capacities tie by date then key'() {

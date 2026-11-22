@@ -388,6 +388,19 @@ class WalmartService_IT extends Specification {
         !new File(config.walmartJournalFile).exists()
         preview.preview[0].operations.size()==2
         preview.updated==0
+
+        when:
+        def ambiguous=WalmartFixture.order()
+        ambiguous.charges=[ambiguous.charges[0], ambiguous.charges[0]+[key:'equal-second']]
+        def equal=WalmartFixture.transactions()[0]
+        def second=new YNABTransaction(id:'second',date:equal.date,amount:equal.amount,payee_name:'WALMART',account_id:'account',cleared:'cleared',approved:'false',deleted:'false')
+        def third=new YNABTransaction(id:'third',date:equal.date,amount:equal.amount,payee_name:'WALMART',account_id:'account',cleared:'cleared',approved:'false',deleted:'false')
+        def ambiguousPreview=new TransactionProcessor(config).processWalmartMatches(new TransactionMatcher().findWalmartMatches([equal,second,third],[ambiguous]),ynab,true)
+
+        then:
+        writes.empty
+        ambiguousPreview.updated==0
+        !new File(config.walmartJournalFile).exists()
     }
 
     def 'human change between snapshot and fresh read stops allocation for whole order'() {
@@ -517,18 +530,21 @@ class WalmartService_IT extends Specification {
         new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> !state.plans['plan/123'].operations.small?.allocation }
 
         when:
-        def blocked=false
+        def held=new java.util.concurrent.CountDownLatch(1)
+        def entered=new java.util.concurrent.CountDownLatch(1)
         def thread=Thread.start {
-            try { new WalmartJournal(config.walmartJournalFile).locked(false) { state, save -> Thread.sleep(300) } }
-            catch (IllegalStateException ignored) { blocked=true }
+            new WalmartJournal(config.walmartJournalFile).locked(false) { state, save ->
+                entered.countDown()
+                held.await(2, java.util.concurrent.TimeUnit.SECONDS)
+            }
         }
-        new WalmartJournal(config.walmartJournalFile).locked(false) { state, save ->
-            Thread.sleep(50)
-            thread.join(1000)
-        }
+        entered.await(2, java.util.concurrent.TimeUnit.SECONDS)
+        new WalmartJournal(config.walmartJournalFile).locked(false) { state, save -> }
+        held.countDown()
+        thread.join(2000)
 
         then:
-        blocked
+        thrown(IllegalStateException)
     }
 
     def 'a link-only run does not prevent later allocation with freshly fetched parents'() {
