@@ -43,9 +43,9 @@ This proposal branch tracks target contracts, not completion of the separate par
 ## 5. Safe YNAB split updates and recovery
 
 - [x] 5.1 Extend YNAB DTOs/read-back and PUT payloads for category-only and unsplit-to-split updates; verify fake-server/schema tests preserve identity/amount/cleared state/memo, explicitly retain `approved: false`, null parent category only for splits, omit subtransactions for single-category writes and use exact negative milliunits.
-- [ ] 5.2 Enforce fresh-read eligibility and preserve approval/user work; verify initially approved or preexisting-split parents, tracking accounts, transfers, reconciled/deleted parents, special categories and concurrent edits are skipped without unapproving, replacing or rewriting them. Link-only mode preserves categories/approval.
+- [x] 5.2 Enforce fresh-read eligibility and preserve approval/user work; verify initially approved or preexisting-split parents, tracking accounts, transfers, reconciled/deleted parents, special categories and concurrent edits are skipped without unapproving, replacing or rewriting them. Link-only mode preserves categories/approval.
 - [ ] 5.3 Add protected atomic allocation journaling with local application serialization and separate per-charge link/category/split/review status plus item-to-line provenance. Verify a link-only parent can later allocate, prior journaled writes are recognized, category-only operations are not repeated and partial writes retry only unfinished operations.
-- [ ] 5.4 Verify unknown category/split write outcomes by remote read-back against saved intent, and stop after any applied-plan drift/conflicts; cover accepted-but-response-lost, rejected, changed-tip/ledger/category settings and user edits, and document manual recovery and non-atomicity across transactions.
+- [x] 5.4 Verify unknown category/split write outcomes by remote read-back against saved intent, and stop after any applied-plan drift/conflicts; cover accepted-but-response-lost, rejected, changed-tip/ledger/category settings and user edits, and document manual recovery and non-atomicity across transactions.
 - [ ] 5.5 Read human approvals/corrections through YNAB and learn only unambiguous approved item-to-existing-category mappings for future purchases. Verify unchanged approved rows, category corrections, moves to default, reordered IDs, fragmented-item conflicts, merged/deleted/repurposed rows, changed amounts, aggregate-default exclusions and cross-plan isolation. Never modify existing splits or auto-approve transactions.
 
 ## 6. Integrated offline acceptance
@@ -91,6 +91,10 @@ the broader normalization/category/learning/diagnostic acceptance matrices;
 and cross-platform CI/packaging execution. Groovy fails closed on unproven
 currency/discount semantics rather than claiming a reconstructed gross basis.
 Do not archive this change as fully accepted or call this a qualified release.
+
+## Still unchecked
+
+4.10 is skipped by the user and stays unchecked. The remaining unchecked tasks still lack a named verification that passed in this checkout: 2.4, 3.3, 4.1, 4.4, 4.5, 4.8, 4.11, 4.12, 4.13, 5.3, 5.5, 6.1, 6.2, 6.3, and 6.5. Do not archive while those are open.
 
 ## Archive blockers
 

@@ -468,6 +468,69 @@ class WalmartService_IT extends Specification {
         remote.small.category_id=='h'
     }
 
+    def 'deleted and transfer parents are not rewritten and link-only keeps category and approval'() {
+        given:
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        remote.large.deleted=true
+        remote.small.transfer_account_id='other'
+        def matches=new TransactionMatcher().findWalmartMatches(txs,[WalmartFixture.order()])
+
+        when:
+        def result=new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        writes.empty
+        result.preview*.reason.contains('parent_changed')
+        remote.large.deleted
+        remote.small.transfer_account_id=='other'
+
+        when:
+        remote.large.deleted=false
+        remote.small.remove('transfer_account_id')
+        remote.large.category_id='h'
+        remote.large.approved=false
+        remote.large.memo=null
+        remote.small.memo=null
+        config.walmartEnrichment='link_only'
+        def linked=new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        writes.every { it.change.keySet()==['memo'] as Set }
+        remote.large.category_id=='h'
+        !remote.large.approved
+    }
+
+    def 'a rejected category write is not treated as applied and a second process cannot enter the lock'() {
+        given:
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        rejectSmall=true
+        def matches=new TransactionMatcher().findWalmartMatches(txs,[WalmartFixture.order()])
+
+        when:
+        def rejected=new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        writes*.id==['large']
+        !remote.small.category_id
+        new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> !state.plans['plan/123'].operations.small?.allocation }
+
+        when:
+        def blocked=false
+        def thread=Thread.start {
+            try { new WalmartJournal(config.walmartJournalFile).locked(false) { state, save -> Thread.sleep(300) } }
+            catch (IllegalStateException ignored) { blocked=true }
+        }
+        new WalmartJournal(config.walmartJournalFile).locked(false) { state, save ->
+            Thread.sleep(50)
+            thread.join(1000)
+        }
+
+        then:
+        blocked
+    }
+
     def 'a link-only run does not prevent later allocation with freshly fetched parents'() {
         given:
         def txs=WalmartFixture.transactions()
