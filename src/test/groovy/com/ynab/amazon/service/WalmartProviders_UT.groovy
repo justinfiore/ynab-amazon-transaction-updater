@@ -337,20 +337,49 @@ class WalmartProviders_UT extends Specification {
         decision.model == envelope.model
         decision.source == provider
         decision.raw_category_id == expectedRaw
-        decision.category_id == expectedAccepted
         decision.confidence == confidence
         !recorded.contains('Bearer ') && !recorded.contains('sk-')
+        Map answer = provider == 'openai' ? envelope.answers[0] : envelope.answers.item_0
+        Map scores = provider == 'openai' ? answer.probabilities.collectEntries { [(it.value): it.probability] } : answer.probabilities
+        List ranked = scores.values().sort(false).reverse()
+        String gated = answer.choice != WalmartRemoteClassifier.ABSTAIN && ranked[0] >= 0.8 && answer.confidence >= 0.8 && ranked[0] - ranked[1] >= 0.2 ? expectedRaw : null
+        decision.category_id == gated
+        decision.scores == scores
         Map sent = WalmartRemoteClassifier.JSON.readValue(bodies[0], Map)
         Map sentCriteria = provider == 'openai' ? sent.questions[0].choices.collectEntries { [(it.value): it.description] } : sent.questions.item_0.criteria
         sentCriteria == expectedCriteria
 
         where:
-        fixture | provider | title | confidence | expectedRaw | expectedAccepted
-        'openai-accepted-cleaning.json' | 'openai' | 'Clorox Toilet Bowl Cleaner, 24 fl oz' | 0.92 | 'Cleaning supplies' | 'Cleaning supplies'
-        'openai-abstain-chicken.json' | 'openai' | 'Chicken, 12 oz' | 0.84 | null | null
-        'openai-abstain-pods.json' | 'openai' | 'Fresh Scent Pods, 20 count' | 0.99 | null | null
-        'jev-accepted-pet-food.json' | 'jev' | 'Milk-Bone Original Dog Biscuits, Medium' | 0.99 | 'Pet food' | 'Pet food'
-        'jev-gated-chicken-groceries.json' | 'jev' | 'Chicken, 12 oz' | 0.71 | 'Groceries' | null
-        'jev-gated-pods-laundry.json' | 'jev' | 'Fresh Scent Pods, 20 count' | 0.46 | 'Laundry' | null
+        fixture | provider | title | confidence | expectedRaw
+        'openai-accepted-cleaning.json' | 'openai' | 'Clorox Toilet Bowl Cleaner, 24 fl oz' | 0.92 | 'Cleaning supplies'
+        'openai-abstain-chicken.json' | 'openai' | 'Chicken, 12 oz' | 0.84 | null
+        'openai-abstain-pods.json' | 'openai' | 'Fresh Scent Pods, 20 count' | 0.99 | null
+        'jev-accepted-pet-food.json' | 'jev' | 'Milk-Bone Original Dog Biscuits, Medium' | 0.99 | 'Pet food'
+        'jev-gated-chicken-groceries.json' | 'jev' | 'Chicken, 12 oz' | 0.71 | 'Groceries'
+        'jev-gated-pods-laundry.json' | 'jev' | 'Fresh Scent Pods, 20 count' | 0.46 | 'Laundry'
+    }
+
+    def 'a recorded distribution below 0.8 probability is rejected even when confidence and margin pass'() {
+        given:
+        Map policy = WalmartRemoteClassifier.JSON.readValue(WalmartProviders_UT.getResource('/walmart-comparison/reference-policy.json').text, Map)
+        Map catalog = policy.question.category.criteria.findAll { k, v -> k != 'ABSTAIN' }.collectEntries { k, v -> [(k): [id:k, name:k, description:v]] }
+        Map config = settings('jev')
+        config.acceptance.qualified_for = new WalmartRemoteClassifier(config).qualificationFingerprint(catalog)
+        Map recorded = WalmartRemoteClassifier.JSON.readValue(WalmartProviders_UT.getResource('/walmart-provider-responses/jev-gated-chicken-groceries.json').text, Map)
+        // Recorded confidence is 0.71, which also fails the confidence gate. Raise only that field
+        // so this case is rejected by probability 0.73 alone. The distribution stays the recorded one.
+        recorded.answers.item_0.confidence = 0.9
+        int calls = 0
+        def classifier = new WalmartRemoteClassifier(config, { a, b, c, d -> calls++; [status:200, body:WalmartRemoteClassifier.JSON.writeValueAsString(recorded)] })
+
+        when:
+        Map decision = classifier.classify([new WalmartOrderItem(itemId:'local-only', title:'Chicken, 12 oz')], catalog)['local-only']
+
+        then:
+        calls == 1
+        decision.raw_category_id == 'Groceries'
+        decision.category_id == null
+        decision.scores.Groceries == 0.73
+        decision.confidence == 0.9
     }
 }
