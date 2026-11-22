@@ -45,7 +45,7 @@ class WalmartOnboarding {
         byte[] original=Files.readAllBytes(file)
         Map config = new Yaml().load(new String(original,'UTF-8')) as Map
         Map walmart = config.walmart ?: [:]
-        List<Map> catalog = ynab.getWalmartCategories().findAll { !it.hidden && !it.deleted && !it.special && !it.group_hidden && !it.group_deleted }
+        List<Map> catalog = ynab.getWalmartCategories().findAll { !it.hidden && !it.deleted && !it.internal && !it.group_internal && !it.group_hidden && !it.group_deleted }
             .sort { a,b -> (a.group_name <=> b.group_name) ?: (a.name <=> b.name) ?: (a.id <=> b.id) }
         if (!catalog) { output.println('No eligible categories; configuration unchanged.'); return false }
         catalog.eachWithIndex { category, index -> output.println("${index+1}. ${display(category.group_name)} / ${display(category.name)}") }

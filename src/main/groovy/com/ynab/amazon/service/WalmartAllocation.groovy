@@ -8,7 +8,7 @@ class WalmartAllocation {
         if (!selected || selected.any { !it.id } || selected*.id.toSet().size() != selected.size() || !selected*.id.contains(defaultId)) {
             throw new IllegalStateException('Invalid Walmart category shortlist/default')
         }
-        def eligible = catalog.findAll { !it.deleted && !it.hidden && !it.special && !it.group_hidden && !it.group_deleted }.collectEntries { [(it.id): it] }
+        def eligible = catalog.findAll { !it.deleted && !it.hidden && !it.internal && !it.group_internal && !it.group_hidden && !it.group_deleted }.collectEntries { [(it.id): it] }
         if (selected.any { !eligible[it.id] }) throw new IllegalStateException('Walmart category is absent, hidden, deleted or special')
         selected.collectEntries { [(it.id): [id: it.id, name: eligible[it.id].name, description: it.description ?: '']] }
     }

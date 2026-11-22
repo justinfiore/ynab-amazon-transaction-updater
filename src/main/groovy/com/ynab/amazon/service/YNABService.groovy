@@ -147,7 +147,7 @@ class YNABService {
         groups.collectMany { group ->
             group.categories.collect { category ->
                 category + [group_name: group.name, group_hidden: group.hidden, group_deleted: group.deleted,
-                            special: group.name in ['Internal Master Category', 'Credit Card Payments'] || category.id == 'immediate-income-subcategory']
+                            group_internal: group.internal]
             }
         }
     }

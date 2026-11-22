@@ -21,14 +21,16 @@ class WalmartService_IT extends Specification {
     boolean pendingReadback
     boolean rejectSmall
     boolean stopBeforeSmallIntent
+    List<Map> categoryGroups
 
     def setup() {
         remote = [:]; writes = []
+        categoryGroups = [[name:'Everyday',categories:[[id:'g',name:'Groceries'],[id:'h',name:'Household']]]]
         server = HttpServer.create(new InetSocketAddress('127.0.0.1', 0), 0)
         server.createContext('/v1/plans/plan') { exchange ->
             String suffix = exchange.requestURI.path - '/v1/plans/plan'
             Map body
-            if (suffix == '/categories') body = [data:[category_groups:[[name:'Everyday',categories:[[id:'g',name:'Groceries'],[id:'h',name:'Household']]]]]]
+            if (suffix == '/categories') body = [data:[category_groups:categoryGroups]]
             else if (suffix == '/accounts') body = [data:[accounts:[[id:'account',on_budget:true,deleted:false,closed:false]]]]
             else {
                 String id = suffix.tokenize('/').last()
@@ -61,6 +63,41 @@ class WalmartService_IT extends Specification {
         ynab = new YNABService(config)
     }
     def cleanup() { ynab.close(); server.stop(0) }
+
+    def 'API internal flags exclude special categories in setup and runtime without reserving display names'() {
+        given:
+        categoryGroups = [
+            [name:'Everyday',internal:false,categories:[[id:'internal-category',name:'Internal category',internal:true]]],
+            [name:'Renamed system group',internal:true,categories:[[id:'internal-group',name:'Payment',internal:false]]],
+            [name:'Credit Card Payments',internal:false,categories:[[id:'ordinary',name:'User category',internal:false]]]
+        ]
+        File file = new File(directory,'setup.yml'); file.text='walmart: {enabled: false}\n'
+        def output = new StringWriter()
+
+        when:
+        def catalog = ynab.getWalmartCategories()
+        boolean saved = WalmartOnboarding.selectCategories(file.toPath(),ynab,
+            new BufferedReader(new StringReader('1\n1\nyes\n')),new PrintWriter(output,true))
+
+        then:
+        saved
+        output.toString().contains('Credit Card Payments / User category')
+        !output.toString().contains('Internal category')
+        !output.toString().contains('Renamed system group')
+        WalmartAllocation.categories(catalog,[[id:'ordinary']],'ordinary').keySet()==['ordinary'] as Set
+
+        when:
+        WalmartAllocation.categories(catalog,[[id:'internal-category']],'internal-category')
+
+        then:
+        thrown(IllegalStateException)
+
+        when:
+        WalmartAllocation.categories(catalog,[[id:'internal-group']],'internal-group')
+
+        then:
+        thrown(IllegalStateException)
+    }
 
     def 'HTTP writes preserve parents and remain unapproved; lost response and restart do not duplicate allocations'() {
         given:
