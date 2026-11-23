@@ -318,14 +318,14 @@ app:
         result
     }
     
-    def "rejects enabled Walmart until the Go fetcher is implemented"() {
+    def "enabled Walmart requires the native helper not browser credentials"() {
         given:
         def configuration = new Configuration(ynabApiKey: 'key', ynabBudgetId: 'budget',
             amazonCsvFilePath: 'orders.csv', walmartEnabled: true)
 
         expect:
         !configuration.isValid()
-        configuration.lastValidationError.contains('Walmart fetching is unavailable')
-        configuration.lastValidationError.contains('walmart.enabled to false')
+        configuration.lastValidationError.contains('Walmart helper unavailable')
+        configuration.lastValidationError.contains('-Pwalmart distribution')
     }
 }

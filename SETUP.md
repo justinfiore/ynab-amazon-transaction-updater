@@ -65,7 +65,7 @@ separately or download wrapper files by hand. Verify it with:
      csv_file_path: "your_amazon_orders.csv"
 
    walmart:
-     enabled: false  # Fetching unavailable pending Go integration
+     enabled: false  # Optional native helper; see WALMART.md before enabling
 
    app:
      dry_run: true  # Set to false when ready
@@ -73,10 +73,13 @@ separately or download wrapper files by hand. Verify it with:
 
 2. Place your Amazon orders CSV file in the project directory
 
-Walmart fetching is unavailable until the proposed Go integration is implemented.
-Keep `walmart.enabled: false`; `true` reports an explicit unavailable error.
-Only `walmart.enabled` remains recognized. Remove all other Walmart settings;
-the browser guest/login fetchers have been removed without backwards compatibility.
+Walmart is optional and disabled by default. See [Walmart setup and safety](WALMART.md)
+for opt-in Gradle/native-helper builds, protected session import and numbered
+existing-category setup. Removed browser guest/login fetchers have no fallback.
+Optional paid OpenAI Decisions/TypeSafe Jev inference uses Groovy with explicit
+data/billing consent and separately protected provider keys. Live quality and
+cross-platform qualification remain pending. Disabled/link-only needs no
+inference key; no local-model runtime, Docker or OAuth route is required.
 
 ### Optional: Python Amazon Order History
 

@@ -154,216 +154,24 @@ class TransactionProcessor_UT extends Specification {
         0 * mockYnabService.updateTransactionMemo(_, _)  // Verify YNABService was not called
     }
     
-    // Walmart-specific tests
-    
-    def "processWalmartMatches should update single transaction matches"() {
-        given: "a processor instance"
-        def processor = new TransactionProcessor(mockConfig)
-        
-        and: "a high confidence single-transaction Walmart match"
-        def ynabTx = new YNABTransaction(id: "tx1", memo: "Original memo", payee_name: "WALMART.COM", amount: -5000)
-        def order = new WalmartOrder(
-            orderId: "123456",
-            orderDate: "2024-01-15",
-            totalAmount: 50.00,
-            orderStatus: "Delivered"
-        )
-        order.addItem(new WalmartOrderItem(title: "Test Product", price: 50.00, quantity: 1))
-        
-        def match = new TransactionMatch(ynabTx, order, "Proposed memo", 0.9, "Test match")
-        
-        when: "processWalmartMatches is called"
-        def result = processor.processWalmartMatches([match], mockYnabService, false)
-        
-        then: "transaction should be updated"
-        result.updated == 1
-        result.high_confidence == 1
-        1 * mockYnabService.updateTransactionMemo("tx1", { String memo ->
-            memo.contains("Walmart Order: 123456") && 
-            memo.contains("Test Product") &&
-            !memo.contains("Charge")
-        }) >> true
-    }
-    
-    def "processWalmartMatches should update multi-transaction matches"() {
-        given: "a processor instance"
-        def processor = new TransactionProcessor(mockConfig)
-        
-        and: "a high confidence multi-transaction Walmart match"
-        def ynabTx1 = new YNABTransaction(id: "tx1", memo: "Original memo 1", payee_name: "WALMART.COM", amount: -10000)
-        def ynabTx2 = new YNABTransaction(id: "tx2", memo: "Original memo 2", payee_name: "WALMART.COM", amount: -5000)
-        
-        def order = new WalmartOrder(
-            orderId: "123456",
-            orderDate: "2024-01-15",
-            totalAmount: 150.00,
-            orderStatus: "Delivered"
-        )
-        order.addFinalCharge(100.00)
-        order.addFinalCharge(50.00)
-        order.addItem(new WalmartOrderItem(title: "Product A", price: 100.00, quantity: 1))
-        order.addItem(new WalmartOrderItem(title: "Product B", price: 50.00, quantity: 1))
-        
-        def match = new TransactionMatch([ynabTx1, ynabTx2], order, "Proposed memo", 0.85, "Multi-transaction match")
-        
-        when: "processWalmartMatches is called"
-        def result = processor.processWalmartMatches([match], mockYnabService, false)
-        
-        then: "both transactions should be updated"
-        result.updated == 2
-        result.high_confidence == 1
-        1 * mockYnabService.updateTransactionMemo("tx1", { String memo ->
-            memo.contains("Walmart Order: 123456") && 
-            memo.contains("Charge 1 of 2") &&
-            memo.contains("2 items:")
-        }) >> true
-        1 * mockYnabService.updateTransactionMemo("tx2", { String memo ->
-            memo.contains("Walmart Order: 123456") && 
-            memo.contains("Charge 2 of 2") &&
-            memo.contains("2 items:")
-        }) >> true
-    }
-    
-    def "processWalmartMatches should preserve existing memo content"() {
-        given: "a processor instance"
-        def processor = new TransactionProcessor(mockConfig)
-        
-        and: "a Walmart match with existing memo"
-        def ynabTx = new YNABTransaction(id: "tx1", memo: "My custom note", payee_name: "WALMART.COM", amount: -5000)
-        def order = new WalmartOrder(
-            orderId: "123456",
-            orderDate: "2024-01-15",
-            totalAmount: 50.00,
-            orderStatus: "Delivered"
-        )
-        order.addItem(new WalmartOrderItem(title: "Test Product", price: 50.00, quantity: 1))
-        
-        def match = new TransactionMatch(ynabTx, order, "Proposed memo", 0.9, "Test match")
-        
-        when: "processWalmartMatches is called"
-        def result = processor.processWalmartMatches([match], mockYnabService, false)
-        
-        then: "existing memo should be preserved"
-        result.updated == 1
-        1 * mockYnabService.updateTransactionMemo("tx1", { String memo ->
-            memo.startsWith("My custom note |") && 
-            memo.contains("Walmart Order: 123456")
-        }) >> true
-    }
-    
-    def "processWalmartMatches should not make API calls in dry run mode"() {
-        given: "a processor instance"
-        def processor = new TransactionProcessor(mockConfig)
-        
-        and: "a high confidence Walmart match"
-        def ynabTx = new YNABTransaction(id: "tx1", memo: "Original memo", payee_name: "WALMART.COM", amount: -5000)
-        def order = new WalmartOrder(
-            orderId: "123456",
-            orderDate: "2024-01-15",
-            totalAmount: 50.00,
-            orderStatus: "Delivered"
-        )
-        order.addItem(new WalmartOrderItem(title: "Test Product", price: 50.00, quantity: 1))
-        
-        def match = new TransactionMatch(ynabTx, order, "", 0.9, "Test match")
-        
-        when: "processWalmartMatches is called in dry run mode"
-        def result = processor.processWalmartMatches([match], mockYnabService, true)
-        
-        then: "no actual updates should be made"
-        result.updated == 1
-        result.high_confidence == 1
-        0 * mockYnabService.updateTransactionMemo(_, _)
-    }
-    
-    def "processWalmartMatches should ignore low confidence matches"() {
-        given: "a processor instance"
-        def processor = new TransactionProcessor(mockConfig)
-        
-        and: "a low confidence Walmart match"
-        def ynabTx = new YNABTransaction(id: "tx1", memo: "Original memo", payee_name: "WALMART.COM", amount: -5000)
-        def order = new WalmartOrder(
-            orderId: "123456",
-            orderDate: "2024-01-15",
-            totalAmount: 50.00,
-            orderStatus: "Delivered"
-        )
-        order.addItem(new WalmartOrderItem(title: "Test Product", price: 50.00, quantity: 1))
-        
-        def match = new TransactionMatch(ynabTx, order, "", 0.4, "Low confidence match")
-        
-        when: "processWalmartMatches is called"
-        def result = processor.processWalmartMatches([match], mockYnabService, false)
-        
-        then: "no updates should be made"
+    def 'Walmart preview preserves user memo and does not mark completion'() {
+        given:
+        def config = new Configuration(walmartJournalFile: new File(tempFolder, 'walmart.json').path)
+        def tx = new YNABTransaction(id: 'w1', date: '2026-11-20', amount: -70000, memo: 'User note', payee_name: 'WALMART')
+        def order = new WalmartOrder(orderId: '123', orderDate: '2026-11-20', totalAmount: 100.00, currency: 'USD',
+            orderUrl: 'https://www.walmart.com/orders/details?orderId=123',
+            charges: [[key:'c1',date:'2026-11-20',cents:7000L,currency:'USD',payment:'CREDITCARD:VISA:1234']])
+        def matches = new TransactionMatcher().findWalmartMatches([tx], [order])
+
+        when:
+        def result = new TransactionProcessor(config).processWalmartMatches(matches, mockYnabService, true)
+
+        then:
         result.updated == 0
-        result.low_confidence == 1
-        0 * mockYnabService.updateTransactionMemo(_, _)
-    }
-    
-    def "generateWalmartMemo should format single transaction correctly"() {
-        given: "a processor instance"
-        def processor = new TransactionProcessor(mockConfig)
-        
-        and: "a single transaction and order"
-        def ynabTx = new YNABTransaction(id: "tx1", memo: "", payee_name: "WALMART.COM", amount: -5000)
-        def order = new WalmartOrder(
-            orderId: "123456",
-            orderDate: "2024-01-15",
-            totalAmount: 50.00,
-            orderStatus: "Delivered"
-        )
-        order.addItem(new WalmartOrderItem(title: "Test Product", price: 50.00, quantity: 1))
-        
-        when: "generateWalmartMemo is called via reflection"
-        def method = TransactionProcessor.class.getDeclaredMethod(
-            "generateWalmartMemo", 
-            YNABTransaction.class, 
-            WalmartOrder.class, 
-            boolean.class, 
-            int.class, 
-            int.class
-        )
-        method.setAccessible(true)
-        def memo = method.invoke(processor, ynabTx, order, false, 1, 1)
-        
-        then: "memo should be formatted correctly with order URL"
-        memo.contains("Walmart Order: 123456")
-        memo.contains("Test Product")
-        memo.contains("https://www.walmart.com/orders/details?orderId=123456")
-    }
-    
-    def "generateWalmartMemo should format multi-transaction correctly"() {
-        given: "a processor instance"
-        def processor = new TransactionProcessor(mockConfig)
-        
-        and: "a multi-transaction order"
-        def ynabTx = new YNABTransaction(id: "tx1", memo: "", payee_name: "WALMART.COM", amount: -10000)
-        def order = new WalmartOrder(
-            orderId: "123456",
-            orderDate: "2024-01-15",
-            totalAmount: 150.00,
-            orderStatus: "Delivered"
-        )
-        order.addItem(new WalmartOrderItem(title: "Product A", price: 100.00, quantity: 1))
-        order.addItem(new WalmartOrderItem(title: "Product B", price: 50.00, quantity: 1))
-        
-        when: "generateWalmartMemo is called for charge 1 of 2"
-        def method = TransactionProcessor.class.getDeclaredMethod(
-            "generateWalmartMemo", 
-            YNABTransaction.class, 
-            WalmartOrder.class, 
-            boolean.class, 
-            int.class, 
-            int.class
-        )
-        method.setAccessible(true)
-        def memo = method.invoke(processor, ynabTx, order, true, 1, 2)
-        
-        then: "memo should include charge information"
-        memo.contains("Walmart Order: 123456")
-        memo.contains("Charge 1 of 2")
-        memo.contains("2 items:")
+        result.preview[0].operations[0].memo == 'User note | 2026-11-20 | Total $100.00 | #123 | https://www.walmart.com/orders/details?orderId=123'
+        !new File(config.walmartJournalFile).exists()
+        1 * mockYnabService.getWalmartPlanCurrency() >> 'USD'
+        0 * mockYnabService._
     }
     
     def "isProcessed should detect Walmart Order in memo"() {

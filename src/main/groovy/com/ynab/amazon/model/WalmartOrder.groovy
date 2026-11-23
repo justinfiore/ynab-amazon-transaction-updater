@@ -14,6 +14,11 @@ class WalmartOrder {
     List<BigDecimal> finalChargeAmounts
     List<WalmartOrderItem> items
     String orderUrl
+    String currency
+    boolean complete = false
+    String ineligibleReason
+    List<Map> charges = []
+    List<Map> adjustments = []
     
     WalmartOrder() {
         this.items = []
@@ -77,9 +82,12 @@ class WalmartOrder {
  */
 @CompileStatic
 class WalmartOrderItem {
+    String itemId
+    String productId
+    Long grossCents
     String title
     BigDecimal price
-    int quantity
+    BigDecimal quantity
     String imageUrl
     
     BigDecimal getTotalPrice() {

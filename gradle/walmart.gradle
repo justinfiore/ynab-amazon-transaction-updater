@@ -1,0 +1,122 @@
+// Entirely opt-in: base builds never configure or resolve a Go toolchain.
+import java.security.MessageDigest
+
+def version = '1.27.4'
+def os = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+def arch = System.getProperty('os.arch') in ['aarch64', 'arm64'] ? 'arm64' : System.getProperty('os.arch') in ['amd64','x86_64'] ? 'amd64' : 'unsupported'
+def host = (os.contains('windows') ? 'windows' : os.contains('mac') ? 'darwin' : 'linux') + '-' + arch
+def hashes = new groovy.json.JsonSlurper().parse(file('gradle/go-sdk-sha256.json'))
+if (!hashes[host]) throw new GradleException("Unsupported Walmart build host: ${host}")
+def cache = new File(gradle.gradleUserHomeDir, "walmart/go-${version}-${host}")
+def sdk = new File(cache, 'go')
+def exe = host.startsWith('windows') ? '.exe' : ''
+def go = new File(sdk, "bin/go${exe}")
+def verified = new File(cache, 'verified-sha256')
+def module = file('walmart-helper')
+def out = layout.buildDirectory.dir('walmart').get().asFile
+def helper = new File(out, "walmart-helper${exe}")
+
+def provision = tasks.register('walmartGoSdk') {
+    inputs.property('version', version)
+    inputs.property('digest', hashes[host])
+    outputs.file(go)
+    outputs.file(verified)
+    doLast {
+        if (go.exists() && verified.isFile()) {
+            if (verified.text.trim()!=hashes[host]) throw new GradleException('Walmart Go SDK cache has no matching verified archive hash; remove this SDK cache and provision again')
+            return
+        }
+        if (gradle.startParameter.offline) throw new GradleException('Walmart Go SDK is not cached; provision once without --offline')
+        cache.mkdirs()
+        def extension = host.startsWith('windows') ? 'zip' : 'tar.gz'
+        def archive = new File(cache, "sdk.${extension}")
+        new URI("https://go.dev/dl/go${version}.${host}.${extension}").toURL().withInputStream { source ->
+            archive.withOutputStream { it << source }
+        }
+        def digest = MessageDigest.getInstance('SHA-256')
+        archive.withInputStream { stream ->
+            byte[] buffer = new byte[65536]
+            int n
+            while ((n = stream.read(buffer)) != -1) digest.update(buffer, 0, n)
+        }
+        if (digest.digest().encodeHex().toString() != hashes[host]) {
+            archive.delete()
+            throw new GradleException('Walmart Go SDK checksum mismatch')
+        }
+        copy { from(extension == 'zip' ? zipTree(archive) : tarTree(resources.gzip(archive))); into(cache) }
+        archive.delete()
+        verified.text = hashes[host]
+    }
+}
+
+def goTask = { String name, List<String> arguments, String report ->
+    tasks.register(name, Exec) {
+        dependsOn provision
+        workingDir module
+        environment 'GOTOOLCHAIN', 'local'
+        environment 'GOENV', 'off'
+        environment 'GOOS', host.split('-')[0]
+        environment 'GOARCH', arch
+        environment 'CGO_ENABLED', '0'
+        environment 'GOFLAGS', '-mod=readonly'
+        environment 'GOWORK', 'off'
+        environment 'GOPATH', new File(gradle.gradleUserHomeDir, 'walmart/modules').absolutePath
+        environment 'GOCACHE', new File(gradle.gradleUserHomeDir, 'walmart/build-cache').absolutePath
+        if (gradle.startParameter.offline) {
+            environment 'GOPROXY', 'off'
+            environment 'GOSUMDB', 'off'
+        }
+        inputs.files(fileTree(module) { include '**/*.go', 'go.mod', 'go.sum', 'testdata/**' })
+        inputs.property('sdk', "${version}-${host}-${hashes[host]}")
+        def output = new File(out, report)
+        outputs.file(output)
+        commandLine([go.absolutePath] + arguments.collect { it.replace('@OUT@', out.absolutePath) })
+        doFirst {
+            out.mkdirs()
+            if (report.endsWith('.json')) {
+                standardOutput = new FileOutputStream(output)
+                ignoreExitValue = true
+            }
+        }
+        doLast {
+            if (report.endsWith('.json')) {
+                standardOutput.close()
+                def cases=[:]
+                output.eachLine { line ->
+                    def event=new groovy.json.JsonSlurper().parseText(line)
+                    if (event.Test && event.Action in ['pass','fail','skip']) cases[event.Test]=event
+                }
+                def results=file("build/test-results/${name}"); results.mkdirs()
+                new File(results,"TEST-${name}.xml").withWriter('UTF-8') { writer ->
+                    new groovy.xml.MarkupBuilder(writer).testsuite(name:name,tests:cases.size(),failures:cases.values().count { it.Action=='fail' },errors:executionResult.get().exitValue && !cases.values().any { it.Action=='fail' } ? 1 : 0,skipped:cases.values().count { it.Action=='skip' }) {
+                        cases.each { testName,event -> testcase(name:testName,classname:'walmart-helper',time:event.Elapsed ?: 0) {
+                            if (event.Action=='fail') failure(message:'Go test failed; see build/walmart/'+report)
+                            if (event.Action=='skip') skipped()
+                        } }
+                        if (executionResult.get().exitValue && !cases.values().any { it.Action=='fail' }) error(message:'Go command failed; see build/walmart/'+report)
+                    }
+                }
+                if (executionResult.get().exitValue) throw new GradleException("${name} failed; see build/walmart/${report}")
+            }
+        }
+    }
+}
+def compile = goTask('walmartCompile', ['build', '-trimpath', '-buildvcs=false', '-o', "@OUT@/walmart-helper${exe}", '.'], helper.name)
+def testCompile = goTask('walmartTestCompile', ['test', '-c', '-trimpath', '-buildvcs=false', '-o', "@OUT@/walmart-tests${exe}", '.'], "walmart-tests${exe}")
+def unit = goTask('walmartUnitTest', ['test', '-json', '-run', '^TestUnit', '.'], 'unit.json')
+def integration = goTask('walmartIntegrationTest', ['test', '-json', '-run', '^TestContract', '.'], 'integration.json')
+tasks.named('classes') { dependsOn compile }
+tasks.named('testClasses') { dependsOn testCompile }
+tasks.named('test') { dependsOn unit }
+tasks.named('integrationTest') { dependsOn integration }
+tasks.named('test') { systemProperty 'walmart.helper', helper.absolutePath }
+tasks.named('integrationTest') { systemProperty 'walmart.helper', helper.absolutePath }
+distributions.main.contents {
+    from(helper) { into 'bin'; filePermissions { unix('rwxr-xr-x') } }
+    from('walmart-helper/walmart-setup.sh') { into 'bin'; filePermissions { unix('rwxr-xr-x') } }
+    from('walmart-helper/walmart-setup.bat') { into 'bin' }
+    from('WALMART.md')
+}
+['installDist', 'distZip', 'distTar'].each { name -> tasks.named(name) { dependsOn compile } }
+tasks.named('distZip') { archiveClassifier = "walmart-${host}" }
+tasks.named('distTar') { archiveClassifier = "walmart-${host}" }

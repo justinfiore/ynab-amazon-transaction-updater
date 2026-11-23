@@ -35,8 +35,23 @@ amazon:
 
 # Walmart Configuration (optional)
 walmart:
-  enabled: false  # Fetching unavailable pending Go integration; true reports an explicit unavailable error
-  # Only enabled remains recognized. Remove all obsolete Walmart settings.
+  enabled: false  # Optional native Go source; no legacy browser fallback
+  # helper_executable: "/absolute/path/walmart-helper"  # Installed Walmart distribution discovers its bundled helper
+  # session_file: "~/.config/ynab-updater/walmart-session.json"
+  timeout_seconds: 300
+  max_output_bytes: 8388608
+  max_pages: 10  # 1-20, fail closed on incomplete pagination
+  enrichment: "link_only"  # Explicit exception_first changes real YNAB balances, still unapproved
+  journal_file: "walmart-journal.json"
+  payment_accounts: {}  # e.g. "CREDITCARD:VISA:1234": "existing-ynab-account-id"
+  # Run --walmart-categories to select existing categories by number; never creates categories.
+  # default_category_id: "existing-id"
+  categorization:
+    categories: []  # [{id: "existing-id", description: "optional boundary"}]
+    # --walmart-setup prompts for OpenAI Decisions or direct TypeSafe Jev, hidden key and consent.
+    # No provider selected by default. Keys belong ONLY in protected provider records, not YAML.
+    # Setup adds exact model/policy, bounds, credential path and unqualified acceptance settings.
+    # Unqualified providers make no production calls; use separately authorized synthetic comparison.
 
 # Application Configuration
 app:
@@ -56,7 +71,7 @@ app:
 # amazon.csv_file_path: Path to your Amazon order CSV file (used as fallback)
 # amazon.order_fetcher: "email" (default) or "python"; CSV remains additive in either mode
 # amazon.python.*: Optional bridge paths/bounds. Sessions and cookies stay in the upstream config.
-# walmart.enabled: Keep false (default); fetching is unavailable pending Go integration.
+# walmart.enabled: Keep false until protected native-helper session provisioning; see WALMART.md.
 # The nonworking browser guest/login sources were removed without backwards compatibility.
 
 # Example of what your actual config.yml should look like:
@@ -70,7 +85,7 @@ app:
 #   csv_file_path: "my_amazon_orders.csv"
 # 
 # walmart:
-#   enabled: false  # Fetching unavailable pending Go integration
+#   enabled: false  # Optional native source, disabled by default
 # 
 # app:
 #   processed_transactions_file: "processed_transactions.json"

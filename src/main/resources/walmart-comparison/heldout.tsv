@@ -1,0 +1,61 @@
+id	stratum	expected	product
+01	food	Groceries	Great Value Whole Milk, 1 Gallon
+02	food	Groceries	Marketside Fresh Spinach, 10 oz
+03	food	Groceries	Great Value Jasmine Rice, 5 lb
+04	food	Groceries	Jif Creamy Peanut Butter, 16 oz
+05	food	Groceries	Fresh Bananas, bunch
+06	food	Groceries	Great Value Frozen Broccoli Florets, 12 oz
+07	food	Groceries	Starbucks Ground Coffee, Breakfast Blend, 12 oz
+08	food	Groceries	Premier Protein Chocolate Ready to Drink Shakes, 12 pack
+09	pet	Pet food	Purina ONE Tender Selects Blend Adult Dry Cat Food, Salmon
+10	pet	Pet food	Blue Buffalo Life Protection Adult Chicken and Brown Rice Dry Dog Food
+11	pet	Pet food	Fancy Feast Grilled Salmon Wet Cat Food, 3 oz
+12	pet	Pet food	Milk-Bone Original Dog Biscuits, Medium
+13	pet	Pet supplies	Fresh Step Clumping Cat Litter, Unscented, 25 lb
+14	pet	Pet supplies	Vibrant Life Dog Leash, 6 feet
+15	pet	Pet supplies	Hartz Dog Shampoo, Oatmeal, 18 oz
+16	pet	Pet supplies	Vibrant Life Puppy Training Pads, 100 count
+17	household	Cleaning supplies	Clorox Disinfecting Wipes, Lemon Fresh, 75 count
+18	household	Cleaning supplies	Dawn Ultra Dishwashing Liquid, Original, 28 oz
+19	household	Cleaning supplies	Great Value Tall Kitchen Trash Bags, 13 Gallon
+20	household	Laundry	Tide Original Liquid Laundry Detergent, 92 fl oz
+21	household	Laundry	Downy Dryer Sheets, April Fresh, 120 count
+22	household	Paper goods	Charmin Ultra Soft Toilet Paper, 6 Mega Rolls
+23	household	Paper goods	Bounty Select-A-Size Paper Towels, 6 rolls
+24	household	Paper goods	Great Value Everyday Paper Plates, 9 inch
+25	other	Personal care	Dove Beauty Bar Soap, Sensitive Skin, 6 pack
+26	other	Personal care	Colgate Total Whitening Toothpaste, 5.1 oz
+27	other	Personal care	Equate Cotton Swabs, 500 count
+28	other	Health and medicine	Equate Ibuprofen Tablets, 200 mg, 100 count
+29	other	Health and medicine	Nature Made Vitamin D3 Softgels, 2000 IU
+30	other	Health and medicine	Band-Aid Flexible Fabric Adhesive Bandages, 30 count
+31	other	Baby care	Pampers Swaddlers Diapers, Size 3, 78 count
+32	other	Baby care	Similac Advance Infant Formula Powder, 30.8 oz
+33	other	Kitchen equipment	Mainstays Stainless Steel Can Opener
+34	other	Kitchen equipment	Lodge Cast Iron Skillet, 10.25 inch
+35	other	Home furnishings	Mainstays Blackout Curtain Panel, Gray, 42 x 84 inch
+36	other	Home furnishings	Mainstays Standard Bed Pillow, 2 pack
+37	other	Clothing	Hanes Men's Cotton Crew Socks, 6 pairs
+38	other	Clothing	Wonder Nation Girls' School Uniform Polo Shirt
+39	other	Electronics	onn. USB-C Charging Cable, 6 ft
+40	other	Electronics	Duracell Coppertop AA Batteries, 16 count
+41	boundary	Cleaning supplies	Arm & Hammer Baking Soda Fridge-N-Freezer Odor Absorber, not for baking
+42	boundary	Groceries	Great Value Pure Baking Soda for Baking, 16 oz
+43	boundary	Baby care	Parent's Choice Fragrance Free Baby Wipes, 80 count
+44	boundary	Cleaning supplies	Lysol Disinfectant Surface Wipes, not for use on skin
+45	boundary	Groceries	Great Value Canned Chicken Breast for human consumption, 12.5 oz
+46	boundary	Pet food	Purina Canned Chicken Dinner for Adult Dogs, 13 oz
+47	boundary	Personal care	Equate Moisturizing Hand Sanitizer, 8 fl oz
+48	boundary	Cleaning supplies	Great Value Antibacterial All Purpose Surface Cleaner, 32 fl oz
+49	ambiguous	ABSTAIN	Great Value Original, 16 oz
+50	ambiguous	ABSTAIN	Refill Pack, Unscented, 3 count
+51	ambiguous	ABSTAIN	Mainstays Assorted Item
+52	ambiguous	ABSTAIN	Chicken, 12 oz
+53	ambiguous	ABSTAIN	Gift Card, $25
+54	ambiguous	ABSTAIN	Walmart+ Annual Membership
+55	ambiguous	ABSTAIN	Service Fee
+56	ambiguous	ABSTAIN	Replacement Filters, 2 pack
+57	ambiguous	ABSTAIN	Unlabeled Seasonal Bundle
+58	ambiguous	ABSTAIN	Fresh Scent Pods, 20 count
+59	ambiguous	ABSTAIN	123456789 Product
+60	ambiguous	ABSTAIN	Assorted Household and Grocery Gift Basket

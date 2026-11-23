@@ -37,8 +37,17 @@ class Configuration {
     int lookBackDays = 30
     String lastValidationError
     
-    // Fetching remains unavailable until the Go-backed integration is implemented.
     boolean walmartEnabled = false
+    String walmartHelperExecutable
+    String walmartSessionFile
+    int walmartTimeoutSeconds = 300
+    int walmartMaxOutputBytes = 8388608
+    int walmartMaxPages = 10
+    String walmartEnrichment = 'link_only'
+    String walmartDefaultCategoryId
+    String walmartJournalFile = 'walmart-journal.json'
+    Map<String, String> walmartPaymentAccounts = [:]
+    Map walmartCategorization = [categories: []]
     
     Configuration() {
         // Do not auto-load from file by default to keep tests deterministic.
@@ -97,6 +106,16 @@ class Configuration {
             
             // Walmart Configuration
             this.walmartEnabled = (config.walmart?.enabled != null) ? config.walmart.enabled : this.walmartEnabled
+            this.walmartHelperExecutable = resolvePath(config.walmart?.helper_executable) ?: bundledWalmartHelper()
+            this.walmartSessionFile = resolvePath(config.walmart?.session_file)
+            this.walmartTimeoutSeconds = config.walmart?.timeout_seconds != null ? config.walmart.timeout_seconds : this.walmartTimeoutSeconds
+            this.walmartMaxOutputBytes = config.walmart?.max_output_bytes != null ? config.walmart.max_output_bytes : this.walmartMaxOutputBytes
+            this.walmartMaxPages = config.walmart?.max_pages != null ? config.walmart.max_pages : this.walmartMaxPages
+            this.walmartEnrichment = config.walmart?.enrichment ?: this.walmartEnrichment
+            this.walmartDefaultCategoryId = config.walmart?.default_category_id
+            this.walmartJournalFile = resolvePath(config.walmart?.journal_file) ?: this.walmartJournalFile
+            this.walmartPaymentAccounts = config.walmart?.payment_accounts ?: [:]
+            this.walmartCategorization = config.walmart?.categorization ?: this.walmartCategorization
             
             // Configure SimpleLogger - must be set before any logger instances are created
             System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", this.logLevel)
@@ -158,9 +177,11 @@ class Configuration {
         }
         
         if (walmartEnabled) {
-            lastValidationError = 'Walmart fetching is unavailable; browser fetching was removed. Set walmart.enabled to false until the Go integration is implemented.'
-            logger.error(lastValidationError)
-            return false
+            if (!walmartHelperExecutable || !new File(walmartHelperExecutable).canExecute()) return invalidAmazon('Walmart helper unavailable: install a matching -Pwalmart distribution or configure walmart.helper_executable')
+            if (!walmartSessionFile) return invalidAmazon('walmart.session_file is required; import a protected browser capture first')
+            if (walmartTimeoutSeconds <= 0 || walmartMaxOutputBytes <= 0 || walmartMaxPages < 1 || walmartMaxPages > 20) return invalidAmazon('Walmart process bounds must be positive; max_pages must be 1–20')
+            if (!(walmartEnrichment in ['link_only', 'exception_first'])) return invalidAmazon('walmart.enrichment must be link_only or exception_first')
+            if (walmartEnrichment == 'exception_first' && (!walmartDefaultCategoryId || !walmartCategorization.categories)) return invalidAmazon('exception_first requires an existing default and category shortlist')
         }
         
         return true
@@ -168,6 +189,13 @@ class Configuration {
     
     boolean isDryRun() {
         return dryRun
+    }
+
+    private static String bundledWalmartHelper() {
+        def location = new File(Configuration.protectionDomain.codeSource.location.toURI())
+        if (!location.name.endsWith('.jar')) return null
+        def helper = new File(location.parentFile.parentFile, 'bin/walmart-helper' + (System.getProperty('os.name').startsWith('Windows') ? '.exe' : ''))
+        return helper.isFile() ? helper.absolutePath : null
     }
 
     private static String resolvePath(def value) {

@@ -9,13 +9,13 @@ class WalmartService_UT extends Specification {
         new WalmartService(new Configuration()).getOrders() == []
     }
 
-    def 'enabled Walmart fetching reports the removed implementation'() {
+    def 'enabled Walmart fetching requires the helper and imported session'() {
         when:
         new WalmartService(new Configuration(walmartEnabled: true)).getOrders()
 
         then:
         def error = thrown(IllegalStateException)
-        error.message.contains('Walmart fetching is unavailable')
-        error.message.contains('walmart.enabled to false')
+        error.message.contains('Walmart helper/session unavailable')
+        error.message.contains('import a session')
     }
 }

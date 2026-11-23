@@ -68,6 +68,54 @@ EOF
 fi
 
 echo "Temurin release: $(installed_temurin_release "$JAVA_HOME")"
+
+readonly go_version="1.27.4"
+readonly go_root="$HOME/.local/share/go/${go_version}"
+readonly go_marker="# ynab-amazon-transaction-updater Go ${go_version}"
+readonly go_hashes="$repo_root/gradle/go-sdk-sha256.json"
+case "$(uname -m)" in
+  x86_64) go_host="linux-amd64" ;;
+  aarch64|arm64) go_host="linux-arm64" ;;
+  *)
+    echo "Unsupported architecture for Go ${go_version}: $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+go_digest=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$go_hashes" "$go_host")
+if [[ ! "$go_digest" =~ ^[[:xdigit:]]{64}$ ]]; then
+  echo "Missing or invalid Go SDK digest for $go_host" >&2
+  exit 1
+fi
+if [[ ! -x "$go_root/bin/go" ]] || [[ "$("$go_root/bin/go" env GOVERSION 2>/dev/null || true)" != "go${go_version}" ]]; then
+  echo "Installing Go ${go_version} (${go_host})..."
+  go_download=$(mktemp -d)
+  go_archive="$go_download/go.tgz"
+  curl --fail --location --retry 3 --output "$go_archive" "https://go.dev/dl/go${go_version}.${go_host}.tar.gz"
+  echo "Verifying Go archive SHA-256 checksum..."
+  printf '%s  %s\n' "$go_digest" "$go_archive" | sha256sum --check --strict -
+  mkdir -p "$(dirname "$go_root")"
+  rm -rf "$go_root"
+  mkdir "$go_root"
+  tar -xzf "$go_archive" --strip-components=1 -C "$go_root"
+  rm -rf "$go_download"
+  if [[ "$("$go_root/bin/go" env GOVERSION)" != "go${go_version}" ]]; then
+    echo "Installed Go does not report ${go_version}" >&2
+    exit 1
+  fi
+else
+  echo "Go ${go_version} already installed; skipping download."
+fi
+if ! grep -Fqx "$go_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<EOF
+
+$go_marker
+case ":\$PATH:" in
+  *":$go_root/bin:"*) ;;
+  *) export PATH="$go_root/bin:\$PATH" ;;
+esac
+EOF
+fi
+
 echo "Warming the Gradle distribution and dependency cache..."
 cd "$repo_root"
 ./gradlew --no-daemon classes testClasses

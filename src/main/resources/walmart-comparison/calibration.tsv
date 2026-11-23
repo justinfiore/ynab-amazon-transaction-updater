@@ -1,0 +1,13 @@
+id	stratum	expected	product
+c01	food	Groceries	Great Value Rolled Oats, 42 oz
+c02	pet	Pet food	Iams Adult Minichunks Dry Dog Food, 15 lb
+c03	cleaning	Cleaning supplies	Clorox Toilet Bowl Cleaner, 24 fl oz
+c04	laundry	Laundry	Tide Liquid Laundry Detergent, Original, 92 fl oz
+c05	paper	Paper goods	Scott 1000 Toilet Paper, 12 rolls
+c06	personal	Personal care	Colgate Cavity Protection Toothpaste, 6 oz
+c07	health	Health and medicine	Advil Ibuprofen Pain Reliever, 50 tablets
+c08	baby	Baby care	Huggies Little Movers Diapers, size 4
+c09	kitchen	Kitchen equipment	Mainstays Stainless Steel Measuring Cups, 4 piece
+c10	clothing	Clothing	Hanes Men's Cotton Crew Socks, 6 pairs
+c11	ambiguous	ABSTAIN	Essentials refill, assorted
+c12	ambiguous	ABSTAIN	Mystery value bundle

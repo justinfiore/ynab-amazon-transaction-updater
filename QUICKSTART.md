@@ -7,10 +7,12 @@
 - Amazon order history CSV export (or email credentials)
 - Optional: maintained, patched CPython >=3.11.5 for Amazon account-history fetching
 
-Walmart fetching is unavailable pending the proposed Go integration. Leave
-`walmart.enabled: false` in the sample configuration; setting it to `true`
-reports an explicit unavailable error. No other Walmart settings are recognized,
-and the removed browser guest/login paths have no compatibility fallback.
+Leave `walmart.enabled: false` for the basic Amazon setup. Optional Walmart
+requires a `-Pwalmart` native helper and protected session; see [WALMART.md](WALMART.md).
+Removed browser guest/login paths have no fallback. Optional paid OpenAI
+Decisions/TypeSafe Jev inference requires separate key onboarding and consent;
+live provider quality is not qualified. Disabled/link-only needs no inference
+key. There is no Docker/local-model/OAuth requirement.
 
 ## 5-Minute Setup
 
