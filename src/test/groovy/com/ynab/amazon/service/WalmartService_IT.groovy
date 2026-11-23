@@ -35,10 +35,14 @@ class WalmartService_IT extends Specification {
             String suffix = exchange.requestURI.path - '/v1/plans/plan'
             Map body
             if (suffix == '') {
+                // Full plan details may exceed the bounded client response size.
+                exchange.sendResponseHeaders(503,-1); exchange.close(); return
+            }
+            else if (suffix == '/settings') {
                 if (planCurrency=='unavailable') {
                     exchange.sendResponseHeaders(503,-1); exchange.close(); return
                 }
-                body = [data:[plan:planCurrency ? [currency_format:[iso_code:planCurrency]] : [:]]]
+                body = [data:[settings:planCurrency ? [currency_format:[iso_code:planCurrency]] : [:]]]
             }
             else if (suffix == '/categories') body = [data:[category_groups:categoryGroups]]
             else if (suffix == '/accounts') body = [data:[accounts:[[id:'account',on_budget:true,deleted:false,closed:false]]]]
@@ -73,6 +77,11 @@ class WalmartService_IT extends Specification {
         ynab = new YNABService(config)
     }
     def cleanup() { ynab.close(); server.stop(0) }
+
+    def 'currency lookup works when full plan details are unavailable'() {
+        expect:
+        ynab.getWalmartPlanCurrency() == 'USD'
+    }
 
     @Unroll
     def '#provider decisions allocate exact amounts, persist isolated cache and block frozen policy drift'() {

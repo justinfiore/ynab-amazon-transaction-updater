@@ -144,7 +144,7 @@ class YNABService {
 
     String getWalmartPlanCurrency() {
         try {
-            walmartRequest('GET', '').data?.plan?.currency_format?.iso_code as String
+            walmartRequest('GET', '/settings').data?.settings?.currency_format?.iso_code as String
         } catch (Exception ignored) {
             logger.warn('YNAB plan currency unavailable; Walmart matching and updates are disabled')
             null
