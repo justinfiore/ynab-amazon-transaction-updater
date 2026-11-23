@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .venv-amazon-orders/
+.venv-amazon-browser/
 
 # Gradle
 .gradle/

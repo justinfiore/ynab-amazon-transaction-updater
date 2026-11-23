@@ -113,9 +113,9 @@ fetching and guarded login require the configured Amazon HTTPS origin for every
 request and redirect, enforce TLS verification and 10/30-second connect/read
 timeouts, ignore proxy/CA environment settings and `.netrc`, and keep debug HTML
 capture off. Some Amazon challenges/cross-origin flows will therefore fail closed.
-Do not add unconstrained `amazon-orders[browser]` to this environment; browser
-support requires a separate reviewed full lock and stronger OS isolation. Use
-email/CSV when guarded login cannot complete.
+Do not add unconstrained `amazon-orders[browser]` to this environment. Optional
+manual browser recovery has its own lock and restrictions below; use email/CSV
+when guarded login cannot complete.
 
 `amazon-orders` is an unofficial website parser supporting English pages across Amazon regions and may fail
 when Amazon changes. A failed Python fetch returns no Python orders; refresh the
@@ -208,6 +208,41 @@ If using a named account, select that same account in the upstream configuration
 or its supported environment settings for both commands. Complete any requested
 password/OTP prompts, then run the updater again (optionally dry-run first). If the session
 cannot be restored, choose email/CSV mode rather than repeatedly raising timeouts.
+
+For ACIC or JavaScript challenges that need browser execution, use a separate
+clean environment and the explicitly invoked `--browser-login` mode:
+
+```bash copy Copy Browser Login Setup
+python3 -m venv .venv-amazon-browser
+.venv-amazon-browser/bin/python -m pip install --require-hashes -r requirements-amazon-browser.txt
+.venv-amazon-browser/bin/python -m playwright install chromium
+.venv-amazon-browser/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --browser-login
+```
+
+Run this from an interactive terminal in a clean environment without unrelated
+secrets. It prompts for password/OTP just as `--login` does, then uses only the
+fixed Playwright ACIC and JS handlers when needed. Do **not** restore
+`auth_forms_classes` in the config; arbitrary configured classes are rejected
+in every mode. It writes cookies to the same protected location for the regular
+scheduled interpreter to reuse. Do not point scheduled fetching at the browser
+environment or add `--browser-login` to the scheduled command.
+
+This is headless challenge handling, not a visible browser in which you can
+solve visual puzzles. No paid solvers or visual CAPTCHA handlers are enabled.
+The Chromium profile is ephemeral and its sandbox is mandatory. A host that
+blocks the Chromium sandbox (for example, through Ubuntu AppArmor's
+user-namespace policy) must be configured by an administrator or replaced with
+a compatible environment; there is no `--no-sandbox` fallback.
+
+Browser HTTPS requests are restricted to the configured Amazon origin; HTTP
+redirects (even same-origin ones), WebSockets and service workers are blocked.
+Chromium's direct traffic has a dead-end proxy, non-proxied WebRTC UDP is disabled,
+and the Playwright driver and browser receive only runtime/location environment
+variables. TLS bypasses, driver/browser executable overrides, proxy variables and
+account secrets are not inherited by them. Challenges needing external origins,
+HTTP redirects or visual puzzles still fail closed; use email/CSV if necessary.
+No live re-authentication is performed by the tests, and successful recovery is
+not guaranteed for every Amazon challenge.
 
 ### 3. Build and Run
 

@@ -44,6 +44,7 @@ distributions {
         contents {
             from('scripts') { into 'scripts' }
             from('requirements-amazon-orders.txt')
+            from('requirements-amazon-browser.txt')
         }
     }
 }

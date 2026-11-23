@@ -46,6 +46,13 @@ jobs:
           .venv-amazon-orders/bin/python -m pip check
           .venv-amazon-orders/bin/python -m unittest scripts/test_amazon_orders_bridge.py
 
+      - name: Verify optional browser-login lock and offline contracts
+        run: |
+          python3 -m venv .venv-amazon-browser
+          .venv-amazon-browser/bin/python -m pip install --require-hashes -r requirements-amazon-browser.txt
+          .venv-amazon-browser/bin/python -m pip check
+          .venv-amazon-browser/bin/python -m unittest scripts/test_amazon_orders_bridge.py
+
       - name: Run unit and integration tests
         id: gradle-test
         shell: bash
