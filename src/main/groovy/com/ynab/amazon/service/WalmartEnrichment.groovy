@@ -15,7 +15,8 @@ class WalmartEnrichment {
     WalmartEnrichment(Configuration config) { this.config = config }
 
     Map process(List<TransactionMatch> matches, YNABService ynab, boolean dryRun, WalmartRemoteClassifier classifier = null) {
-        def stats = [updated: 0, high_confidence: matches.size(), medium_confidence: 0, low_confidence: 0, preview: []]
+        def stats = [updated: 0, high_confidence: matches.size(), medium_confidence: 0, low_confidence: 0,
+            refund_matches: matches.count { it.ynabTransaction.amount > 0 }, refund_memos_updated: 0, preview: []]
         if (!matches) return stats
         // Recheck at the write boundary as well as before workflow matching.
         if (ynab.getWalmartPlanCurrency() != 'USD') {
@@ -35,21 +36,28 @@ class WalmartEnrichment {
                 learn(state, ynab)
                 if (!dryRun) save(state)
             }
-            matches.groupBy { it.walmartOrder.orderId }.each { String orderId, List<TransactionMatch> group ->
-                String key = config.ynabBudgetId + '/' + orderId
+            // A later refund must not reopen or be blocked by a frozen purchase allocation.
+            matches.groupBy { it.walmartOrder.orderId + (it.ynabTransaction.amount > 0 ? '/refunds/' + it.walmartCharge.key : '') }.each { String groupId, List<TransactionMatch> group ->
+                String orderId = group[0].walmartOrder.orderId
+                boolean refunds = group[0].ynabTransaction.amount > 0
+                String key = config.ynabBudgetId + '/' + groupId
                 Map old = state.plans[key]
                 Map decisions = [:]
                 boolean inferenceFailed = false
                 String inferenceReason = 'inference_unavailable'
                 def order = group[0].walmartOrder
-                if (config.walmartEnrichment == 'exception_first') {
-                    order.items.each { item ->
+                def refund = refunds ? group[0].walmartCharge : null
+                List<WalmartOrderItem> classificationItems = refunds ? (refund.description ?
+                    [new WalmartOrderItem(itemId:refund.key, title:refund.description)] : []) : order.items
+                if (config.walmartEnrichment == 'exception_first' && (refunds ?
+                    WalmartAllocation.eligible(group[0].ynabTransaction, accounts, true) : order.complete)) {
+                    classificationItems.each { item ->
                         def evidence = state.mappings[config.ynabBudgetId + '/' + item.productId]
                         def choices = evidence instanceof List ? evidence.toSet() : [] as Set
                         String category = item.productId && choices.size() == 1 && categories.containsKey(choices.first()) ? choices.first() : null
                         decisions[item.itemId] = [category_id: category, source: choices ? 'approved_mapping' : 'unresolved', conflict: choices.size() > 1]
                     }
-                    def pending = order.items.findAll { decisions[it.itemId].source == 'unresolved' }
+                    def pending = classificationItems.findAll { decisions[it.itemId].source == 'unresolved' }
                     if (pending && config.walmartCategorization.provider && !classifier) inferenceFailed = true
                     if (pending && classifier) {
                         try {
@@ -78,12 +86,13 @@ class WalmartEnrichment {
                             }
                         } catch (Exception ignored) {
                             inferenceFailed = true
-                            LOG.warn('Walmart remote classification unavailable/unqualified; allocation skipped. Check key setup, qualification and limits')
+                            LOG.warn('Walmart remote classification unavailable/unqualified; purchases skip allocation, refunds use default. Check key setup, qualification and limits')
                         }
                     }
                 }
-                Map plan = inferenceFailed ? [eligible:false, reason:inferenceReason] : config.walmartEnrichment == 'exception_first' ?
-                    WalmartAllocation.plan(order, group, config.walmartDefaultCategoryId, decisions, accounts) : [eligible: false, reason: 'link_only']
+                Map plan = config.walmartEnrichment != 'exception_first' ? [eligible:false, reason:'link_only'] :
+                    refunds && !(dryRun && inferenceFailed) ? WalmartAllocation.refundPlan(group[0], config.walmartDefaultCategoryId, decisions, accounts) :
+                    inferenceFailed ? [eligible:false, reason:inferenceReason] : WalmartAllocation.plan(order, group, config.walmartDefaultCategoryId, decisions, accounts)
                 // Source/settings/mappings freeze even for operations already completed.
                 String fingerprint = fingerprint([order: [id: order.orderId, date: order.orderDate, total: order.totalAmount,
                     currency: order.currency, complete: order.complete, items: order.items.collect { [it.itemId, it.productId, it.title, it.grossCents] }.sort { it[0] },
@@ -112,7 +121,7 @@ class WalmartEnrichment {
                     saved?.pending && saved.allocating ? !(same(remote[op.transaction_id], saved.intent) || same(remote[op.transaction_id], saved.baseline)) :
                     saved?.allocation ? !same(remote[op.transaction_id], saved.result ?: saved.intent) :
                     entry.frozen ? !same(remote[op.transaction_id], entry.baselines?.get(op.transaction_id)) :
-                        !initial(group.find { it.ynabTransaction.id == op.transaction_id }.ynabTransaction, remote[op.transaction_id], accounts)
+                        !initial(group.find { it.ynabTransaction.id == op.transaction_id }.ynabTransaction, remote[op.transaction_id], accounts, refunds)
                 }) { stats.preview << [order_id: orderId, reason: 'parent_changed']; return }
                 if (plan.eligible && !entry.frozen) {
                     // Freeze every original parent, including operations not yet attempted.
@@ -156,17 +165,19 @@ class WalmartEnrichment {
                     entry.allocated |= plan.eligible
                     save(state)
                     stats.updated++
+                    if (refunds) stats.refund_memos_updated++
                 }
             }
         }
         // Purchase/item details are available to the caller, not persistent logs.
         LOG.info('Walmart processing: {} matched, {} updated', matches.size(), stats.updated)
+        LOG.info('Walmart refunds: {} matched, {} memos updated', stats.refund_matches, stats.refund_memos_updated)
         stats
     }
 
-    private static boolean initial(YNABTransaction tx, Map current, Set accounts) {
+    private static boolean initial(YNABTransaction tx, Map current, Set accounts, boolean refund = false) {
         if (!current || current.deleted || current.transfer_account_id || current.cleared == 'reconciled') return false
-        if (accounts != null && (!WalmartAllocation.eligible(tx, accounts) || current.approved || current.subtransactions || !accounts.contains(current.account_id))) return false
+        if (accounts != null && (!WalmartAllocation.eligible(tx, accounts, refund) || current.approved || current.subtransactions || !accounts.contains(current.account_id))) return false
         ['id', 'date', 'amount', 'account_id', 'payee_id', 'payee_name', 'flag_color', 'memo', 'category_id', 'cleared', 'approved', 'import_id'].every { field ->
             def before = tx."${field}"
             if (field == 'approved') return tx.getApproved() == current[field]?.toString()

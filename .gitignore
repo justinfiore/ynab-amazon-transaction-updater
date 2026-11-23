@@ -47,8 +47,10 @@ Thumbs.db
 
 # Application specific
 config.yml
+config.yml.setup-state.lock
 amazon_orders.csv
 processed_transactions.json
+processed_transactions.json.bak
 walmart-journal.json*
 walmart-session.json*
 .walmart-credentials/

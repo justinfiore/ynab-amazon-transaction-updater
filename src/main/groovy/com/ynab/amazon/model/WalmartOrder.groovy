@@ -17,6 +17,7 @@ class WalmartOrder {
     String currency
     boolean complete = false
     String ineligibleReason
+    // Settled ledger events: purchases have positive cents, refunds negative cents.
     List<Map> charges = []
     List<Map> adjustments = []
     

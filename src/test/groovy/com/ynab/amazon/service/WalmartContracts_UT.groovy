@@ -7,6 +7,66 @@ import spock.lang.Unroll
 class WalmartContracts_UT extends Specification {
     def matcher = new TransactionMatcher()
 
+    def 'refunds match inflows independently of purchases with exact amounts dates accounts and ambiguity guards'() {
+        given:
+        def order=WalmartFixture.order()
+        order.charges=[order.charges[0],order.charges[0]+[key:'refund',date:'2026-11-09',cents:-1056L]]
+        def purchase=WalmartFixture.transactions()[0]
+        def refund=new YNABTransaction(id:'refund',date:'2026-11-11',amount:10560L,payee_name:'WALMART',account_id:'account',memo:'User refund note')
+
+        when:
+        def matches=matcher.findWalmartMatches([purchase,refund],[order])
+        def credit=matches.find { it.ynabTransaction.id=='refund' }
+
+        then:
+        matches.size()==2
+        credit.walmartCharge.cents==-1056L
+        credit.matchReason=='unique_final_refund'
+        credit.proposedMemo=='User refund note | Walmart refund 2026-11-09 | Refund $10.56 | #123 | https://www.walmart.com/orders/details?orderId=123'
+        !WalmartAllocation.plan(order,matches,'g',[:],['account'] as Set).eligible
+        matcher.findWalmartMatches([refund],[order],[(order.charges[0].payment):'elsewhere']).empty
+
+        when: 'a competing order with the same refund is ambiguous, while the unrelated purchase still matches'
+        def other=WalmartFixture.order(); other.orderId='other'
+        other.charges=[order.charges[1]+[key:'other-refund']]
+        def ambiguous=matcher.findWalmartMatches([purchase,refund],[order,other])
+
+        then:
+        ambiguous*.ynabTransaction*.id==['large']
+
+        when:
+        refund.amount=10561L
+
+        then:
+        matcher.findWalmartMatches([refund],[order]).empty
+
+        when:
+        refund.amount=-10560L
+
+        then:
+        matcher.findWalmartMatches([refund],[order]).empty
+
+        when:
+        refund.amount=10560L
+        refund.date='2026-11-24'
+
+        then:
+        matcher.findWalmartMatches([refund],[order]).empty
+
+        when:
+        refund.date='2026-11-23'
+        refund.memo=credit.proposedMemo
+
+        then:
+        matcher.findWalmartMatches([refund],[order])[0].proposedMemo==credit.proposedMemo
+
+        when:
+        refund.memo='x'*450
+
+        then:
+        matcher.findWalmartMatches([refund],[order])[0].proposedMemo==null
+    }
+
     def 'global matching refuses cross-order and oversubscribed ambiguity regardless of input order'() {
         given:
         def a = WalmartFixture.order()

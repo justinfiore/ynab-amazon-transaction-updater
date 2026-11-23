@@ -58,11 +58,17 @@ key is passed to Go. Successful empty history is an explicit `orders: []`.
 
 Walmart requires a verified USD YNAB plan before fetching/matching and rechecks
 that currency before enrichment. Non-USD, missing or unavailable plan currency
-skips all Walmart links and allocation writes without affecting Amazon; no
-currency conversion or assumed USD fallback is performed.
+skips all Walmart links and allocation writes without affecting Amazon. Set
+`walmart.currency` to the source's uppercase ISO 4217 currency code; it defaults
+to `USD` and supplies the currency when Walmart omits it (including null fields).
+Explicit source currencies must agree with that setting; conflicting evidence
+still blocks matching. Only USD processing is supported; there is no currency
+conversion, and this source setting never replaces YNAB plan-currency validation.
 
-Charge amounts match exactly in cents within 14 days of the charge date, not
-the order date. Distinct equal charges are a multiset. Competing global
+Settled purchases match outflows and `ORDER_ADJUSTMENT_REFUND` ledger entries
+match inflows, exactly in cents within 14 days of each ledger date, not
+the order date. Refunds are never netted against purchases; temporary holds are
+not matching evidence. Distinct equal charges are a multiset. Competing global
 assignments are skipped, not selected by list order; order totals are never a
 fallback. Optional `payment_accounts` maps a normalized payment identifier
 such as `CREDITCARD:VISA:1234` to an existing YNAB account ID. Disambiguate
@@ -83,6 +89,12 @@ unqualified provider, or a changed parent. It does not PUT, mark the order
 complete, or save a journal. Compact memos keep the existing user text, the
 order date, the full order total, the order ID, and the direct Walmart URL.
 They do not list item names.
+
+Refund memos instead include the refund date, amount, order ID/link and up to
+200 characters of Walmart's returned-product descriptions. These descriptions
+are labeled as order-level context: the ledger does not identify which return
+belongs to each adjustment. Without returned-product text, the description is
+`Order adjustment refund`. Existing user text and the 500-character limit remain.
 
 ## Categories, allocation and YNAB review
 
@@ -107,6 +119,14 @@ Incomplete payments, refunds, unknown currency/gross-discount semantics,
 unexplained residuals and negative default remainders prevent allocation; unique
 safe links may still be added. The Groovy normalizer deliberately marks
 nonzero savings with unproven gross/net semantics incomplete, not guessed gross.
+
+Refunds have independent journal entries so a frozen purchase cannot block a
+later refund. In `exception_first` mode an eligible unapproved, unsplit inflow
+uses the refund description for classification; abstention, unavailable inference
+or missing text falls back to the configured default Walmart category. The full
+refund receives one category, never guessed item splits. Approved or already
+split refunds can receive safe memo-only links without changing their categories
+or approval. Returned orders no longer invalidate the entire fetched batch.
 
 All separately proven tax/fee/tip costs increase the default; discounts decrease
 it. Exception prices are proven pre-discount extended costs. For groceries $80,
@@ -196,8 +216,9 @@ are conservative reservations, not a guarantee of the provider's eventual bill.
 Validated decisions require complete correlations and distributions, finite
 probabilities and separate confidence, bounded distribution sum and agreement
 between choice and unique argmax. A bad batch returns no partial decisions.
-Abstentions remain uncategorized exceptions, never Groceries. Inference failure
-prevents category/split allocation; safe metadata-only links can still proceed.
+For purchases, abstentions remain uncategorized exceptions, never Groceries.
+Inference failure prevents purchase category/split allocation; safe metadata-only
+links can still proceed. Refunds use the explicitly configured default instead.
 Approved mappings take precedence; conflicting approved evidence vetoes inference.
 Dry runs never upload. Cache entries include provider/model/policy, scores and
 plan/product/title/shortlist/descriptions/acceptance/connection fingerprints.

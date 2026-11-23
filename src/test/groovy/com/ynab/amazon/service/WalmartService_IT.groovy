@@ -83,6 +83,103 @@ class WalmartService_IT extends Specification {
         ynab.getWalmartPlanCurrency() == 'USD'
     }
 
+    def 'refund memo uses ledger evidence without allocation or inference even after the purchase plan was frozen'() {
+        given:
+        def order=WalmartFixture.order()
+        def txs=WalmartFixture.transactions()
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        def matcher=new TransactionMatcher()
+        new TransactionProcessor(config).processWalmartMatches(matcher.findWalmartMatches(txs,[order]),ynab,false)
+        int purchaseWrites=writes.size()
+        order.complete=false
+        order.ineligibleReason='refund_or_unsupported_ledger'
+        order.charges << [key:'refund',date:'2026-11-23',payment:'CREDITCARD:VISA:1234',currency:'USD',cents:-1056L]
+        def refund=new YNABTransaction(id:'refund',date:'2026-11-24',amount:10560L,payee_name:'WALMART',payee_id:'payee',
+            account_id:'account',memo:'Human note',category_id:'h',approved:'true',cleared:'cleared',deleted:'false')
+        remote.refund=WalmartFixture.remote(refund)
+        Map baseline=new LinkedHashMap(remote.refund)
+        Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture'.toCharArray())
+        config.walmartCategorization=WalmartRemoteClassifier.defaults('jev')+[credentials_file:key.toString(),categories:[[id:'g'],[id:'h']]]
+        int calls=0
+        def classifier=new WalmartRemoteClassifier(config.walmartCategorization,{ a,b,c,d -> calls++; throw new AssertionError('Refund must not infer categories') })
+        def matches=matcher.findWalmartMatches(txs+[refund],[order])
+
+        when:
+        def result=new WalmartEnrichment(config).process(matches,ynab,false,classifier)
+
+        then:
+        calls==0
+        writes.size()==purchaseWrites+1
+        writes.last()==[id:'refund',change:[memo:'Human note | Walmart refund 2026-11-23 | Refund $10.56 | #123 | https://www.walmart.com/orders/details?orderId=123']]
+        remote.refund==baseline+[memo:writes.last().change.memo]
+        result.refund_matches==1
+        result.refund_memos_updated==1
+        result.preview*.reason.contains('refund_metadata_only')
+        result.preview*.reason.contains('applied_plan_drift')
+
+        when: 'a fresh fetch does not append the memo or write twice'
+        refund.memo=remote.refund.memo
+        def again=new WalmartEnrichment(config).process(matcher.findWalmartMatches([refund],[order]),ynab,false,classifier)
+
+        then:
+        calls==0
+        writes.size()==purchaseWrites+1
+        again.updated==0
+    }
+
+    @Unroll
+    def 'refund description drives #choice classification with the configured category as fallback'() {
+        given:
+        def source=json.readValue(new File('walmart-helper/testdata/source-evidence.json'),Map)
+        source.detail.data.order.groups_2101[0].items[1].returnId='returned-soap'
+        def order=WalmartEvidenceNormalizer.normalize(source)
+        def tx=new YNABTransaction(id:'refund',date:'2026-11-23',amount:5000L,payee_name:'WALMART',payee_id:'payee',
+            account_id:'account',memo:'User note',approved:'false',cleared:'cleared',deleted:'false')
+        remote.refund=WalmartFixture.remote(tx)
+        Map baseline=new LinkedHashMap(remote.refund)
+        Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture'.toCharArray())
+        config.walmartCategorization=WalmartRemoteClassifier.defaults('jev')+[credentials_file:key.toString(),categories:[[id:'g'],[id:'h']],
+            acceptance:[qualified:true,evidence_id:'mock-only',probability:0.8,confidence:0.8,margin:0.2]]
+        config.walmartCategorization.acceptance.qualified_for=new WalmartRemoteClassifier(config.walmartCategorization).qualificationFingerprint(
+            WalmartAllocation.categories(ynab.getWalmartCategories(),config.walmartCategorization.categories,'g'))
+        List descriptions=[]
+        def classifier=new WalmartRemoteClassifier(config.walmartCategorization,{ endpoint,secret,body,limits ->
+            Map request=json.readValue(body,Map)
+            descriptions.addAll(request.state.values()*.product*.title)
+            if (choice=='failed') return [status:401,body:'not logged']
+            Map probabilities=['Groceries':0.02,'Household':choice=='Household' ? 0.96 : 0.02,
+                (WalmartRemoteClassifier.ABSTAIN):choice=='Household' ? 0.02 : 0.96]
+            [status:200,body:json.writeValueAsString([model:request.model,answers:[item_0:[type:'choice',choice:choice,confidence:0.95,probabilities:probabilities]],usage:[input_tokens:100,output_tokens:0]])]
+        })
+        def matches=new TransactionMatcher().findWalmartMatches([tx],[order])
+
+        when:
+        def result=new WalmartEnrichment(config).process(matches,ynab,false,classifier)
+
+        then:
+        descriptions==['Returned items on order: Soap']
+        result.updated==1
+        writes.size()==1
+        writes[0].change.keySet()==['memo','approved','category_id'] as Set
+        remote.refund==baseline+[memo:matches[0].proposedMemo,approved:false,category_id:expected]
+        remote.refund.memo.contains('Refund $5.00 | Returned items on order: Soap')
+        remote.refund.subtransactions.empty
+
+        when: 'restart reuses the decision and does not write again'
+        tx.memo=remote.refund.memo
+        tx.category_id=remote.refund.category_id
+        new WalmartEnrichment(config).process(new TransactionMatcher().findWalmartMatches([tx],[order]),ynab,false,classifier)
+
+        then:
+        writes.size()==1
+
+        where:
+        choice                          | expected
+        'Household'                     | 'h'
+        WalmartRemoteClassifier.ABSTAIN | 'g'
+        'failed'                        | 'g'
+    }
+
     @Unroll
     def '#provider decisions allocate exact amounts, persist isolated cache and block frozen policy drift'() {
         given:

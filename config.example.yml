@@ -36,6 +36,7 @@ amazon:
 # Walmart Configuration (optional)
 walmart:
   enabled: false  # Optional native Go source; no legacy browser fallback
+  currency: "USD"  # Default when source evidence omits currency; explicit conflicts still block matching
   # helper_executable: "/absolute/path/walmart-helper"  # Installed Walmart distribution discovers its bundled helper
   # session_file: "~/.config/ynab-updater/walmart-session.json"
   timeout_seconds: 300

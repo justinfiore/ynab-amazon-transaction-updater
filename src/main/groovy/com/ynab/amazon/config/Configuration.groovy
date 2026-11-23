@@ -38,6 +38,7 @@ class Configuration {
     String lastValidationError
     
     boolean walmartEnabled = false
+    String walmartCurrency = 'USD'
     String walmartHelperExecutable
     String walmartSessionFile
     int walmartTimeoutSeconds = 300
@@ -106,6 +107,7 @@ class Configuration {
             
             // Walmart Configuration
             this.walmartEnabled = (config.walmart?.enabled != null) ? config.walmart.enabled : this.walmartEnabled
+            this.walmartCurrency = config.walmart?.currency != null ? config.walmart.currency : this.walmartCurrency
             this.walmartHelperExecutable = resolvePath(config.walmart?.helper_executable) ?: bundledWalmartHelper()
             this.walmartSessionFile = resolvePath(config.walmart?.session_file)
             this.walmartTimeoutSeconds = config.walmart?.timeout_seconds != null ? config.walmart.timeout_seconds : this.walmartTimeoutSeconds
@@ -177,6 +179,8 @@ class Configuration {
         }
         
         if (walmartEnabled) {
+            try { java.util.Currency.getInstance(walmartCurrency) }
+            catch (Exception ignored) { return invalidAmazon('walmart.currency must be an uppercase ISO 4217 currency code') }
             if (!walmartHelperExecutable || !new File(walmartHelperExecutable).canExecute()) return invalidAmazon('Walmart helper unavailable: install a matching -Pwalmart distribution or configure walmart.helper_executable')
             if (!walmartSessionFile) return invalidAmazon('walmart.session_file is required; import a protected browser capture first')
             if (walmartTimeoutSeconds <= 0 || walmartMaxOutputBytes <= 0 || walmartMaxPages < 1 || walmartMaxPages > 20) return invalidAmazon('Walmart process bounds must be positive; max_pages must be 1–20')

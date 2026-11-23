@@ -16,6 +16,7 @@ class WalmartAllocation {
     static Map plan(WalmartOrder order, List<TransactionMatch> matches, String defaultId, Map decisions, Set eligibleAccounts) {
         def skip = { String why -> [eligible: false, reason: why, operations: []] }
         if (!order.complete || order.currency != 'USD' || order.totalAmount <= 0) return skip(order.ineligibleReason ?: 'incomplete_order')
+        if (order.charges.any { it.cents<=0 }) return skip('refund_or_unsupported_ledger')
         if (!order.charges || matches.size() != order.charges.size() || matches*.walmartCharge*.key.toSet() != order.charges*.key.toSet() ||
             matches*.ynabTransaction*.id.toSet().size() != matches.size()) return skip('missing_or_ambiguous_payment')
         if (matches.any { !it.proposedMemo || !eligible(it.ynabTransaction, eligibleAccounts) }) return skip('ineligible_parent')
@@ -52,8 +53,15 @@ class WalmartAllocation {
         [eligible: true, operations: operations, decisions: decisions]
     }
 
-    static boolean eligible(YNABTransaction tx, Set accounts) {
-        tx.getApproved() == 'false' && tx.getDeleted() == 'false' && tx.amount != null && tx.amount < 0 && tx.amount % 10 == 0 &&
+    static Map refundPlan(TransactionMatch match, String defaultId, Map decisions, Set accounts) {
+        if (!match.proposedMemo || !eligible(match.ynabTransaction, accounts, true)) return [eligible:false, reason:'refund_metadata_only']
+        Map refund=match.walmartCharge
+        [eligible:true, reason:'refund_category', operations:[[transaction_id:match.ynabTransaction.id, charge_key:refund.key,
+            memo:match.proposedMemo, lines:[[cents:-((long)refund.cents), category_id:decisions[refund.key]?.category_id ?: defaultId]]]]]
+    }
+
+    static boolean eligible(YNABTransaction tx, Set accounts, boolean refund = false) {
+        tx.getApproved() == 'false' && tx.getDeleted() == 'false' && tx.amount != null && (refund ? tx.amount > 0 : tx.amount < 0) && tx.amount % 10 == 0 &&
             !tx.isTransfer() && tx.getCleared() in ['cleared', 'uncleared'] && !tx.subtransactions && accounts.contains(tx.account_id)
     }
 
