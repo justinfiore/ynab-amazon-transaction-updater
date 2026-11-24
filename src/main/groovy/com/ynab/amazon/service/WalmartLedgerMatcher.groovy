@@ -7,26 +7,23 @@ import java.time.temporal.ChronoUnit
 /** Global candidate components, with identical occurrences treated as a multiset. */
 class WalmartLedgerMatcher {
     List<TransactionMatch> match(List<YNABTransaction> transactions, List<WalmartOrder> orders, Map paymentAccounts = [:]) {
+        transactions = transactions.findAll { tx ->
+            tx.id && !tx.isDeleted() && !tx.isTransfer() && tx.amount != null && tx.amount != 0 && tx.amount % 10 == 0 &&
+                (tx.payee_name?.toUpperCase(Locale.ROOT) ==~ /.*(WALMART|WAL-MART).*/) && !tx.payee_name.toUpperCase(Locale.ROOT).contains('TRANSFER')
+        }
         def candidates = [:]
         def chargeGroups = [:]
         orders.each { order ->
-            order.charges.each { charge ->
+            settledCharges(order, transactions, paymentAccounts).each { charge ->
                 if (charge.currency != 'USD') return
-                String group = "${order.orderId}|${charge.payment}|${charge.date}|${charge.cents}"
+                String group = "${order.orderId}|${charge.payment}|${charge.date}|${charge.cents}|${charge.components ? charge.components*.date.join(',') : ''}"
                 if (!chargeGroups[group]) chargeGroups[group] = []
                 chargeGroups[group] << [order: order, charge: charge]
             }
         }
         transactions.each { tx ->
-            if (!tx.id || tx.isDeleted() || tx.isTransfer() || tx.amount == null || tx.amount == 0 || tx.amount % 10 != 0 ||
-                !(tx.payee_name?.toUpperCase(Locale.ROOT) ==~ /.*(WALMART|WAL-MART).*/) || tx.payee_name.toUpperCase(Locale.ROOT).contains('TRANSFER')) return
             def groups = chargeGroups.findAll { group, entries ->
-                def c = entries[0].charge
-                try {
-                    tx.amount == -((long)c.cents) * 10L &&
-                        Math.abs(ChronoUnit.DAYS.between(LocalDate.parse(tx.date), LocalDate.parse(c.date))) <= 14 &&
-                        (!paymentAccounts[c.payment] || paymentAccounts[c.payment] == tx.account_id)
-                } catch (Exception ignored) { false }
+                compatible(tx, entries[0].charge, paymentAccounts)
             }.keySet() as Set
             if (groups) candidates[tx.id] = [tx: tx, groups: groups]
         }
@@ -59,6 +56,38 @@ class WalmartLedgerMatcher {
             }
         }
         matches
+    }
+
+    private static boolean compatible(YNABTransaction tx, Map charge, Map paymentAccounts) {
+        try {
+            charge.currency == 'USD' && tx.amount == -((long)charge.cents) * 10L &&
+                (charge.components ?: [charge]).every { c ->
+                    Math.abs(ChronoUnit.DAYS.between(LocalDate.parse(tx.date), LocalDate.parse(c.date))) <= 14 &&
+                        (!paymentAccounts[c.payment] || paymentAccounts[c.payment] == tx.account_id)
+                }
+        } catch (Exception ignored) { false }
+    }
+
+    private static List<Map> settledCharges(WalmartOrder order, List<YNABTransaction> transactions, Map paymentAccounts) {
+        List<Map> pairs = []
+        order.charges.findAll { it.additionalTip }.each { tip ->
+            order.charges.findAll { !it.additionalTip && it.cents > 0 && it.currency == tip.currency && it.payment == tip.payment }.each { base ->
+                long days = ChronoUnit.DAYS.between(LocalDate.parse(base.date), LocalDate.parse(tip.date))
+                if (days < 0 || days > 14) return
+                Map combined = base + [key: base.key + '+' + tip.key, date: tip.date,
+                    cents: Math.addExact((long)base.cents, (long)tip.cents), components: [base, tip]]
+                // Never replace plausible separately posted charges with an inferred combination.
+                if (!transactions.any { compatible(it, base, paymentAccounts) || compatible(it, tip, paymentAccounts) } &&
+                    transactions.any { compatible(it, combined, paymentAccounts) }) pairs << combined
+            }
+        }
+        // A ledger occurrence must have exactly one possible partner; the global
+        // matcher below still rejects competing orders and bank transactions.
+        List<Map> unique = pairs.findAll { pair ->
+            pair.components.every { part -> pairs.count { it.components*.key.contains(part.key) } == 1 }
+        }
+        Set used = unique.collectMany { it.components*.key } as Set
+        order.charges.findAll { !used.contains(it.key) } + unique
     }
 
     private static Map maximum(Map candidates, Map groups, String excludedId = null, String excludedGroup = null) {

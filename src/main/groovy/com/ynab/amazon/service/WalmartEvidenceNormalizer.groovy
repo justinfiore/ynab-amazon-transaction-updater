@@ -91,7 +91,7 @@ class WalmartEvidenceNormalizer {
                     line.rowLines.each { row ->
                         boolean refund=row.lineType=='ORDER_ADJUSTMENT_REFUND'
                         if (refund) incomplete('refund_or_unsupported_ledger')
-                        else if (row.lineType!='ORDER_CHARGE') { incomplete('refund_or_unsupported_ledger'); return }
+                        else if (!(row.lineType in ['ORDER_CHARGE','ADDITIONAL_DRIVER_TIP'])) { incomplete('refund_or_unsupported_ledger'); return }
                         if (!(row.displayValues instanceof List) || row.displayValues.size()!=1 ||
                             !(row.displayValues[0] ==~ /-?\$(?:0|[1-9]\d*|[1-9]\d{0,2}(?:,\d{3})+)\.\d{2}/)) invalid()
                         long cents=money(new BigDecimal(row.displayValues[0].replace('$','').replace(',','')))
@@ -99,6 +99,7 @@ class WalmartEvidenceNormalizer {
                         String base="${raw.id}|${identity}|${charged}|${cents}"
                         ordinals[base]++
                         order.charges << [key:"${base}|${ordinals[base]}".toString(),date:charged.toString(),currency:currency,payment:identity,cents:cents]
+                        if (row.lineType=='ADDITIONAL_DRIVER_TIP') order.charges.last().additionalTip=true
                     }
                 }
             }

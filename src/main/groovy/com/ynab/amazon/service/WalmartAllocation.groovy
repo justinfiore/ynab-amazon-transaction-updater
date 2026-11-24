@@ -17,7 +17,8 @@ class WalmartAllocation {
         def skip = { String why -> [eligible: false, reason: why, operations: []] }
         if (!order.complete || order.currency != 'USD' || order.totalAmount <= 0) return skip(order.ineligibleReason ?: 'incomplete_order')
         if (order.charges.any { it.cents<=0 }) return skip('refund_or_unsupported_ledger')
-        if (!order.charges || matches.size() != order.charges.size() || matches*.walmartCharge*.key.toSet() != order.charges*.key.toSet() ||
+        def covered = matches.collectMany { it.walmartCharge.components ?: [it.walmartCharge] }
+        if (!order.charges || covered.size() != order.charges.size() || covered*.key.toSet() != order.charges*.key.toSet() ||
             matches*.ynabTransaction*.id.toSet().size() != matches.size()) return skip('missing_or_ambiguous_payment')
         if (matches.any { !it.proposedMemo || !eligible(it.ynabTransaction, eligibleAccounts, false, allowApprovedUncategorized) }) return skip('ineligible_parent')
         long total = order.totalAmount.movePointRight(2).longValueExact()
