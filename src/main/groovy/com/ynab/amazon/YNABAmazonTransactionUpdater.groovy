@@ -17,6 +17,24 @@ class YNABAmazonTransactionUpdater {
     
     static void main(String[] args) {
         try {
+            if (args && args[0] == '--amazon-payment-accounts') {
+                File file = new File(args.length > 1 ? args[1] : 'config.yml')
+                def setupConfig = new Configuration()
+                setupConfig.loadConfiguration(file)
+                def ynab = new YNABService(setupConfig)
+                try { com.ynab.amazon.service.CategoryOnboarding.selectAmazonPaymentAccount(file.toPath(),ynab,
+                    new BufferedReader(new InputStreamReader(System.in)),new PrintWriter(System.out,true)) }
+                finally { ynab.close() }
+                return
+            }
+            if (args && args[0] in ['--amazon-setup','--amazon-categories']) {
+                com.ynab.amazon.service.CategoryOnboarding.run(new File(args.length > 1 ? args[1] : 'config.yml'),args[0] == '--amazon-categories','amazon')
+                return
+            }
+            if (args && args[0] == '--amazon-disconnect') {
+                com.ynab.amazon.service.CategoryOnboarding.disconnect(new File(args.length > 1 ? args[1] : 'config.yml'),'amazon')
+                return
+            }
             if (args && args[0] == '--walmart-disconnect') {
                 com.ynab.amazon.service.WalmartOnboarding.disconnect(new File(args.length>1 ? args[1] : 'config.yml'))
                 return
@@ -99,7 +117,9 @@ class YNABAmazonTransactionUpdater {
         logger.info("Found ${ynabTransactions.size()} YNAB transactions")
         
         logger.info("Fetching Amazon orders...")
-        def amazonOrders = amazonService.getOrders() ?: []
+        def amazonOrders = []
+        try { amazonOrders = amazonService.getOrders() ?: [] }
+        catch (Exception ignored) { logger.warn('Amazon retrieval failed; continuing independent Walmart processing') }
         logger.info("Found ${amazonOrders.size()} Amazon orders")
         
         // Fetch Walmart orders if enabled
@@ -126,7 +146,10 @@ class YNABAmazonTransactionUpdater {
         def amazonMatches = matcher.findMatches(unprocessedTransactions, amazonOrders) ?: []
         logger.info("Found ${amazonMatches.size()} potential Amazon matches")
         
-        def amazonStats = processor.updateTransactions(amazonMatches, ynabService, config.isDryRun()) ?: [
+        def amazonStats
+        try { amazonStats = processor.processAmazonTransactions(ynabTransactions,amazonOrders,ynabService,config.isDryRun()) }
+        catch (Exception ignored) { logger.warn('Amazon enrichment stopped safely; continuing independent Walmart processing') }
+        amazonStats = amazonStats ?: [
             updated: 0,
             high_confidence: 0,
             medium_confidence: 0,
@@ -143,6 +166,7 @@ class YNABAmazonTransactionUpdater {
             def pendingAmazonTransactions = unprocessedTransactions.findAll { transaction ->
                 !transaction.isTransfer() && !transaction.isDeleted() && transaction.amount != null && transaction.amount < 0 &&
                     matcher.isPotentialAmazonTransaction(transaction) &&
+                    !(transaction.id in (amazonStats.completed ?: [])) &&
                     !(config.isDryRun() && amazonMatches.any { it.isHighConfidence() && it.ynabTransaction.id == transaction.id })
             }
             processor.addAmazonLoginNotices(pendingAmazonTransactions, ynabService, config.isDryRun())

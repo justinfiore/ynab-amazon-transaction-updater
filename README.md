@@ -15,6 +15,7 @@ A Groovy application that updates YNAB (You Need A Budget) transactions with ret
    - Optional Python order-history fetcher using `amazon-orders==6.0.0`
   - Special handling for Subscribe & Save orders with "S&S:" prefix
   - Automatic refund detection and processing with positive amounts
+  - Optional no-default item categorization, exact purchase/refund splits and guarded uncategorized fallback; see [Amazon setup and safety](AMAZON.md)
 - **Walmart (optional):** Exact final-charge matching, metadata-only direct links and explicit exception-first allocation using existing categories. See [setup, safety and qualification limits](WALMART.md); no model profile is qualified yet.
 - Intelligently matches YNAB transactions with retailer orders
 - Updates transaction memos with product summaries

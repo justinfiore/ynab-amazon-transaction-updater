@@ -15,6 +15,11 @@ class AmazonOrder {
     String status
     String shippingAddress
     Boolean isReturn = false
+    // Additive evidence, never populated from display-default getters.
+    Map financialEvidence = [:]
+    List<Map> paymentEvents = []
+    Map refundEvidence = [:]
+    String sourceOccurrence
     
     AmazonOrder() {
         this.items = []
@@ -72,4 +77,4 @@ class AmazonOrderItem {
     String toString() {
         return "AmazonOrderItem{title='${title}', price=${price}, quantity=${quantity}}"
     }
-} 
+}

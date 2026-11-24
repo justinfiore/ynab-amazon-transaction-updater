@@ -64,7 +64,7 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         mockAmazonService.getOrders() >> amazonOrders
         mockProcessor.getUnprocessedTransactions(_ as List) >> unprocessedTransactions
         mockMatcher.findMatches(_ as List, _ as List) >> matches
-        mockProcessor.updateTransactions(_ as List, mockYnabService, false) >> stats
+        mockProcessor.processAmazonTransactions(_ as List, _ as List, mockYnabService, false) >> stats
         
         when: "executeWorkflow is called"
         def method = YNABAmazonTransactionUpdater.class.getDeclaredMethod(
@@ -84,7 +84,7 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         1 * mockAmazonService.getOrders()
         1 * mockProcessor.getUnprocessedTransactions(_ as List)
         1 * mockMatcher.findMatches(_ as List, _ as List)
-        1 * mockProcessor.updateTransactions(_ as List, mockYnabService, false)
+        1 * mockProcessor.processAmazonTransactions(_ as List, _ as List, mockYnabService, false)
     }
     
     def "executeWorkflow should use dry run mode when configured"() {
@@ -124,7 +124,7 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         method.invoke(null, mockYnabService, mockAmazonService, mockWalmartService, mockMatcher, mockProcessor, dryConfig)
         
         then: "updateTransactions should be called with dry run mode"
-        1 * mockProcessor.updateTransactions(_ as List, mockYnabService, true)
+        1 * mockProcessor.processAmazonTransactions(_ as List, _ as List, mockYnabService, true)
     }
     
     def "main should exit when configuration is invalid"() {
@@ -196,6 +196,12 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         Map<String, List<String>> writes = [:].withDefault { [] }
         def ynab = Stub(YNABService) {
             getTransactions() >> transactions
+            getBudgetAccounts() >> (['account'] as Set)
+            getTransaction(_) >> { String id -> com.ynab.amazon.service.AmazonEnrichment.snapshot(transactions.find { it.id == id }) }
+            putTransaction(_, _) >> { String id, Map changes ->
+                writes[id] << changes.memo
+                transactions.find { it.id == id }.memo = changes.memo
+            }
             updateTransactionMemo(_, _) >> { String id, String memo -> writes[id] << memo; true }
         }
 
@@ -257,6 +263,9 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         List<String> writes = []
         def ynab = Stub(YNABService) {
             getTransactions() >> [pending]
+            getBudgetAccounts() >> (['account'] as Set)
+            getTransaction(_) >> { String id -> com.ynab.amazon.service.AmazonEnrichment.snapshot(pending) }
+            putTransaction(_, _) >> { String id, Map changes -> writes << changes.memo; pending.memo = changes.memo }
             updateTransactionMemo(_, _) >> { String id, String memo -> writes << memo; true }
         }
 
@@ -272,13 +281,14 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
     private Configuration authConfig() {
         File processed = new File(authTempDir, 'processed.json')
         processed.text = '{"processed_transaction_ids":["tracked"]}'
-        new Configuration(processedTransactionsFile: processed.absolutePath,
+        new Configuration(processedTransactionsFile: processed.absolutePath,ynabBudgetId:'plan',amazonJournalFile:new File(authTempDir,'amazon.json').path,
             amazonPythonExecutable: 'python', amazonPythonBridgeScript: 'bridge.py', amazonPythonConfigPath: 'upstream.yml',
             amazonPythonTimeoutSeconds: 2, amazonPythonMaxOutputBytes: 4096, walmartEnabled: false)
     }
 
     private static YNABTransaction authTransaction(String id, String memo) {
-        new YNABTransaction(id: id, memo: memo, date: '2026-11-20', payee_name: 'AMAZON.COM', amount: -10000)
+        new YNABTransaction(id: id, memo: memo, date: '2026-11-20', payee_name: 'AMAZON.COM', amount: -10000,
+            account_id:'account',approved:'false',deleted:'false',cleared:'cleared')
     }
 
     private static com.ynab.amazon.service.ProcessResult bridgeResult(int code) {

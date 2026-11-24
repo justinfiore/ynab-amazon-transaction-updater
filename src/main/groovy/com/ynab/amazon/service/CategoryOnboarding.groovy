@@ -17,7 +17,7 @@ class CategoryOnboarding {
             String selected = input.readLine()
             String provider = selected == '1' ? 'openai' : selected == '2' ? 'jev' : null
             if (!provider) return
-            output.println("${provider}: ${WalmartRemoteClassifier.ROUTES[provider]}")
+            output.println("${provider}: ${RemoteItemClassifier.ROUTES[provider]}")
             output.println("${retailer}: Only product titles and shortlisted labels/descriptions leave this machine. Titles can reveal sensitive purchases. Paid API billing applies; no provider fallback.")
             output.println(provider == 'jev' ? 'TypeSafe: no input training; U.S. processing; retention as necessary, NOT default zero retention. https://typesafe.ai/legal/privacy-policy https://typesafe.ai/legal/data-processing' :
                 'OpenAI API policy (not a zero-retention guarantee): https://platform.openai.com/docs/guides/your-data')
@@ -42,7 +42,7 @@ class CategoryOnboarding {
         byte[] original=Files.readAllBytes(file)
         Map config = new Yaml().load(new String(original,'UTF-8')) as Map
         Map walmart = config[retailer] ?: [:]
-        List<Map> catalog = ynab.getWalmartCategories().findAll { !it.hidden && !it.deleted && !it.internal && !it.group_internal && !it.group_hidden && !it.group_deleted }
+        List<Map> catalog = (retailer == 'walmart' ? ynab.getWalmartCategories() : ynab.getCategoryCatalog()).findAll { !it.hidden && !it.deleted && !it.internal && !it.group_internal && !it.group_hidden && !it.group_deleted }
             .sort { a,b -> (a.group_name <=> b.group_name) ?: (a.name <=> b.name) ?: (a.id <=> b.id) }
         if (!catalog) { output.println('No eligible categories; configuration unchanged.'); return false }
         catalog.eachWithIndex { category, index -> output.println("${index+1}. ${display(category.group_name)} / ${display(category.name)}") }
@@ -70,14 +70,13 @@ class CategoryOnboarding {
         catch (Exception ignored) { output.println('Invalid default; configuration unchanged.'); return false }
         defaultId=selected[chosen-1].id
         }
-        if (pending.provider) output.println("Save ${pending.provider} / ${WalmartRemoteClassifier.ROUTES[pending.provider]}, key under .walmart-credentials beside this config (contents hidden).")
+        if (pending.provider) output.println("Save ${pending.provider} / ${RemoteItemClassifier.ROUTES[pending.provider]}, key under .${retailer}-credentials beside this config (contents hidden).")
         selected.each { c -> output.println("Selected ${display(catalog.find { it.id==c.id }.name)} [${c.id}]${c.id==defaultId ? ' DEFAULT' : ''}") }
         output.println('Save protected settings? Existing enablement, enrichment mode and unrelated settings remain unchanged. Type yes:')
         if (input.readLine()!='yes') return false
         // Revalidate stable IDs, not positions, after confirmation.
-        if (retailer == 'walmart') WalmartAllocation.categories(ynab.getWalmartCategories(),selected,defaultId)
-        else ItemClassificationService.categories(ynab.getCategoryCatalog(),selected)
-        new WalmartJournal(file.toString()+'.setup-state').locked(false) { ignored, save ->
+        ItemClassificationService.categories(retailer == 'walmart' ? ynab.getWalmartCategories() : ynab.getCategoryCatalog(),selected)
+        new ProtectedJournal(file.toString()+'.setup-state').locked(false) { ignored, save ->
             if (Files.isSymbolicLink(file) || !Arrays.equals(original,Files.readAllBytes(file))) throw new IllegalStateException('Configuration changed during setup; retry')
             Path staged = null
             boolean activated = false
@@ -91,7 +90,7 @@ class CategoryOnboarding {
                 walmart.categorization = categorization + [categories:selected]
                 if (retailer == 'walmart') walmart.default_category_id=defaultId
                 config[retailer]=walmart
-                WalmartJournal.atomic(file,new Yaml().dump(config).getBytes('UTF-8'))
+                ProtectedJournal.atomic(file,new Yaml().dump(config).getBytes('UTF-8'))
                 activated = true
             } finally { if (staged && !activated) Files.deleteIfExists(staged) }
         }
@@ -114,17 +113,47 @@ class CategoryOnboarding {
         Map config=new Yaml().load(new String(before,'UTF-8')) as Map
         Map selected=config[retailer]?.categorization ?: [:]
         if (!selected.credentials_file || !selected.provider) { println 'No selected provider connection.'; return }
-        WalmartProviderKeys.read(selected.credentials_file.toString(),selected.provider.toString())
+        ProviderKeys.read(selected.credentials_file.toString(),selected.provider.toString())
         println "Disconnect local ${selected.provider} key? This does NOT revoke the key remotely; revoke it through the provider console. Type yes:"
         if (new BufferedReader(new InputStreamReader(System.in)).readLine()!='yes') return
-        new WalmartJournal(file.toString()+'.setup-state').locked(false) { ignored,save ->
+        new ProtectedJournal(file.toString()+'.setup-state').locked(false) { ignored,save ->
             if (Files.isSymbolicLink(file) || !Arrays.equals(before,Files.readAllBytes(file))) throw new IllegalStateException('Configuration changed; retry')
             config[retailer].categorization=[categories:selected.categories ?: []]
-            WalmartJournal.atomic(file,new Yaml().dump(config).getBytes('UTF-8'))
-            boolean referenced = ['walmart','amazon'].any { config[it]?.categorization?.credentials_file == selected.credentials_file }
+            ProtectedJournal.atomic(file,new Yaml().dump(config).getBytes('UTF-8'))
+            boolean referenced = ['walmart','amazon'].any {
+                def reference = config[it]?.categorization?.credentials_file
+                reference && Paths.get(reference.toString()).toAbsolutePath().normalize() == Paths.get(selected.credentials_file.toString()).toAbsolutePath().normalize()
+            }
             if (!referenced) ProviderKeys.disconnect(selected.credentials_file.toString(),selected.provider.toString())
         }
-        println 'Local key removed. Other provider records are unchanged. Revoke remote access in the provider console.'
+        println 'Retailer connection removed; keys referenced by the other retailer were retained. Revoke remote access in the provider console.'
+    }
+
+    static boolean selectAmazonPaymentAccount(Path file, YNABService ynab, BufferedReader input, PrintWriter output) {
+        file = file.toAbsolutePath().normalize()
+        if (Files.isSymbolicLink(file) || !Files.isRegularFile(file) || Files.size(file) > 1048576) throw new IllegalStateException('Unsafe setup configuration')
+        byte[] original = Files.readAllBytes(file)
+        Map config = new Yaml().load(new String(original,'UTF-8')) as Map
+        List accounts = ynab.getBudgetAccounts().sort()
+        accounts.eachWithIndex { id,i -> output.println("${i+1}. ${id}") }
+        output.println('Enter the confirmed Amazon payment identity, e.g. python:visa:1234; q cancels. Do not infer identity from an account name:')
+        String identity = input.readLine()
+        if (!(identity ==~ /python:[a-z0-9 -]+:[0-9]{4}/)) return false
+        output.println('Select one eligible plan account number for that instrument:')
+        List selected
+        try { selected = selection(input.readLine(),accounts.size()) }
+        catch (Exception ignored) { return false }
+        if (selected.size() != 1) return false
+        String account = accounts[selected[0]-1]
+        output.println("Confirm ${identity} belongs to plan account ${account}? Type yes. This does not enable category writes:")
+        if (input.readLine() != 'yes') return false
+        if (!ynab.getBudgetAccounts().contains(account)) throw new IllegalStateException('Account changed during setup')
+        new ProtectedJournal(file.toString()+'.setup-state').locked(false) { ignored,save ->
+            if (Files.isSymbolicLink(file) || !Arrays.equals(original,Files.readAllBytes(file))) throw new IllegalStateException('Configuration changed during setup')
+            config.amazon = (config.amazon ?: [:]) + [payment_accounts:(config.amazon?.payment_accounts ?: [:]) + [(identity):account]]
+            ProtectedJournal.atomic(file,new Yaml().dump(config).getBytes('UTF-8'))
+        }
+        true
     }
     private static String display(Object value) { value?.toString()?.replaceAll(/[\p{Cntrl}]/,' ') ?: '' }
 }

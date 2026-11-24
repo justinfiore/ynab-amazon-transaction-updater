@@ -87,7 +87,10 @@ class BridgeTests(unittest.TestCase):
             def details(parsed, **kwargs):
                 self.details.append(parsed.order_number)
                 return parsed
-            return types.SimpleNamespace(get_orders=authenticated_history, _build_order=details)
+            def old_details(number):
+                self.details.append(number)
+                return Order(number, dt.date.today() - dt.timedelta(days=500), 65)
+            return types.SimpleNamespace(get_orders=authenticated_history, _build_order=details, get_order=old_details)
 
         orders.AmazonOrders = order_client
         output, errors = io.StringIO(), io.StringIO()
@@ -145,7 +148,9 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual("", errors)
         self.assertEqual("Visa", record["payment_method"])
         self.assertEqual("0012", record["payment_method_last_4"])
-        self.assertEqual([{"title": "First", "asin": "ASIN1", "price": 1.25, "quantity": 2}, {"title": "Second", "asin": "ASIN2", "price": 40.92, "quantity": 1}], record["items"])
+        self.assertEqual([{"title": "First", "asin": "ASIN1", "price": 1.25, "quantity": 2}, {"title": "Second", "asin": "ASIN2", "price": 40.92, "quantity": None}], record["items"])
+        self.assertIsNone(record["financial_evidence"]["items"][1]["cents"])
+        self.assertFalse(record["financial_evidence"]["complete"])
         self.assertNotIn("recipient", json.dumps(record))
         self.assertNotIn("shipping_address", json.dumps(record))
 
@@ -437,6 +442,94 @@ class BridgeTests(unittest.TestCase):
                     self.assertEqual((1, ""), (code, output.getvalue()))
                     self.assertFalse(os.path.exists(marker))
                     network.assert_not_called()
+
+    @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install the reviewed requirements lock")
+    def test_real_detail_layout_reconciles_adjustments_and_funding_but_rejects_unknowns(self):
+        from amazonorders.conf import AmazonOrdersConfig
+        from amazonorders.entity.order import Order as RealOrder
+        from bs4 import BeautifulSoup
+
+        config = AmazonOrdersConfig(data={"domain": "amazon.com"})
+
+        def detail(extra="", tax="5.00", quantity="1", first_price="$20.00"):
+            totals = [("Item(s) Subtotal", "$60.00"), ("Total before tax", "$60.00"),
+                      ("Estimated tax", "$" + tax), ("Grand Total", "$65.00")]
+            html = '<div id="orderDetails"><div class="displayAddressDiv"><li class="displayAddressFullName">Fixture</li></div><div data-component="purchasedItems">'
+            for title, asin, price, qty in [("Cable", "B000000001", first_price, quantity), ("Pet food", "B000000002", "$40.00", "1")]:
+                html += f'''<div class="a-fixed-left-grid"><div data-component="itemTitle"><a href="/dp/{asin}">{title}</a></div>
+                    <span class="od-item-view-qty">{qty}</span><div data-component="unitPrice"><span class="a-text-price"><span>{price}</span></span></div></div>'''
+            html += '</div><div data-component="orderSubtotals">'
+            html += ''.join(f'<div class="a-row"><span>{label}:</span><div class="a-span-last">{amount}</div></div>' for label, amount in totals)
+            html += extra + '</div></div>'
+            return RealOrder(BeautifulSoup(html, "html.parser"), config, full_details=True, order_number="113-8849250-2919462")
+
+        order = detail()
+        evidence = bridge.financial_evidence(order)
+        self.assertTrue(evidence["complete"], evidence)
+        self.assertEqual([2000, 4000], [i["cents"] for i in evidence["items"]])
+        self.assertEqual([{"id": "estimated_tax", "kind": "tax", "cents": 500}], evidence["adjustments"])
+        self.assertEqual((6500, 0), (evidence["full_total_cents"], evidence["gift_cents"]))
+        gift = detail('<div class="a-row"><span>Gift Card:</span><div class="a-span-last">-$15.00</div></div>')
+        self.assertEqual(1500, bridge.financial_evidence(gift)["gift_cents"])
+        self.assertTrue(bridge.financial_evidence(gift)["complete"])
+        for invalid in [detail(tax="unknown"), detail(quantity=""), detail(first_price="EUR20.00"),
+                        detail('<div class="a-row"><span>New tax service:</span><div class="a-span-last">$0.00</div></div>')]:
+            self.assertFalse(bridge.financial_evidence(invalid)["complete"])
+
+    @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install the reviewed requirements lock")
+    def test_real_payment_parser_preserves_pages_and_fails_closed_before_flattening(self):
+        from amazonorders.conf import AmazonOrdersConfig
+        from bs4 import BeautifulSoup
+        config = AmazonOrdersConfig(data={"domain": "amazon.com"})
+        today = dt.date.today()
+
+        def row(amount="-$65.00", orders=None):
+            return {"formattedDate": today.strftime("%B %d, %Y"), "formattedAmount": amount,
+                    "orderData": orders if orders is not None else [{"orderDisplayString": "Order #113-8849250-2919462"}],
+                    "paymentMethodDisplayStringData": {"paymentMethodName": "Visa", "paymentMethodNumber": {"lastDigits": "1234"}}}
+
+        def page(records, more=False, key=None):
+            state = {"visibleTransactionResponse": {"transactionList": records}, "hasMore": more, "lastEvaluatedPageKey": key}
+            payload = {"props": {"pageProps": {"state": {"transactionResponseState": state}, "token": "fixture", "request": {"locale": "en_US"}}}}
+            return types.SimpleNamespace(parsed=BeautifulSoup('<script id="__NEXT_DATA__">' + json.dumps(payload) + '</script>', "html.parser"))
+
+        session = types.SimpleNamespace(config=config, check_response=lambda *args, **kwargs: None)
+        calls = []
+        def post(url, **kwargs):
+            calls.append((url, kwargs))
+            if "json" in kwargs:
+                return types.SimpleNamespace(response=types.SimpleNamespace(json=lambda: {"displayResponse": {"transactionsList": [row("$10.00")]}}))
+            return page([row()], True, "cursor-1")
+        session.post = post
+        events = bridge.payment_history(session, 30, "113-8849250-2919462")
+        self.assertEqual([-6500, 1000], [e["signed_cents"] for e in events])
+        self.assertTrue(all(e["complete"] for e in events), events)
+        self.assertEqual("python:visa:1234", events[0]["payment_identity"])
+        self.assertIn("transactionTag=113-8849250-2919462", calls[0][0])
+        self.assertEqual("cursor-1", calls[1][1]["json"]["exclusiveStartKey"])
+        for records in [[row(), row()], [row(orders=[{"orderDisplayString": "Order #113-8849250-2919462"}, {"orderDisplayString": "Order #114-1111111-2222222"}])], [row("-$65.00 CAD")]]:
+            session.post = lambda *args, **kwargs: page(records)
+            self.assertTrue(all(not e["complete"] for e in bridge.payment_history(session, 30)))
+        session.post = lambda *args, **kwargs: page([row()], True, None)
+        with self.assertRaises(ValueError):
+            bridge.payment_history(session, 30)
+        session.post = lambda *args, **kwargs: types.SimpleNamespace(response=types.SimpleNamespace(json=lambda:
+            {"displayResponse": {"transactionsList": [row()], "lastEvaluatedKey": "repeated"}})) if "json" in kwargs else page([row()], True, "repeated")
+        with self.assertRaises(ValueError):
+            bridge.payment_history(session, 30)
+
+    def test_recent_credit_fetches_old_original_without_purchase_lookback_or_guessed_refund_items(self):
+        event = {"key": "credit", "order_id": "113-8849250-2919462", "signed_cents": 6500,
+                 "date": dt.date.today().isoformat(), "complete": True, "payment_identity": "python:visa:1234", "currency": "USD"}
+        with patch.object(bridge, "payment_history", return_value=[event]) as payments:
+            code, output, errors, _ = self.run_bridge(arguments=["--transaction-evidence"])
+        self.assertEqual((0, ""), (code, errors))
+        self.assertEqual([event["order_id"]], self.details)
+        record = json.loads(output)["orders"][0]
+        self.assertEqual((dt.date.today() - dt.timedelta(days=500)).isoformat(), record["order_placed_date"])
+        self.assertEqual([event], record["payment_events"])
+        self.assertNotIn("refund_evidence", record)
+        self.assertEqual(1, payments.call_count)
 
     def test_preflight_rejects_unreviewed_auth_version(self):
         output, errors = io.StringIO(), io.StringIO()

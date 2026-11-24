@@ -61,6 +61,22 @@ class AmazonService {
             List<AmazonOrder> csvOrders = getOrdersFromCsv()
             allOrders.addAll(csvOrders)
         }
+
+        if (config.isAmazonTransactionEvidenceEnabled() && !(orderFetcher instanceof PythonAmazonOrderFetcher)) {
+            try {
+                List<AmazonOrder> evidence = new PythonAmazonOrderFetcher(config).fetchOrders()
+                // Keep the selected purchase source; payment events/details are supplemental evidence.
+                evidence.each { extra ->
+                    def originals = allOrders.findAll { !it.isReturn && it.orderId == extra.orderId }
+                    if (originals) originals[0].paymentEvents = extra.paymentEvents
+                    else allOrders << new AmazonOrder(orderId:extra.orderId,paymentEvents:extra.paymentEvents)
+                }
+            } catch (Exception ignored) { logger.warn('Supplemental Amazon payment evidence unavailable; category writes require independent association') }
+        }
+        if (config.amazonRefundEmailEvidenceEnabled && !(orderFetcher instanceof EmailAmazonOrderFetcher)) {
+            try { allOrders.addAll(new EmailAmazonOrderFetcher(config).fetchOrders().findAll { it.isReturn }) }
+            catch (Exception ignored) { logger.warn('Supplemental refund email unavailable; no inferred refund item amounts') }
+        }
         
         logger.info("Total orders loaded: ${allOrders.size()}")
         return allOrders
