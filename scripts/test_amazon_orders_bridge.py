@@ -507,9 +507,28 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual("python:visa:1234", events[0]["payment_identity"])
         self.assertIn("transactionTag=113-8849250-2919462", calls[0][0])
         self.assertEqual("cursor-1", calls[1][1]["json"]["exclusiveStartKey"])
-        for records in [[row(), row()], [row(orders=[{"orderDisplayString": "Order #113-8849250-2919462"}, {"orderDisplayString": "Order #114-1111111-2222222"}])], [row("-$65.00 CAD")]]:
+        empty_form = types.SimpleNamespace(parsed=BeautifulSoup('<form><input name="ppw-widgetState"></form>', "html.parser"))
+        session.post = lambda *args, **kwargs: empty_form
+        with self.assertRaises(ValueError):
+            bridge.payment_history(session, 30)
+        real_history = bridge.payment_history
+        session.post = lambda url, **kwargs: page([row()]) if "transactionTag=" in url else empty_form
+        with patch.object(bridge, "payment_history", side_effect=lambda ignored, days, order_id=None: real_history(session, days, order_id)):
+            code, output, errors, _ = self.run_bridge({today.year: [Order("113-8849250-2919462", today, 65)]}, ["--transaction-evidence"])
+        self.assertEqual((0, ""), (code, errors))
+        record = json.loads(output)["orders"][0]
+        self.assertFalse(record["financial_evidence"]["payments_complete"])
+        self.assertTrue(record["payment_events"])
+        self.assertTrue(all(not e["complete"] for e in record["payment_events"]))
+
+        session.post = lambda *args, **kwargs: page([])
+        self.assertEqual([], bridge.payment_history(session, 30))  # Qualified empty JSON is not an unknown layout.
+        session.post = lambda *args, **kwargs: page([row(), row()])
+        self.assertTrue(all(not e["complete"] for e in bridge.payment_history(session, 30)))
+        for records in [[row(orders=[{"orderDisplayString": "Order #113-8849250-2919462"}, {"orderDisplayString": "Order #114-1111111-2222222"}])], [row("-$65.00 CAD")]]:
             session.post = lambda *args, **kwargs: page(records)
-            self.assertTrue(all(not e["complete"] for e in bridge.payment_history(session, 30)))
+            with self.assertRaises(ValueError):
+                bridge.payment_history(session, 30)
         session.post = lambda *args, **kwargs: page([row()], True, None)
         with self.assertRaises(ValueError):
             bridge.payment_history(session, 30)

@@ -169,6 +169,10 @@ def payment_history(session, days, order_id=None):
         seen.add(signature)
     else:
         raise ValueError("Transaction page bound")
+    if not page.qualified:
+        # Qualification belongs to the retrieval, not just its rows: an unknown
+        # empty layout must not look like a successfully observed empty ledger.
+        raise ValueError("Unqualified transaction history layout")
     counts = {}
     for event in events:
         counts[event["key"]] = counts.get(event["key"], 0) + 1
