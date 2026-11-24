@@ -23,14 +23,14 @@ class YNABService {
     private final Configuration config
     private final ObjectMapper objectMapper
     private final CloseableHttpClient httpClient
-    private final CloseableHttpClient walmartHttpClient
+    private final CloseableHttpClient guardedHttpClient
     
     YNABService(Configuration config) {
         this.config = config
         this.objectMapper = new ObjectMapper()
         this.httpClient = HttpClients.createDefault()
         // A lost PUT response has an unknown outcome; only journal/read-back may retry it.
-        this.walmartHttpClient = HttpClients.custom().disableAutomaticRetries().disableRedirectHandling().build()
+        this.guardedHttpClient = HttpClients.custom().disableAutomaticRetries().disableRedirectHandling().build()
     }
     
     /**
@@ -139,20 +139,32 @@ class YNABService {
      * Close HTTP client resources
      */
     Map getWalmartTransaction(String id) {
-        walmartRequest('GET', "/transactions/${pathId(id)}").data.transaction as Map
+        getTransaction(id)
+    }
+
+    Map getTransaction(String id) {
+        guardedRequest('GET', "/transactions/${pathId(id)}").data.transaction as Map
     }
 
     String getWalmartPlanCurrency() {
+        getPlanCurrency()
+    }
+
+    String getPlanCurrency() {
         try {
-            walmartRequest('GET', '/settings').data?.settings?.currency_format?.iso_code as String
+            guardedRequest('GET', '/settings').data?.settings?.currency_format?.iso_code as String
         } catch (Exception ignored) {
-            logger.warn('YNAB plan currency unavailable; Walmart matching and updates are disabled')
+            logger.warn('YNAB plan currency unavailable; financial matching and updates are disabled')
             null
         }
     }
 
     List<Map> getWalmartCategories() {
-        def groups = walmartRequest('GET', '/categories').data.category_groups
+        getCategoryCatalog()
+    }
+
+    List<Map> getCategoryCatalog() {
+        def groups = guardedRequest('GET', '/categories').data.category_groups
         groups.collectMany { group ->
             group.categories.collect { category ->
                 category + [group_name: group.name, group_hidden: group.hidden, group_deleted: group.deleted,
@@ -162,14 +174,22 @@ class YNABService {
     }
 
     Set<String> getWalmartBudgetAccounts() {
-        walmartRequest('GET', '/accounts').data.accounts.findAll { it.on_budget == true && !it.deleted && !it.closed }*.id as Set
+        getBudgetAccounts()
+    }
+
+    Set<String> getBudgetAccounts() {
+        guardedRequest('GET', '/accounts').data.accounts.findAll { it.on_budget == true && !it.deleted && !it.closed }*.id as Set
     }
 
     void putWalmartTransaction(String id, Map changes) {
-        walmartRequest('PUT', "/transactions/${pathId(id)}", [transaction: changes])
+        putTransaction(id, changes)
     }
 
-    private Map walmartRequest(String method, String suffix, Map body = null) {
+    void putTransaction(String id, Map changes) {
+        guardedRequest('PUT', "/transactions/${pathId(id)}", [transaction: changes])
+    }
+
+    private Map guardedRequest(String method, String suffix, Map body = null) {
         // Canonical current API uses /plans. Kept separate from Amazon's legacy API.
         String url = "${config.ynabBaseUrl}/plans/${pathId(config.ynabBudgetId)}${suffix}"
         def request = method == 'GET' ? new HttpGet(url) : new HttpPut(url)
@@ -178,8 +198,8 @@ class YNABService {
         if (body != null) request.entity = new StringEntity(objectMapper.writeValueAsString(body), org.apache.hc.core5.http.ContentType.APPLICATION_JSON)
         request.config = org.apache.hc.client5.http.config.RequestConfig.custom()
             .setResponseTimeout(org.apache.hc.core5.util.Timeout.ofSeconds(30)).setRedirectsEnabled(false).build()
-        walmartHttpClient.execute(request).withCloseable { response ->
-            if (response.code != 200) throw new IllegalStateException('YNAB Walmart request failed')
+        guardedHttpClient.execute(request).withCloseable { response ->
+            if (response.code != 200) throw new IllegalStateException('YNAB guarded request failed')
             String text = EntityUtils.toString(response.entity, 'UTF-8', 8388608)
             objectMapper.readValue(text, Map)
         }
@@ -193,7 +213,7 @@ class YNABService {
     void close() {
         try {
             httpClient.close()
-            walmartHttpClient.close()
+            guardedHttpClient.close()
         } catch (Exception e) {
             logger.warn("Error closing HTTP client", e)
         }

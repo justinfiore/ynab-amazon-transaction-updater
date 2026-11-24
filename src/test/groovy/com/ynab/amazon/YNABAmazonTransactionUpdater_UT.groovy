@@ -1,5 +1,7 @@
 package com.ynab.amazon
 
+import ch.qos.logback.core.read.ListAppender
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.ynab.amazon.config.Configuration
 import com.ynab.amazon.model.AmazonOrder
 import com.ynab.amazon.model.AmazonOrderItem
@@ -10,6 +12,7 @@ import com.ynab.amazon.service.WalmartService
 import com.ynab.amazon.service.TransactionMatcher
 import com.ynab.amazon.service.TransactionProcessor
 import com.ynab.amazon.service.YNABService
+import org.slf4j.LoggerFactory
 import spock.lang.Specification
 
 /**
@@ -64,7 +67,7 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         mockAmazonService.getOrders() >> amazonOrders
         mockProcessor.getUnprocessedTransactions(_ as List) >> unprocessedTransactions
         mockMatcher.findMatches(_ as List, _ as List) >> matches
-        mockProcessor.updateTransactions(_ as List, mockYnabService, false) >> stats
+        mockProcessor.processAmazonTransactions(_ as List, _ as List, mockYnabService, false) >> stats
         
         when: "executeWorkflow is called"
         def method = YNABAmazonTransactionUpdater.class.getDeclaredMethod(
@@ -84,7 +87,7 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         1 * mockAmazonService.getOrders()
         1 * mockProcessor.getUnprocessedTransactions(_ as List)
         1 * mockMatcher.findMatches(_ as List, _ as List)
-        1 * mockProcessor.updateTransactions(_ as List, mockYnabService, false)
+        1 * mockProcessor.processAmazonTransactions(_ as List, _ as List, mockYnabService, false)
     }
     
     def "executeWorkflow should use dry run mode when configured"() {
@@ -109,6 +112,18 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         mockAmazonService.getOrders() >> amazonOrders
         mockProcessor.getUnprocessedTransactions(_ as List) >> unprocessedTransactions
         mockMatcher.findMatches(_ as List, _ as List) >> matches
+
+        def preview = [
+            [transaction_id:'split',status:'split',changes:[memo:'Exact item summary',approved:false,category_id:null,
+                subtransactions:[[amount:-21670L,category_id:'electronics',memo:'Cable'],[amount:-43330L,category_id:'pets',memo:'Food']]]],
+            [transaction_id:'fallback',status:'fallback',reason:'refund_items_unknown',changes:[memo:'Refund summary',approved:false,category_id:null]],
+            [transaction_id:'skipped',reason:'ambiguous_or_incomplete_payment'],
+            [transaction_id:'unchanged',status:'fallback',reason:'unchanged',allocation_reason:'refund_items_unknown']
+        ]
+        def log = LoggerFactory.getLogger(YNABAmazonTransactionUpdater)
+        def appender = new ListAppender()
+        appender.start()
+        log.addAppender(appender)
         
         when: "executeWorkflow is called"
         def method = YNABAmazonTransactionUpdater.class.getDeclaredMethod(
@@ -123,8 +138,20 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         method.setAccessible(true)
         method.invoke(null, mockYnabService, mockAmazonService, mockWalmartService, mockMatcher, mockProcessor, dryConfig)
         
-        then: "updateTransactions should be called with dry run mode"
-        1 * mockProcessor.updateTransactions(_ as List, mockYnabService, true)
+        then: "the CLI exposes exact payloads, skipped gates and the proposed rather than completed count"
+        1 * mockProcessor.processAmazonTransactions(_ as List, _ as List, mockYnabService, true) >>
+            [updated:0,high_confidence:2,medium_confidence:0,low_confidence:0,preview:preview]
+        def messages = appender.list*.formattedMessage
+        messages.any { it.contains('Would update 2 transactions') }
+        messages.any { it.contains('amounts in YNAB milliunits') }
+        def displayed = messages.findAll { it.startsWith('Amazon dry-run preview: ') }.collect {
+            new ObjectMapper().readValue(it.substring('Amazon dry-run preview: '.length()),Map)
+        }
+        displayed == preview
+
+        cleanup:
+        log.detachAppender(appender)
+        appender.stop()
     }
     
     def "main should exit when configuration is invalid"() {
@@ -196,6 +223,12 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         Map<String, List<String>> writes = [:].withDefault { [] }
         def ynab = Stub(YNABService) {
             getTransactions() >> transactions
+            getBudgetAccounts() >> (['account'] as Set)
+            getTransaction(_) >> { String id -> com.ynab.amazon.service.AmazonEnrichment.snapshot(transactions.find { it.id == id }) }
+            putTransaction(_, _) >> { String id, Map changes ->
+                writes[id] << changes.memo
+                transactions.find { it.id == id }.memo = changes.memo
+            }
             updateTransactionMemo(_, _) >> { String id, String memo -> writes[id] << memo; true }
         }
 
@@ -257,6 +290,9 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
         List<String> writes = []
         def ynab = Stub(YNABService) {
             getTransactions() >> [pending]
+            getBudgetAccounts() >> (['account'] as Set)
+            getTransaction(_) >> { String id -> com.ynab.amazon.service.AmazonEnrichment.snapshot(pending) }
+            putTransaction(_, _) >> { String id, Map changes -> writes << changes.memo; pending.memo = changes.memo }
             updateTransactionMemo(_, _) >> { String id, String memo -> writes << memo; true }
         }
 
@@ -272,13 +308,14 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
     private Configuration authConfig() {
         File processed = new File(authTempDir, 'processed.json')
         processed.text = '{"processed_transaction_ids":["tracked"]}'
-        new Configuration(processedTransactionsFile: processed.absolutePath,
+        new Configuration(processedTransactionsFile: processed.absolutePath,ynabBudgetId:'plan',amazonJournalFile:new File(authTempDir,'amazon.json').path,
             amazonPythonExecutable: 'python', amazonPythonBridgeScript: 'bridge.py', amazonPythonConfigPath: 'upstream.yml',
             amazonPythonTimeoutSeconds: 2, amazonPythonMaxOutputBytes: 4096, walmartEnabled: false)
     }
 
     private static YNABTransaction authTransaction(String id, String memo) {
-        new YNABTransaction(id: id, memo: memo, date: '2026-11-20', payee_name: 'AMAZON.COM', amount: -10000)
+        new YNABTransaction(id: id, memo: memo, date: '2026-11-20', payee_name: 'AMAZON.COM', amount: -10000,
+            account_id:'account',approved:'false',deleted:'false',cleared:'cleared')
     }
 
     private static com.ynab.amazon.service.ProcessResult bridgeResult(int code) {

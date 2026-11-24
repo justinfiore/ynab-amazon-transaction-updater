@@ -32,6 +32,7 @@ class PythonAmazonOrderFetcher implements AmazonOrderFetcher {
                                 '--config-path', config.amazonPythonConfigPath,
                                 '--look-back-days', String.valueOf(config.lookBackDays)]
         if (!config.amazonPythonIncludeHouseholdOrders) command.add('--account-only')
+        if (config.isAmazonTransactionEvidenceEnabled()) command.add('--transaction-evidence')
         ProcessResult result = processRunner.run(command, Duration.ofSeconds(config.amazonPythonTimeoutSeconds), config.amazonPythonMaxOutputBytes)
         if (!result.success) {
             loginRequired = result.status == ProcessResult.Status.NON_ZERO_EXIT && result.exitCode == 3
@@ -67,15 +68,18 @@ class PythonAmazonOrderFetcher implements AmazonOrderFetcher {
     private AmazonOrder mapOrder(PythonBridgeOrder record, int index) {
         String orderNumber = text(record.orderNumber)
         String orderDate = text(record.orderPlacedDate)
-        if (record.cancelled || !orderNumber || !orderDate || record.grandTotal == null) {
+        boolean eventOnly = record.paymentEvents && (!orderDate || record.grandTotal == null)
+        if ((record.cancelled && !record.paymentEvents?.any { it.signed_cents > 0 }) || !orderNumber || (!eventOnly && (!orderDate || record.grandTotal == null))) {
             logger.warn("Skipping invalid or cancelled Python Amazon order at index ${index}${orderNumber ? " (${orderNumber})" : ''}")
             return null
         }
         try {
-            LocalDate.parse(orderDate)
+            if (orderDate) LocalDate.parse(orderDate)
             BigDecimal total = record.grandTotal
-            if (total <= 0) throw new IllegalArgumentException('grand_total must be positive')
-            AmazonOrder order = new AmazonOrder(orderId: orderNumber, orderDate: orderDate, totalAmount: total.negate(), isReturn: false)
+            if (total != null && (total < 0 || (total == 0 && !record.financialEvidence && !record.paymentEvents))) throw new IllegalArgumentException('grand_total must be positive without evidence')
+            AmazonOrder order = new AmazonOrder(orderId: orderNumber, orderDate: orderDate, totalAmount: total?.negate(), isReturn: false)
+            order.financialEvidence = record.financialEvidence ?: [:]
+            order.paymentEvents = record.paymentEvents ?: []
             String payment = text(record.paymentMethod)
             String lastFour = text(record.paymentMethodLast4)
             order.paymentMethod = payment && lastFour ? "${payment} (${lastFour})" : payment

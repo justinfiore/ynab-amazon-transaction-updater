@@ -58,10 +58,11 @@ separately or download wrapper files by hand. Verify it with:
    ```yaml
    ynab:
      api_key: "YOUR_ACTUAL_YNAB_API_KEY"
-     account_id: "YOUR_ACTUAL_YNAB_ACCOUNT_ID"
+     budget_id: "YOUR_ACTUAL_YNAB_BUDGET_ID"
      base_url: "https://api.ynab.com/v1"
 
    amazon:
+     enrichment: "memo_only"  # Metadata only; category writes require separate opt-in
      csv_file_path: "your_amazon_orders.csv"
 
    walmart:
@@ -80,6 +81,30 @@ Optional paid OpenAI Decisions/TypeSafe Jev inference uses Groovy with explicit
 data/billing consent and separately protected provider keys. Live quality and
 cross-platform qualification remain pending. Disabled/link-only needs no
 inference key; no local-model runtime, Docker or OAuth route is required.
+
+### Optional: Amazon Item Categorization
+
+Follow [Amazon setup and safety](AMAZON.md) before changing the default
+`amazon.enrichment: memo_only`. Amazon uses the shared classifier but has its
+own category shortlist, payment/account mappings, consent and protected journal;
+it has no default category and needs no Walmart configuration or Go helper.
+The installed launcher's `--amazon-categories` and `--amazon-payment-accounts`
+commands configure existing IDs without enabling financial writes. Optional
+`--amazon-setup` stores a protected provider key and Amazon-specific consent,
+without a paid probe; `--amazon-disconnect` removes that reference while retaining
+a credential still referenced by Walmart in the same config.
+
+Select `amazon.enrichment: item_categories` explicitly only after setup. Keep
+`app.dry_run: true` and inspect exact category/split/null-fallback JSON previews.
+Email/CSV purchase values alone are insufficient: transaction evidence requires
+the Python runtime/session, defaults on only in Python mode, and must be explicitly
+enabled elsewhere. Supplemental refund email in Python mode is independently
+opt-in; missing per-event item amounts never become guessed refund splits.
+**Non-dry-run financial updates change available balances immediately, even
+though they remain unapproved.** Preserve `amazon.journal_file` across runs for
+intent/read-back recovery and human-edit protection. Do not clear it or the legacy
+processed-ID file to force historical backfill. See [AMAZON.md](AMAZON.md) for
+accounting, conservative fallback, source limits and mode-switch recovery.
 
 ### Optional: Python Amazon Order History
 
@@ -120,8 +145,11 @@ email/CSV when guarded login cannot complete.
 `amazon-orders` is an unofficial website parser supporting English pages across Amazon regions and may fail
 when Amazon changes. A failed Python fetch returns no Python orders; refresh the
 session, increase the timeout only when needed, or roll back by selecting email
-or CSV. Python history does not reproduce email-specific refund or Subscribe &
-Save notification dates.
+or CSV. Qualified Python payment history can discover refund-credit dates even
+for older purchases, but does not supply structured per-refund item amounts or
+recreate Subscribe & Save synthetic deliveries. Unknown financial layouts fail
+closed; the qualified source layouts and optional email refund-item evidence
+are documented in [AMAZON.md](AMAZON.md).
 
 #### Amazon authentication: storage, lifetime, and recovery
 
@@ -303,4 +331,4 @@ If you encounter issues:
 1. Start with `dry_run: true` to test the application
 2. Review the proposed changes in the logs
 3. Set `dry_run: false` when ready to make actual updates
-4. Monitor the processed transactions file to track what's been updated
+4. Preserve the Amazon journal and processed-ID file; review preview/skip reasons and confirmed journal outcomes rather than treating memo text as completion

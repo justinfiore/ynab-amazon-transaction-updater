@@ -9,6 +9,17 @@ ynab:
 
 # Amazon Configuration
 amazon:
+  enrichment: "memo_only"  # Opt-in item_categories changes live budget balances even before approval
+  journal_file: "amazon-journal.json"  # Protected intent, ownership and item provenance; keep across runs
+  payment_accounts: {}  # Confirm with --amazon-payment-accounts; e.g. "python:visa:1234": "existing-account-id"
+  categorization:
+    categories: []  # Independent existing IDs; --amazon-categories selects them, with NO default
+    # --amazon-setup adds provider/model/bounds, protected credential reference and Amazon consent.
+    # No provider or paid inference is enabled by default. Never put a provider key in YAML.
+  # transaction_evidence:
+  #   enabled: false  # Default true ONLY in Python mode; explicit true elsewhere requires Python settings
+  refund_email_evidence:
+    enabled: false  # Python mode must explicitly opt into IMAP refund notices; never changes purchase source
   # Select exactly one automatic source: "email" (the default) or "python".
   order_fetcher: "email"
   # Email-based order fetching (recommended if you want automatic import):

@@ -44,9 +44,9 @@ class TransactionMatcher {
     /**
      * Find matches between YNAB transactions and Amazon orders
      */
-    List<TransactionMatch> findMatches(List<YNABTransaction> transactions, List<AmazonOrder> orders) {
+    List<TransactionMatch> findMatches(List<YNABTransaction> transactions, List<AmazonOrder> orders, boolean legacyCompletion = true) {
         List<TransactionMatch> matches = []
-        List<YNABTransaction> ynabTransactionsToMatch = transactions.findAll { !isAlreadyProcessed(it) && isPotentialAmazonTransaction(it) }
+        List<YNABTransaction> ynabTransactionsToMatch = transactions.findAll { (!legacyCompletion || !isAlreadyProcessed(it)) && isPotentialAmazonTransaction(it) }
         logger.info("Found ${ynabTransactionsToMatch.size()} transactions to match")
         ynabTransactionsToMatch.each { transaction ->
             

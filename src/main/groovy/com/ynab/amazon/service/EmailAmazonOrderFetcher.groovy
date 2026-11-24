@@ -65,7 +65,7 @@ class EmailAmazonOrderFetcher implements AmazonOrderFetcher {
     private static final Pattern REFUND_TOTAL_PATTERN = ~/Total refund\s+\$?([0-9]+\.?[0-9]{0,2})/
     private static final Pattern REFUND_SUBTOTAL_PATTERN = ~/Refund subtotal\s+\$?([0-9]+\.?[0-9]{0,2})/
     private static final Pattern REFUND_ITEM_TITLE_PATTERN = ~/\[([^\]]+)\]\(https:\/\/www\.amazon\.com\/gp\/product/
-    private static final Pattern REFUND_ORDER_ID_PATTERN = ~/orderId=([0-9]{3}-[0-9]{7}-[0-9]{7})/
+    private static final Pattern REFUND_ORDER_ID_PATTERN = ~/(?i)(?:orderId=|Order\s*#\s*)([0-9]{3}-[0-9]{7}-[0-9]{7})/
 
     EmailAmazonOrderFetcher(Configuration config) {
         this.config = config
@@ -184,11 +184,13 @@ class EmailAmazonOrderFetcher implements AmazonOrderFetcher {
                         AmazonOrder order = parseOrderFromEmail(message)
                         if (order) {
                             // Merge with existing order if same order ID
-                            AmazonOrder existingOrder = orderMap.get(order.orderId)
+                            String sourceKey = order.isReturn ? order.orderId + '/' + (order.sourceOccurrence ?: UUID.randomUUID()) : order.orderId
+                            AmazonOrder existingOrder = orderMap.get(sourceKey)
                             if (existingOrder) {
-                                mergeOrder(existingOrder, order)
+                                if (!order.isReturn) mergeOrder(existingOrder, order)
+                                else if (existingOrder.refundEvidence != order.refundEvidence) existingOrder.refundEvidence.complete = false
                             } else {
-                                orderMap[order.orderId] = order
+                                orderMap[sourceKey] = order
                                 orders.add(order)
                             }
                         }
@@ -480,6 +482,40 @@ class EmailAmazonOrderFetcher implements AmazonOrderFetcher {
                 isReturn: true
             )
 
+            // Only the explicit return block is evidence; recommended products below it are not refunded items.
+            String block = content.split(/(?i)Products related to your return|Continue shopping/)[0]
+            def rowPattern = ~/(?s)\[([^\]]+)\]\(https:\/\/www\.amazon\.com\/gp\/product\/([A-Z0-9]{10})[^)]*\)(.*?)(?=\[[^\]]+\]\(https:\/\/www\.amazon\.com\/gp\/product\/|\z)/
+            List<Map> rows = []
+            List<Map> adjustments = []
+            int firstRow = -1
+            def rowMatcher = rowPattern.matcher(block)
+            while (rowMatcher.find()) {
+                if (firstRow < 0) firstRow = rowMatcher.start()
+                String tail = rowMatcher.group(3)
+                def quantity = tail =~ /Quantity:\s*([0-9]+)/
+                def amount = tail =~ /(?m)^\s*(Item refund|Refund amount|Refund merchandise):\s*\$([0-9]+\.[0-9]{2})\s*$/
+                boolean hasAmount = amount.find()
+                String itemId = rows.size().toString()
+                rows << [itemId:rows.size().toString(),productId:rowMatcher.group(2),title:rowMatcher.group(1).trim(),
+                    quantity:quantity.find() ? quantity.group(1).toInteger() : null,
+                    basis:hasAmount && amount.group(1) == 'Refund merchandise' ? 'merchandise' : 'final_net',
+                    cents:hasAmount ? new BigDecimal(amount.group(2)).movePointRight(2).longValueExact() : null]
+                adjustments.addAll(refundComponents(tail,'item-' + itemId,itemId))
+            }
+            if (firstRow >= 0) adjustments.addAll(refundComponents(block.substring(0,firstRow),'event',null))
+            if (rows) refundOrder.items = rows.collect { row -> new AmazonOrderItem(title:row.title,asin:row.productId,
+                price:rows.size() == 1 ? refundAmount : null,quantity:row.quantity ?: 1) }
+            def occurrence = block =~ /[?&]rmaId=([A-Za-z0-9_-]+)/
+            refundOrder.sourceOccurrence = occurrence.find() ? occurrence.group(1) : null
+            def finalTotal = (block =~ /(?m)^\s*Total refund\s+\$([0-9]+\.[0-9]{2})\s*$/)
+            Long finalCents = finalTotal.find() ? new BigDecimal(finalTotal.group(1)).movePointRight(2).longValueExact() : null
+            refundOrder.refundEvidence = [version:1,source:'email',currency:block.contains('$') ? 'USD' : null,
+                occurrence:refundOrder.sourceOccurrence,date:orderDate,full_total_cents:finalCents,
+                items:rows,adjustments:adjustments,adjustments_distinct:true,final_net:rows.every { it.basis == 'final_net' },
+                mixed_tender:block ==~ /(?is).*(?:gift card|reward points|mixed tender).*/,
+                complete:finalCents != null && rows && rows.every { it.cents != null } &&
+                    rows*.basis.toSet().size() == 1 && !(block =~ /(?i)\b(?:CAD|AUD|EUR|GBP|CDN)\b|CA\$|[€£]/).find()]
+
             logger.info("Successfully parsed refund: ${refundOrderId}, amount: \$${refundAmount}, product: ${productTitle}")
             return refundOrder
 
@@ -487,6 +523,20 @@ class EmailAmazonOrderFetcher implements AmazonOrderFetcher {
             logger.error("Error parsing refund from email: ${e.message}", e)
             return null
         }
+    }
+
+    /** Only explicitly labeled refunded components; original order charges are not credit evidence. */
+    private static List<Map> refundComponents(String text, String prefix, String itemId) {
+        List<Map> result = []
+        def components = text =~ /(?m)^\s*(Promo discount|Refund discount|Withheld fee|Refunded tax|Refunded shipping|Refunded fees):?\s+(-?\$[0-9]+\.[0-9]{2})\s*$/
+        while (components.find()) {
+            String label = components.group(1)
+            long cents = new BigDecimal(components.group(2).replace('$','')).movePointRight(2).longValueExact()
+            boolean deduction = label in ['Promo discount','Refund discount','Withheld fee']
+            result << [id:prefix + '-' + result.size(),kind:deduction ? 'discount' : label == 'Refunded tax' ? 'tax' : label == 'Refunded shipping' ? 'shipping' : 'fee',
+                cents:deduction ? -Math.abs(cents) : cents] + (deduction && itemId != null ? [item_id:itemId] : [:])
+        }
+        result
     }
 
     /**

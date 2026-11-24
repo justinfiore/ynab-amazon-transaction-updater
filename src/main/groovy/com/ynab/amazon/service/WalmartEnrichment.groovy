@@ -57,18 +57,15 @@ class WalmartEnrichment {
                         itemsFor(group).each { item ->
                             def evidence = state.mappings[config.ynabBudgetId + '/' + item.productId]
                             if (evidence instanceof List && evidence) return
-                            String cacheKey = fingerprint([config.ynabBudgetId,item.productId,item.title,scope])
+                            String cacheKey = ItemClassificationService.cacheKey('walmart',config.ynabBudgetId,[productId:item.productId,title:item.title],scope)
                             if (state.inferred[cacheKey]?.scope != scope) {
                                 // Correlation IDs are local; the provider receives only titles and policy.
                                 pending[cacheKey] = new WalmartOrderItem(itemId:cacheKey, productId:item.productId, title:item.title)
                             }
                         }
                     }
-                    pending.values().toList().collate(classifier.config.batch_size as int).each { batch ->
-                        def inferred = classifier.classify(batch, categories)
-                        batch.each { item -> state.inferred[item.itemId] = inferred[item.itemId] }
-                        save(state) // Preserve successful batches even if a later batch fails or hits the run cap.
-                    }
+                    ItemClassificationService.resolve(pending.values().collect { [itemId:it.itemId,productId:it.productId,title:it.title] },
+                        categories,state,'walmart',config.ynabBudgetId,classifier,false,save)
                 } catch (Exception ignored) {
                     LOG.warn('Walmart batched classification failed: provider={} stage={} first_request_failure={} http_status={} requests={}; unresolved purchases skip allocation, refunds use default',
                         config.walmartCategorization.provider, classifier.metrics.stage,
@@ -94,41 +91,12 @@ class WalmartEnrichment {
                 }
                 List<WalmartOrderItem> classificationItems = itemsFor(group)
                 if (classificationItems) {
-                    classificationItems.each { item ->
-                        def evidence = state.mappings[config.ynabBudgetId + '/' + item.productId]
-                        def choices = evidence instanceof List ? evidence.toSet() : [] as Set
-                        String category = item.productId && choices.size() == 1 && categories.containsKey(choices.first()) ? choices.first() : null
-                        decisions[item.itemId] = [category_id: category, source: choices ? 'approved_mapping' : 'unresolved', conflict: choices.size() > 1]
-                    }
-                    def pending = classificationItems.findAll { decisions[it.itemId].source == 'unresolved' }
-                    if (pending && config.walmartCategorization.provider && !classifier) inferenceFailed = true
-                    if (pending && classifier) {
-                        try {
-                            String scope = classifier.scope(categories)
-                            state.inferred = state.inferred ?: [:]
-                            Map cacheKeys = pending.collectEntries { item -> [(item.itemId):fingerprint([config.ynabBudgetId,item.productId,item.title,scope])] }
-                            pending.each { item ->
-                                Map cached = state.inferred[cacheKeys[item.itemId]]
-                                if (cached?.scope == scope) decisions[item.itemId] = cached
-                            }
-                            def uncached = pending.findAll { decisions[it.itemId].source == 'unresolved' }
-                            if (uncached) {
-                                if (dryRun) {
-                                    inferenceFailed = true
-                                    inferenceReason = 'inference_required'
-                                } else {
-                                    // The shared queue already attempted inference; do not replay failed batches.
-                                    inferenceFailed = true
-                                }
-                            }
-                        } catch (Exception ignored) {
-                            inferenceFailed = true
-                            // Only fixed local stages and numeric counters: never exception text, keys or response bodies.
-                            LOG.warn('Walmart remote classification failed: order_id={} provider={} stage={} first_request_failure={} http_status={} requests={}; purchases skip allocation, refunds use default',
-                                orderId, config.walmartCategorization.provider, classifier.metrics.stage,
-                                classifier.metrics.failure_stage, classifier.metrics.last_http_status, classifier.metrics.requests)
-                        }
-                    }
+                    // Queue above is the only paid attempt. This pass resolves mappings/cache only.
+                    Map resolved = ItemClassificationService.resolve(classificationItems.collect { [itemId:it.itemId,productId:it.productId,title:it.title] },
+                        categories,state,'walmart',config.ynabBudgetId,classifier,true,{ ignored -> })
+                    decisions = resolved.decisions
+                    inferenceFailed = resolved.failed || (config.walmartCategorization.provider && !classifier && decisions.values().any { it.source == 'unresolved' })
+                    if (dryRun && resolved.failed) inferenceReason = 'inference_required'
                 }
                 Map plan = config.walmartEnrichment != 'exception_first' ? [eligible:false, reason:'link_only'] :
                     refunds && !(dryRun && inferenceFailed) ? WalmartAllocation.refundPlan(group[0], config.walmartDefaultCategoryId, decisions, accounts, config.walmartAllowApprovedUncategorized) :
@@ -231,14 +199,7 @@ class WalmartEnrichment {
     }
 
     static boolean same(Map actual, Map expected) {
-        if (!actual || !expected) return false
-        def fields = ['id','date','amount','account_id','payee_id','payee_name','memo','category_id','cleared','approved','import_id','flag_color','deleted','transfer_account_id']
-        // YNAB assigns split parents its own category ID instead of the null sent in a PUT.
-        // Child categories still have to match exactly, as do IDs on saved read-back results.
-        if (expected.subtransactions && expected.category_id == null) fields.remove('category_id')
-        fields.every { actual[it] == expected[it] } &&
-            (actual.subtransactions ?: []).collect { [it.amount,it.category_id,it.memo,it.payee_id] }.sort { it.toString() } ==
-            (expected.subtransactions ?: []).collect { [it.amount,it.category_id,it.memo,it.payee_id] }.sort { it.toString() }
+        GuardedTransactions.same(actual, expected)
     }
 
     private void learn(Map state, YNABService ynab) {
@@ -281,5 +242,5 @@ class WalmartEnrichment {
         state.learnedProducts = (learned.findAll { !String.valueOf(it).startsWith(prefix) } + new ArrayList(observations.keySet())).unique().sort()
     }
 
-    static String fingerprint(Object value) { MessageDigest.getInstance('SHA-256').digest(JSON.writeValueAsBytes(value)).encodeHex().toString() }
+    static String fingerprint(Object value) { ItemClassificationService.fingerprint(value) }
 }

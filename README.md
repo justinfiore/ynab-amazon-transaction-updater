@@ -2,7 +2,7 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/justinfiore/ynab-amazon-transaction-updater)
 
-A Groovy application that updates YNAB (You Need A Budget) transactions with retailer order details. Supports Amazon orders and an optional native Go-backed Walmart ledger source. Groovy owns Walmart processing and optional paid OpenAI Decisions/TypeSafe Jev inference. Walmart remains disabled by default; live provider quality and the native platform matrix are not qualified.
+A Groovy application that updates YNAB (You Need A Budget) transactions with retailer order details. Supports Amazon orders and an optional native Go-backed Walmart ledger source. Both retailers use shared classification services with independent category lists, consent and accounting policies. Optional paid OpenAI Decisions/TypeSafe Jev inference runs in Groovy. Amazon defaults to memo-only updates and Walmart remains disabled by default; live provider quality and the native platform matrix are not qualified.
 
 ## Features
 
@@ -15,6 +15,7 @@ A Groovy application that updates YNAB (You Need A Budget) transactions with ret
    - Optional Python order-history fetcher using `amazon-orders==6.0.0`
   - Special handling for Subscribe & Save orders with "S&S:" prefix
   - Automatic refund detection and processing with positive amounts
+  - Optional no-default item categorization, exact purchase/refund splits and guarded uncategorized fallback; see [Amazon setup and safety](AMAZON.md)
 - **Walmart (optional):** Exact final-charge matching, metadata-only direct links and explicit exception-first allocation using existing categories. See [setup, safety and qualification limits](WALMART.md); no model profile is qualified yet.
 - Intelligently matches YNAB transactions with retailer orders
 - Updates transaction memos with product summaries
@@ -72,7 +73,7 @@ Setup:
    - Outlook: [App Passwords](https://support.microsoft.com/account-billing/using-app-passwords-with-apps-that-don-t-support-two-step-verification-5896ed9b-4263-e681-128a-a6f2979a7944)
 3. Configure in `config.yml` (see below)
 
-**Option B: CSV Export (Fallback)**
+**Option B: CSV Export (Standalone or Additive)**
 
 If email parsing is not available or you prefer manual control:
 
@@ -142,6 +143,7 @@ ynab:
   base_url: "https://api.ynab.com/v1"
 
 amazon:
+  enrichment: "memo_only" # item_categories is a separate financial opt-in; see AMAZON.md
   order_fetcher: "email" # use "python" for the optional bridge
   # Email parsing (recommended - automatically includes Subscribe & Save)
   email: "your_amazon_email@example.com"
@@ -154,7 +156,7 @@ amazon:
   # imap_host: "imap.gmail.com"
   # imap_port: 993
   
-  # CSV fallback (optional)
+  # Additive CSV orders (optional)
   csv_file_path: "amazon_orders.csv"
   # python:
   #   executable: ".venv-amazon-orders/bin/python"
@@ -165,7 +167,7 @@ amazon:
   #   max_output_bytes: 10485760
 
 walmart:
-  enabled: false  # Fetching unavailable pending Go integration
+  enabled: false  # Optional native helper and protected session; see WALMART.md
 
 app:
   processed_transactions_file: "processed_transactions.json"
@@ -226,17 +228,17 @@ java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
 1. **Configuration Loading**: Reads settings from `config.yml`
 2. **YNAB Integration**: Fetches transactions from your YNAB budget within the lookback period
 3. **Retailer Data Fetching**:
-   - **Amazon**: Fetches order history from email (automatic parsing of order confirmations and Subscribe & Save notifications) or CSV file (fallback or manual option)
+   - **Amazon**: Selects email or optional Python history, then appends configured CSV orders. Python mode defaults to supplemental payment evidence; other modes require explicit opt-in. Supplemental refund email in Python mode is separately opt-in.
    - **Walmart**: Optional reviewed Go helper and protected session; disabled by default
 4. **Transaction Matching**: Uses intelligent algorithms to match YNAB transactions with retailer orders:
-   - **Amazon**: Amount (40%), Date (30%), Payee (20%), Memo (10%)
+   - **Amazon**: Memo-only compatibility matching uses weighted order evidence. Category/split writes and explicit-null fallback instead require a unique completed exact-cent payment event, confirmed account mapping and date within 14 days, or a trusted unchanged journal association for fallback. A weighted score never authorizes a category write.
    - **Walmart**: Exact cents, final-charge dates and global unique assignment with optional payment/account evidence
 5. **Memo Updates**: Updates matched transactions with product summaries:
-   - **Amazon Regular**: "Product Name" or "3 items: Product A, Product B, Product C"
-   - **Amazon Subscribe & Save**: "S&S: Product Name" or "S&S: 3 items: Product A, Product B, Product C"
-   - **Amazon Refunds**: "REFUND: Product Name" with positive amounts
+   - **Amazon Regular**: Robot marker, known date/full total/currency, up to three item titles and a mobile-compatible order-details link for real order IDs
+   - **Amazon Subscribe & Save**: Retains S&S context; synthetic IDs do not acquire invented order links or financial authority
+   - **Amazon Refunds**: Refund date/positive credit amount, evidenced item context and the real original order link when available
    - **Walmart**: "[existing memo] | 2026-11-20 | Total $100.00 | #[order_id] | [direct order URL]"; no generated parent item summary
-6. **Tracking**: Maintains a list of processed transactions to avoid duplicates
+6. **Review and recovery**: Amazon's protected journal records separate memo/fallback/category/split completion and durable write intent. Preserve it alongside the legacy processed-ID file; legacy IDs do not authorize automatic recategorization or backfill. See [Amazon safety and recovery](AMAZON.md).
 
 ## Amazon Subscribe & Save Support
 
@@ -251,15 +253,21 @@ For more details, see [SUBSCRIBE_AND_SAVE.md](SUBSCRIBE_AND_SAVE.md).
 
 ## Amazon Refund Support
 
-The application automatically detects and processes Amazon refund notifications from email. Refunds are:
+The email source detects Amazon refund notifications. Legacy display records are:
 
 - Identified by emails from `return@amazon.com` with "Your refund for" in the subject
 - Processed with positive amounts (opposite of regular orders) for accurate YNAB tracking
 - Prefixed with "REFUND:" in transaction memos for easy identification
 - Assigned order IDs with "RETURN-" prefix to distinguish from regular orders
-- Matched to YNAB transactions using the same intelligent matching algorithm
+- Available for memo-only compatibility matching, without treating a display title or subtotal as financial item evidence
 
-This ensures refunds are properly tracked in your budget without manual intervention.
+Optional Python transaction evidence also discovers recent credits independently of
+the original purchase age. A uniquely matched credit can receive guarded linked
+uncategorized fallback in `item_categories` mode, but item splits require explicit,
+event-specific item amounts and adjustments that reconcile exactly. The pinned
+library provides no structured per-refund item amounts; supplemental email evidence
+must be enabled explicitly in Python mode. Unknown membership or amounts are never
+guessed. See [refund evidence, accounting and limits](AMAZON.md).
 
 ## Walmart Individual Charge Matching
 
@@ -301,12 +309,20 @@ Note: CSV files do not automatically include Subscribe & Save orders. Use email 
 - `base_url`: YNAB API base URL (default: "https://api.ynab.com/v1")
 
 ### Amazon Settings
+- `enrichment`: `memo_only` by default. `item_categories` explicitly enables live category/split writes and guarded null-category fallback, always unapproved; this changes available balances immediately.
+- `journal_file`: Protected ownership, intent and item provenance (default: `amazon-journal.json`). Keep it across runs; do not commit it or reset it to force backfill.
+- `categorization.categories`: Independent existing-category shortlist, with no default. Select via `--amazon-categories`; optional provider setup/consent uses `--amazon-setup`.
+- `payment_accounts`: Plan-specific confirmed payment/account identities, selected with `--amazon-payment-accounts`; never inferred from account names or copied from Walmart.
+- `transaction_evidence.enabled`: Defaults true in Python mode and false otherwise. Explicit opt-in outside Python mode requires configured Python runtime/session settings.
+- `refund_email_evidence.enabled`: Defaults false; explicitly opts Python mode into IMAP refund-item evidence without changing purchase-source selection.
 - `email`: Your email address for Amazon order notifications (optional, enables automatic fetching)
 - `email_password`: App-specific password for your email (required if using email)
 - `forward_from_address`: Optional - Email address that forwards Subscribe & Save emails to your inbox (if S&S emails are forwarded from another account)
-- `csv_file_path`: Path to Amazon orders CSV file (optional, used as fallback)
+- `csv_file_path`: Path to Amazon orders CSV file (optional, appended after the selected source, or standalone when no automatic source is configured)
 
-Note: At least one Amazon data source (email or CSV) must be configured.
+At least one Amazon purchase source (email, Python or CSV) must be configured.
+See [Amazon setup and safety](AMAZON.md) and `config.example.yml` for the complete
+onboarding, evidence gates and protected credential settings.
 
 ### Walmart Settings
 - `enabled`: `false` by default. Requires a native helper and protected session when enabled. `enrichment` defaults to `link_only`; `exception_first` requires a valid existing shortlist/default. See [all settings and qualification blockers](WALMART.md). Removed browser settings have no compatibility path.
@@ -335,11 +351,11 @@ amazon:
   # Optional: If Subscribe & Save emails are forwarded from another account
   # forward_from_address: "some.email@example.com"  # Email address that forwards S&S emails to your inbox
   
-  # CSV fallback (optional)
+  # Additive CSV orders (optional)
   csv_file_path: "amazon_orders.csv"
 
 walmart:
-  enabled: false  # Fetching unavailable pending Go integration
+  enabled: false  # Optional native helper and protected session; see WALMART.md
 
 app:
   processed_transactions_file: "processed_transactions.json"
@@ -349,20 +365,26 @@ app:
 ```
 
 > **Important Notes:**
-> - The application will first attempt to fetch Amazon orders from your email (if configured). This automatically includes Subscribe & Save orders.
-> - If email fetching fails or is not configured, it will use the CSV file as a fallback.
+> - Email is the default automatic source; explicitly select `amazon.order_fetcher: python` for Python history.
+> - Configured CSV orders are appended after the selected source, even when that source succeeds; a failed Python fetch does not silently switch to email.
 > - For Gmail, you must use an [App Password](https://support.google.com/accounts/answer/185833) (not your main password) and enable IMAP access.
 > - Subscribe & Save orders are only available via email parsing, not CSV export.
 
 ## Matching Algorithm
 
-The application uses a weighted scoring system to match transactions:
+Memo-only Amazon compatibility matching uses weighted scores. Financial Amazon
+matching and Walmart matching use their own exact-evidence rules:
 
-### Amazon Matching
+### Amazon Memo-only Compatibility Matching
 - **Amount Matching (40%)**: Compares transaction amounts with order totals
-- **Date Matching (30%)**: Checks if dates are within 7 days of each other
+- **Date Matching (30%)**: Scores date proximity within the 14-day candidate window
 - **Payee Matching (20%)**: Looks for Amazon-related payee names
 - **Memo Matching (10%)**: Checks for Amazon references in existing memos
+
+These scores apply only to legacy memo-only order matching. Financial mode uses
+independent exact-cent event/account/ownership gates, not weighted scores or a
+one-cent tolerance. Provider category probability/confidence/margin gates are
+separate from financial evidence; see [AMAZON.md](AMAZON.md).
 
 ### Walmart Individual Charge Matching
 Walmart uses exact integer cents, a 14-day final-charge-date window and Walmart-related purchase payees, with optional account/payment mapping. Globally ambiguous assignments remain unchanged; no fuzzy confidence or order-total fallback applies. Confidence thresholds below refer to Amazon only.
@@ -379,7 +401,7 @@ Confidence thresholds:
 - **Confidence Thresholds**: Only updates high-confidence matches
 - **Error Handling**: Graceful handling of API errors and invalid data
 - **Python hardening**: Python mode uses isolated interpreter mode (`-I`) and an environment allowlist: OS runtime/location variables plus `AMAZON_DOMAIN`, `AMAZON_ACCOUNT`, `AMAZON_COOKIE_JAR_PATH`, `AMAZON_USERNAME`, `AMAZON_PASSWORD`, and `AMAZON_OTP_SECRET_KEY`. Unrelated YNAB/email/cloud credentials and Python/remote-browser/proxy overrides are not inherited. The argument-list child has a timeout, bounded output, process-tree cleanup and fixed failure diagnostics; upstream messages and bridge JSON are not logged. Amazon secrets are never command arguments.
-- **Amazon network/data boundaries**: The bridge allows only the configured Amazon HTTPS origin, including initial form submissions, direct requests and redirects. TLS verification is mandatory, proxy/CA environment and `.netrc` are ignored, and connect/read timeouts are 10/30 seconds. Custom Python classes, language/parser plugins, CAPTCHA/browser automation and paid solvers are disabled; debug HTML capture stays off. It retrieves calendar-year summaries but only fetches details for dated, non-cancelled, deduplicated orders within the look-back window. Household scope remains configurable and unchanged.
+- **Amazon network/data boundaries**: The bridge allows only the configured Amazon HTTPS origin, including initial form submissions, direct requests and redirects. TLS verification is mandatory, proxy/CA environment and `.netrc` are ignored, and connect/read timeouts are 10/30 seconds. Custom Python classes, language/parser plugins, CAPTCHA/browser automation and paid solvers are disabled; debug HTML capture stays off. Normal purchase details remain limited to dated, non-cancelled, deduplicated orders within lookback. Configured transaction evidence can additionally retrieve older original orders for recent refunds; the 14-day pre-lookback payment margin is competition-only, not authority for historical writes. Paging, detail requests, time and output remain bounded. Household scope remains configurable and unchanged.
 - **Not an OS sandbox**: A virtual environment, `-I`, transport checks and process groups cannot contain malicious installed code. The child still has the OS user's filesystem access, including readable configuration files. For that threat model, use a dedicated unprivileged user/container with only its Amazon session/configuration available, without mounting YNAB/email/cloud secrets. Use a clean environment for manual login, too. Cookies remain plaintext bearer credentials protected by filesystem permissions, not encryption.
 - **Linux subprocess cleanup**: Linux runs the Python bridge in a separate process group using `/usr/bin/setsid` (util-linux) and `/bin/kill`. These tools are required on Linux; if unavailable, fetching fails safely rather than launching without group containment. Timeouts and failures terminate the group, including children whose parent has already exited; remaining group members are also cleaned up after normal completion. A helper that deliberately starts a new session/group can escape this boundary. macOS and Windows retain best-effort descendant tracking and daemon output readers; they do not have the Linux group-containment guarantee.
 - **Source semantics**: Select one automatic source (`email` or `python`); an optional CSV is appended after it. A failed Python source returns no Python orders rather than silently falling back to another credential source.
@@ -408,10 +430,10 @@ Confidence thresholds:
    - Check that your email contains "review your upcoming delivery" messages from Amazon
    - Verify the lookback period covers your subscription deliveries
 
-6. **Refunds not being detected**
-   - Refunds are only available via email parsing
-   - Check that your email contains "Your refund for" messages from `return@amazon.com`
-   - Verify the lookback period covers your refund dates
+6. **Refunds not being detected or itemized**
+   - Email mode reads refund notices; Python payment evidence can discover recent credit events even for older purchases
+   - Check the credit lookback and confirmed payment-account mapping; supplemental refund email is opt-in in Python mode
+   - Item splits require explicit event-specific amounts; missing evidence remains nonallocating rather than spreading the credit over original order items. Review the JSON preview reason and [AMAZON.md](AMAZON.md)
 
 7. **No matches found**
    - Verify your data source (email or CSV) has orders in the lookback period
@@ -445,7 +467,7 @@ app:
 
 1. Start with `dry_run: true` to see what would be updated
 2. Check the logs for matching details
-3. Verify the proposed memos look correct
+3. Verify the proposed memos and, if opted into `item_categories`, exact JSON category/split/null-fallback payloads and skip reasons
 4. Set `dry_run: false` when ready to make actual changes
 
 ## File Structure
@@ -486,7 +508,7 @@ YNABAmazonTransactionUpdater/
 └── .agents/scripts/                                # Build and test scripts
 ```
 
-`./gradlew installDist` packages the bridge and requirement file under the distribution root. Python remains optional for email and CSV users; Java 25 is sufficient for those modes. The bridge uses an unofficial website parser supporting English pages across Amazon regions, so Amazon page changes, authentication challenges, and its history-only model can require recovery or a switch back to email/CSV. Python history does not reproduce email refund-event dates or Subscribe & Save synthetic deliveries.
+`./gradlew installDist` packages the bridge and requirement file under the distribution root. Python remains optional for email and CSV memo-only users; Java 25 is sufficient for those modes and shared Amazon classification needs no Go helper. The bridge uses an unofficial website parser supporting English pages across Amazon regions, so Amazon page changes and authentication challenges can require recovery or a switch back to email/CSV. Qualified financial evidence is narrower (tested US-English totals and JSON payment history); unknown layouts fail closed. Payment events can supply completed credit dates, but do not provide structured per-refund item amounts or recreate Subscribe & Save synthetic deliveries. See [source qualification limits](AMAZON.md).
 
 ## Contributing
 

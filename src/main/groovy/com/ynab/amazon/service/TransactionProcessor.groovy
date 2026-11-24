@@ -32,6 +32,11 @@ class TransactionProcessor {
             !isProcessed(transaction)
         }
     }
+
+    /** The new journal owns completion; legacy IDs remain exclusions, not category authority. */
+    Map processAmazonTransactions(List<YNABTransaction> transactions, List<com.ynab.amazon.model.AmazonOrder> orders, YNABService ynab, boolean dryRun) {
+        new AmazonEnrichment(config).process(transactions,orders,ynab,dryRun,processedTransactionIds)
+    }
     
     /**
      * Check if a transaction has already been processed
