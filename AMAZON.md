@@ -137,10 +137,13 @@ constructed locally; actual phone-app handoff is not qualified.
 Keep the protected Amazon journal across runs (never commit it). It stores
 ownership, distinct event/item provenance, separate memo/fallback/category/split
 completion, classifier scope and durable intent. A fresh baseline check precedes
-each PUT; uncertain outcomes are read back before any retry. Human edits,
-approval, existing splits, reconciled/transfer/deleted parents and ineligible
-accounts are protected. There is no distributed compare-and-swap in YNAB: avoid
-editing the same transaction during a run.
+each PUT; uncertain outcomes are read back before any retry. Human changes since
+a saved result stop further updates. Financial writes additionally require
+unapproved, unsplit, unreconciled parents in eligible accounts. Default memo-only
+enrichment may add metadata to approved, split or reconciled parents, preserving
+their approval, categories, split rows and all other financial fields. Neither
+mode updates deleted or transfer parents. There is no distributed compare-and-swap
+in YNAB: avoid editing the same transaction during a run.
 
 Confirmed fallback can advance once added noncontradictory evidence explains a
 first allocation. Source/bank identity contradictions stop it. Completed item

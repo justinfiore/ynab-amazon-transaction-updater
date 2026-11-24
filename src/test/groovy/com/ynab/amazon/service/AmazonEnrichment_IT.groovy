@@ -218,6 +218,52 @@ class AmazonEnrichment_IT extends Specification {
         writes.empty
     }
 
+    def 'memo-only preserves reviewed financial state on #state parents with event evidence #eventEvidence'() {
+        given:
+        config.amazonEnrichment = 'memo_only'
+        def order = AmazonFixture.order()
+        order.items = [new AmazonOrderItem(title:'Cable',price:65G,quantity:1)]
+        order.paymentEvents = eventEvidence ? [AmazonFixture.event()] : []
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction()) + [category_id:'human']
+        if (state == 'approved') remote.tx.approved = true
+        if (state == 'reconciled') remote.tx.cleared = 'reconciled'
+        if (state == 'split') {
+            remote.tx.category_id = 'split'
+            remote.tx.subtransactions = [[id:'tx-0',amount:-65000L,category_id:'e',memo:'Human split',deleted:false]]
+        }
+        Map before = json.readValue(json.writeValueAsString(remote.tx),Map)
+
+        when:
+        def result = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        result.updated == 1
+        writes.size() == 1
+        writes[0].keySet() == ['memo'] as Set
+        remote.tx.memo.startsWith('🤖 Keep me |')
+        remote.tx.memo.endsWith(AmazonFixture.URL)
+        remote.tx.findAll { k,v -> k != 'memo' } == before.findAll { k,v -> k != 'memo' }
+
+        when: 'financial mode remains ineligible even after a trusted memo write'
+        config.amazonEnrichment = 'item_categories'
+        order.paymentEvents = [AmazonFixture.event()]
+        result = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        result.updated == 0
+        writes.size() == 1
+        result.preview.any { it.reason == 'ineligible_parent' }
+
+        where:
+        state        | eventEvidence
+        'approved'   | false
+        'approved'   | true
+        'split'      | false
+        'split'      | true
+        'reconciled' | false
+        'reconciled' | true
+    }
+
     def 'memo-only keeps categories, then trusted null-category metadata can progress without legacy heuristics'() {
         given:
         config.amazonEnrichment = 'memo_only'

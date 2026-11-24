@@ -251,8 +251,9 @@ class AmazonEnrichment {
             a.financialEvidence && b.financialEvidence && a.financialEvidence != b.financialEvidence
     }
     static boolean eligible(Map tx, Set accounts, boolean financial) {
-        tx && tx.approved == false && !tx.deleted && !tx.transfer_account_id && !tx.subtransactions &&
-            tx.cleared in ['cleared','uncleared'] && tx.amount && (!financial || (tx.amount % 10 == 0 && accounts.contains(tx.account_id)))
+        tx && !tx.deleted && !tx.transfer_account_id && tx.amount &&
+            (!financial || (tx.approved == false && !tx.subtransactions && tx.cleared in ['cleared','uncleared'] &&
+                tx.amount % 10 == 0 && accounts.contains(tx.account_id)))
     }
     static Map snapshot(YNABTransaction tx) {
         Map result = ['id','date','amount','account_id','payee_id','payee_name','memo','category_id','cleared','import_id','flag_color','transfer_account_id'].collectEntries {
