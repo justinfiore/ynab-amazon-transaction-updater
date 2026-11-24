@@ -248,6 +248,40 @@ class AmazonEnrichment_IT extends Specification {
         writes.empty
     }
 
+    def 'event-only historical charges compete without authorizing purchase backfill'() {
+        given:
+        def order = AmazonFixture.order()
+        order.paymentEvents = [AmazonFixture.event()]
+        String oldId = '114-1111111-2222222'
+        Map oldEvent = AmazonFixture.event(-6500L,'old') + [order_id:oldId,competition_only:true]
+        def historical = new PythonAmazonOrderFetcher(config).mapEnvelope(json.writeValueAsString([
+            schema_version:1,orders:[[order_number:oldId,payment_events:[oldEvent]]]
+        ])).first()
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction())
+
+        when:
+        def result = new AmazonEnrichment(config).process([transaction('tx')],[order,historical],ynab,false)
+
+        then:
+        writes.empty
+        !result.preview.any { it.changes }
+        result.preview.any { it.reason == 'ambiguous_payment_match' }
+
+        when: 'the old charge is the only candidate'
+        result = new AmazonEnrichment(config).process([transaction('tx')],[historical],ynab,false)
+
+        then:
+        writes.empty
+        !result.preview.any { it.changes }
+
+        when: 'only the current qualified charge remains'
+        result = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        result.updated == 1
+        writes*.subtransactions*.amount == [[-21670L,-43330L]]
+    }
+
     def 'legacy parents remain payment competitors without becoming write targets'() {
         given:
         def order = AmazonFixture.order()
@@ -295,6 +329,7 @@ class AmazonEnrichment_IT extends Specification {
         writes.clear()
         order.financialEvidence = AmazonFixture.order().financialEvidence
         if (variant == 'incomplete') order.paymentEvents[0].complete = false
+        if (variant == 'competition_only') order.paymentEvents[0].competition_only = true
         if (variant == 'duplicate') order.paymentEvents << new LinkedHashMap(order.paymentEvents[0])
         if (variant in ['competing_parent','legacy_parent']) remote.other = AmazonEnrichment.snapshot(AmazonFixture.transaction('other'))
 
@@ -306,7 +341,7 @@ class AmazonEnrichment_IT extends Specification {
         writes.empty
 
         where:
-        variant << ['incomplete','duplicate','competing_parent','legacy_parent']
+        variant << ['incomplete','duplicate','competing_parent','legacy_parent','competition_only']
     }
 
     def 'an unresolved intent cannot replay against changed policy even when the bank baseline is unchanged'() {

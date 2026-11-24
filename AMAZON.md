@@ -76,6 +76,12 @@ value; a residual is never assumed to be tax or gift funding. Pages are capped a
 20 per history retrieval and detail orders at 200, additionally bounded by the
 existing subprocess timeout/output limits.
 
+Recent purchase events remain payment competitors even when the order is outside
+purchase lookback or its charge ledger is unavailable. Out-of-window purchase
+events are competition-only: they do not fetch old purchase details or authorize
+historical writes. Corroborating global/order histories count an occurrence once;
+indistinguishable repeated occurrences remain ambiguous.
+
 Recent credit events are discovered independently of purchase lookback; an older
 original order can be fetched by real ID. The pinned library has cumulative
 refund totals and document metadata, **not structured per-refund item amounts**.

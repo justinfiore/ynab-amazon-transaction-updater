@@ -69,6 +69,9 @@ class AmazonEnrichment {
                     return
                 }
                 Map event = options[0]
+                if (event.competition_only == true) {
+                    stats.preview << [transaction_id:id,reason:'historical_competitor_only']; return
+                }
                 if (event.complete != true || duplicated.contains(event.key) || !event.key ||
                     candidates.values().count { it.any { it.key == event.key } } != 1 || conflicts.contains(event.order_id) ||
                     state.plans.any { k,v -> k.startsWith(config.ynabBudgetId + '/') && k != config.ynabBudgetId + '/' + id && v.event?.key == event.key }) {
@@ -83,7 +86,7 @@ class AmazonEnrichment {
                 if (!tx || pairs.any { it.tx.id == tx.id }) return
                 if (!matches(tx,entry.event,accounts,config.amazonPaymentAccounts)) return
                 boolean contradicts = events.any { it.key == entry.event.key &&
-                    (association(it) != association(entry.event) || it.complete != true || duplicated.contains(it.key)) } ||
+                    (association(it) != association(entry.event) || it.complete != true || it.competition_only == true || duplicated.contains(it.key)) } ||
                     (candidates[tx.id] ?: []).any { it.key != entry.event.key } ||
                     candidates.any { id,options -> id != tx.id && options.any { it.key == entry.event.key } }
                 if (contradicts || conflicts.contains(entry.event.order_id)) return

@@ -356,43 +356,66 @@ def load_history(config_path, look_back_days, account_only=False, transaction_ev
                 # unsupported summary types keep their existing semantics.
                 history.append(orders._build_order(order.parsed, full_details=True, current_index=order.index))
         if transaction_evidence:
+            recent_complete = True
             try:
                 recent = payment_history(session, look_back_days)
             except LoginRequired:
                 raise
             except Exception:
                 recent = []  # Existing display records remain usable, without payment authority.
+                recent_complete = False
             by_id = {value(order, "order_number"): order for order in history}
             for event in recent:
                 number = event["order_id"]
-                if event["signed_cents"] and event["signed_cents"] > 0 and number not in by_id and re.fullmatch(r"\d{3}-\d{7}-\d{7}", str(number)):
+                if number not in by_id and re.fullmatch(r"\d{3}-\d{7}-\d{7}", str(number)):
                     if len(by_id) >= 200:
                         raise ValueError("Order detail bound")
-                    try:
-                        by_id[number] = orders.get_order(number)
-                    except LoginRequired:
-                        raise
-                    except Exception:
-                        # Event-only record: missing original totals/dates stay unknown.
-                        by_id[number] = {"order_number": number, "bridge_payment_events": [], "event_only": True}
+                    # Recent charges outside purchase lookback still compete, but do
+                    # not trigger purchase-detail backfill or authorize historical writes.
+                    by_id[number] = {"order_number": number}
+                    if any(e["order_id"] == number and (e["signed_cents"] or 0) > 0 for e in recent):
+                        try:
+                            by_id[number] = orders.get_order(number)
+                        except LoginRequired:
+                            raise
+                        except Exception:
+                            pass  # Event-only record: missing original facts stay unknown.
             for number, order in by_id.items():
-                credits = [e for e in recent if e["order_id"] == number and (e["signed_cents"] or 0) > 0]
+                observed = [e for e in recent if e["order_id"] == number]
                 charges = []
                 complete = False
                 if number in seen:
                     try:
                         ledger = payment_history(session, look_back_days, number)
-                        complete = all(e["complete"] and e["order_id"] == number for e in ledger)
+                        complete = bool(ledger) and all(e["complete"] and e["order_id"] == number for e in ledger)
                         charges = [e for e in ledger if (e["signed_cents"] or 0) < 0]
+                        complete = complete and all(any(c["key"] == e["key"] for c in charges)
+                                                    for e in observed if (e["signed_cents"] or 0) < 0)
                     except LoginRequired:
                         raise
                     except Exception:
                         pass
+                # Corroborating histories describe the same occurrences. Retain the
+                # larger multiplicity for each key; indistinguishable duplicates stay unsafe.
+                versions = {}
+                for source, events in enumerate((observed, charges)):
+                    for event in events:
+                        versions.setdefault(event["key"], [[], []])[source].append(event)
+                combined = []
+                for global_copies, order_copies in versions.values():
+                    copies = max((global_copies, order_copies), key=len)
+                    valid = recent_complete and len(copies) == 1 and all(e["complete"] for e in global_copies + order_copies)
+                    for event in copies:
+                        merged = dict(event, complete=valid)
+                        if (event["signed_cents"] or 0) < 0 and event["order_id"] not in seen:
+                            merged["competition_only"] = True
+                        combined.append(merged)
+                complete = complete and all(e["complete"] for e in combined if (e["signed_cents"] or 0) < 0)
                 if isinstance(order, dict):
-                    order["bridge_payment_events"] = charges + credits
+                    order["bridge_payment_events"] = combined
                     order["bridge_payments_complete"] = complete
                 else:
-                    order.bridge_payment_events = charges + credits
+                    order.bridge_payment_events = combined
                     order.bridge_payments_complete = complete
             history = list(by_id.values())
         return history

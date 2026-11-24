@@ -531,6 +531,38 @@ class BridgeTests(unittest.TestCase):
         self.assertNotIn("refund_evidence", record)
         self.assertEqual(1, payments.call_count)
 
+    def test_recent_charges_retain_competitors_and_corroboration_preserves_occurrences(self):
+        today = dt.date.today()
+        current, old = "113-8849250-2919462", "114-1111111-2222222"
+        charge = {"key": "current", "order_id": current, "signed_cents": -6500,
+                  "date": today.isoformat(), "complete": True, "payment_identity": "python:visa:1234", "currency": "USD"}
+        competitor = dict(charge, key="old", order_id=old)
+        for mode in ("corroborated", "detail_failure", "missing_detail_event", "global_duplicate", "detail_duplicate", "global_failure"):
+            with self.subTest(mode=mode):
+                def ledger(session, days, order_id=None):
+                    if order_id is None:
+                        if mode == "global_failure":
+                            raise RuntimeError("unavailable history")
+                        return [charge, competitor, *([charge] if mode == "global_duplicate" else [])]
+                    if mode == "detail_failure":
+                        raise RuntimeError("unavailable order ledger")
+                    if mode == "missing_detail_event":
+                        return []
+                    return [charge, *([charge] if mode == "detail_duplicate" else [])]
+
+                with patch.object(bridge, "payment_history", side_effect=ledger):
+                    code, output, errors, _ = self.run_bridge({today.year: [Order(current, today, 65)]}, ["--transaction-evidence"])
+                self.assertEqual((0, ""), (code, errors))
+                records = {r["order_number"]: r for r in json.loads(output)["orders"]}
+                self.assertEqual([current], self.details)  # No historical purchase-detail backfill.
+                if mode != "global_failure":
+                    self.assertEqual([dict(competitor, competition_only=True)], records[old]["payment_events"])
+                events = records[current]["payment_events"]
+                self.assertEqual(2 if mode.endswith("duplicate") else 1, len(events))
+                self.assertTrue(all(e["key"] == "current" for e in events))
+                self.assertEqual(mode not in ("global_duplicate", "detail_duplicate", "global_failure"), all(e["complete"] for e in events))
+                self.assertEqual(mode == "corroborated", records[current]["financial_evidence"]["payments_complete"])
+
     def test_preflight_rejects_unreviewed_auth_version(self):
         output, errors = io.StringIO(), io.StringIO()
         versions = {"amazon-orders": "6.0.0", "amazon-auth": "1.0.0"}
