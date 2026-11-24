@@ -115,6 +115,12 @@ exceptions, never implicitly become default spending.
 
 The entire order must have supported USD final payments matched to unapproved,
 unsplit, non-transfer, non-reconciled transactions in open on-budget accounts.
+The optional `walmart.allow_approved_uncategorized` setting defaults to `false`.
+When explicitly enabled, approved transactions are also eligible if they have
+no category and no split lines. Newly allocated transactions return to review
+(`approved: false`), just like ordinary allocation. Approved categorized parents
+and existing splits remain protected. The same opt-in applies to refund inflows;
+fresh reads and frozen-plan recovery still enforce eligibility and detect edits.
 Incomplete payments, refunds, unknown currency, unexplained residuals and negative
 default remainders prevent allocation; unique safe links may still be added.
 When Walmart reports savings with unproven gross/net semantics, any remaining
@@ -127,9 +133,10 @@ Refunds have independent journal entries so a frozen purchase cannot block a
 later refund. In `exception_first` mode an eligible unapproved, unsplit inflow
 uses the refund description for classification; abstention, unavailable inference
 or missing text falls back to the configured default Walmart category. The full
-refund receives one category, never guessed item splits. Approved or already
-split refunds can receive safe memo-only links without changing their categories
-or approval. Returned orders no longer invalidate the entire fetched batch.
+refund receives one category, never guessed item splits. Approved refunds remain
+memo-only unless the uncategorized opt-in applies. Already split refunds remain
+memo-only without changing their categories or approval. Returned orders no
+longer invalidate the entire fetched batch.
 
 All separately proven tax/fee/tip costs increase the default; discounts decrease
 it. Exception amounts retain Walmart's reported extended line prices; unproven

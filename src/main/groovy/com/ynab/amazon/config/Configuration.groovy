@@ -39,6 +39,7 @@ class Configuration {
     
     boolean walmartEnabled = false
     String walmartCurrency = 'USD'
+    boolean walmartAllowApprovedUncategorized = false
     String walmartHelperExecutable
     String walmartSessionFile
     int walmartTimeoutSeconds = 300
@@ -108,6 +109,9 @@ class Configuration {
             // Walmart Configuration
             this.walmartEnabled = (config.walmart?.enabled != null) ? config.walmart.enabled : this.walmartEnabled
             this.walmartCurrency = config.walmart?.currency != null ? config.walmart.currency : this.walmartCurrency
+            def allowApproved = config.walmart?.allow_approved_uncategorized
+            if (allowApproved != null && !(allowApproved instanceof Boolean)) throw new IllegalArgumentException('walmart.allow_approved_uncategorized must be a boolean')
+            this.walmartAllowApprovedUncategorized = allowApproved ?: false
             this.walmartHelperExecutable = resolvePath(config.walmart?.helper_executable) ?: bundledWalmartHelper()
             this.walmartSessionFile = resolvePath(config.walmart?.session_file)
             this.walmartTimeoutSeconds = config.walmart?.timeout_seconds != null ? config.walmart.timeout_seconds : this.walmartTimeoutSeconds

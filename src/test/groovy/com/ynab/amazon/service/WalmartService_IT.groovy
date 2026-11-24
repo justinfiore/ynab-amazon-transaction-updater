@@ -472,6 +472,76 @@ class WalmartService_IT extends Specification {
         thrown(IllegalStateException)
     }
 
+    @Unroll
+    def 'approved purchase allocation requires opt-in and an unchanged uncategorized parent: #enabled / #condition'() {
+        given:
+        config.walmartAllowApprovedUncategorized=enabled
+        def txs=WalmartFixture.transactions()
+        txs[0].approved='true'
+        if (condition=='categorized') txs[0].category_id='h'
+        if (condition=='split') txs[0].subtransactions=[[amount:-70000L,category_id:null]]
+        if (condition=='reconciled') txs[0].cleared='reconciled'
+        def matches=new TransactionMatcher().findWalmartMatches(txs,[WalmartFixture.order()])
+        matches.each { it.ynabTransaction.memo=it.proposedMemo }
+        txs.each { remote[it.id]=WalmartFixture.remote(it)+[subtransactions:it.subtransactions] }
+        if (condition=='changed after fetch') remote.large.category_id='h'
+        def before=json.readValue(json.writeValueAsBytes(remote),Map)
+        new WalmartJournal(config.walmartJournalFile).locked(false) { state, save ->
+            state.mappings=['plan/food':['g'],'plan/soap':['h']]; save(state)
+        }
+
+        when:
+        def result=new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        result.updated==expected
+        writes.size()==expected
+        if (expected) {
+            assert remote.large.subtransactions*.category_id==['h','g']
+            assert remote.small.category_id=='g'
+            assert remote.values().every { !it.approved }
+        } else {
+            assert remote==before
+        }
+
+        where:
+        enabled | condition             | expected
+        false   | 'uncategorized'       | 0
+        true    | 'uncategorized'       | 2
+        true    | 'categorized'         | 0
+        true    | 'split'               | 0
+        true    | 'reconciled'          | 0
+        true    | 'changed after fetch' | 0
+    }
+
+    @Unroll
+    def 'approved uncategorized refund respects opt-in and returns to review: #enabled / #category'() {
+        given:
+        config.walmartAllowApprovedUncategorized=enabled
+        def order=WalmartFixture.order()
+        order.charges=[[key:'refund',date:'2026-11-21',payment:'VISA',currency:'USD',cents:-1056L]]
+        def tx=new YNABTransaction(id:'refund',date:'2026-11-21',amount:10560L,payee_name:'WALMART',payee_id:'payee',account_id:'account',
+            approved:'true',deleted:'false',cleared:'cleared',category_id:category)
+        def matches=new TransactionMatcher().findWalmartMatches([tx],[order])
+        tx.memo=matches[0].proposedMemo
+        remote.refund=WalmartFixture.remote(tx)
+
+        when:
+        def result=new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        result.updated==expected
+        writes.size()==expected
+        remote.refund.category_id==(expected ? 'g' : category)
+        remote.refund.approved==!expected
+
+        where:
+        enabled | category | expected
+        false   | null     | 0
+        true    | null     | 1
+        true    | 'h'      | 0
+    }
+
     def 'HTTP writes preserve parents and remain unapproved; lost response and restart do not duplicate allocations'() {
         given:
         def order = WalmartFixture.order()
@@ -580,10 +650,12 @@ class WalmartService_IT extends Specification {
 
     def 'restart resolves durable unknown intent before any retry and source drift stops remaining writes'() {
         given:
+        config.walmartAllowApprovedUncategorized=true
         def order=WalmartFixture.order()
         order.items[0].grossCents=2000L
         order.items[1].grossCents=8000L
         def txs=WalmartFixture.transactions()
+        txs[1].approved='true'
         txs.each { remote[it.id]=WalmartFixture.remote(it) }
         def matches=new TransactionMatcher().findWalmartMatches(txs,[order])
         failReadback=true
@@ -613,6 +685,16 @@ class WalmartService_IT extends Specification {
 
         when:
         order.adjustments.removeLast()
+        config.walmartAllowApprovedUncategorized=false
+        def disabled=new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        disabled.preview*.reason.contains('parent_changed')
+        writes.size()==1
+        remote.small.approved
+
+        when:
+        config.walmartAllowApprovedUncategorized=true
         remote.large.subtransactions[0].category_id='h'
         def edited=new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
 

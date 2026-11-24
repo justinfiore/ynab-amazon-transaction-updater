@@ -37,6 +37,7 @@ amazon:
 walmart:
   enabled: false  # Optional native Go source; no legacy browser fallback
   currency: "USD"  # Default when source evidence omits currency; explicit conflicts still block matching
+  allow_approved_uncategorized: false  # Opt in to categorizing approved, unsplit transactions with no category; updates return to review
   # helper_executable: "/absolute/path/walmart-helper"  # Installed Walmart distribution discovers its bundled helper
   # session_file: "~/.config/ynab-updater/walmart-session.json"
   timeout_seconds: 300
