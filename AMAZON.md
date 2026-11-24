@@ -167,10 +167,20 @@ ambiguous edits, missing product IDs and zero-value rows cannot.
 
 Run `.agents/scripts/build.sh`, `.agents/scripts/run-unit-tests.sh`,
 `.agents/scripts/run-integration-tests.sh`, and
-`npx @fission-ai/openspec validate amazon-item-categorization --strict`.
+`npx @fission-ai/openspec validate --specs --strict`.
 For real-library parser fixtures (no network/account access), install
 `requirements-amazon-orders.txt` with hash checking and run
 `python -m unittest discover -s scripts -p 'test_amazon_orders_bridge.py'`.
 Optional Walmart helper checks use `-Pwalmart walmartUnitTest walmartIntegrationTest`.
 The ordinary JVM suites include shared-classifier and fake-YNAB recovery tests
 without Go or Walmart enablement.
+
+The implemented `amazon-item-categorization` change is archived under
+[`openspec/changes/archive/2026-11-24-amazon-item-categorization/`](openspec/changes/archive/2026-11-24-amazon-item-categorization/).
+Its requirements are synced into the canonical
+[Amazon enrichment](openspec/specs/amazon-transaction-enrichment/spec.md),
+[Amazon fetching](openspec/specs/amazon-order-fetching/spec.md),
+[shared classification](openspec/specs/item-classification/spec.md) and
+[Walmart enrichment](openspec/specs/walmart-transaction-enrichment/spec.md) specs.
+Archiving records implementation completion, not additional live-source or model
+qualification; the operational limits above still apply.
