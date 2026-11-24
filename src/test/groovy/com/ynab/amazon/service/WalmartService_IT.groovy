@@ -58,6 +58,7 @@ class WalmartService_IT extends Specification {
                     Map change = json.readValue(exchange.requestBody, Map).transaction
                     writes << [id:id,change:json.readValue(json.writeValueAsBytes(change),Map)]
                     remote[id] += change
+                    if (remote[id].subtransactions) remote[id].category_id='split-category'
                     remote[id].subtransactions?.eachWithIndex { row,index -> row.id = "${id}-row-${index}"; row.deleted=false }
                     if (failReadback) { failReadback=false; pendingReadback=true }
                     if (loseResponse) { loseResponse=false; exchange.close(); return }
@@ -580,6 +581,8 @@ class WalmartService_IT extends Specification {
     def 'restart resolves durable unknown intent before any retry and source drift stops remaining writes'() {
         given:
         def order=WalmartFixture.order()
+        order.items[0].grossCents=2000L
+        order.items[1].grossCents=8000L
         def txs=WalmartFixture.transactions()
         txs.each { remote[it.id]=WalmartFixture.remote(it) }
         def matches=new TransactionMatcher().findWalmartMatches(txs,[order])
@@ -591,8 +594,16 @@ class WalmartService_IT extends Specification {
         then:
         thrown(IllegalStateException)
         writes.size()==1
+        remote.large.category_id=='split-category'
+        remote.large.subtransactions*.amount==[-20000L,-50000L]
 
         when:
+        txs.each {
+            it.memo=remote[it.id].memo
+            it.category_id=remote[it.id].category_id
+            it.subtransactions=json.readValue(json.writeValueAsBytes(remote[it.id].subtransactions ?: []),List)
+        }
+        matches=new TransactionMatcher().findWalmartMatches(txs,[order])
         order.adjustments << [kind:'tip',cents:100L]
         def drift=new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
 
@@ -602,11 +613,27 @@ class WalmartService_IT extends Specification {
 
         when:
         order.adjustments.removeLast()
+        remote.large.subtransactions[0].category_id='h'
+        def edited=new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        edited.preview*.reason.contains('parent_changed')
+        writes.size()==1
+        remote.large.subtransactions[0].category_id=='h'
+
+        when:
+        remote.large.subtransactions[0].category_id=null
         new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
 
         then:
         writes*.id==['large','small']
         new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> state.plans['plan/123'].operations.values().every { it.allocation && !it.pending } }
+
+        when:
+        new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+
+        then:
+        writes*.id==['large','small']
     }
 
     def 'restart never rebases an unattempted payment over human changes'() {

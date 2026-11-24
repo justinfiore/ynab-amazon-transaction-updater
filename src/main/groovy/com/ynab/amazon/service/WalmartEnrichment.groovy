@@ -190,6 +190,9 @@ class WalmartEnrichment {
     static boolean same(Map actual, Map expected) {
         if (!actual || !expected) return false
         def fields = ['id','date','amount','account_id','payee_id','payee_name','memo','category_id','cleared','approved','import_id','flag_color','deleted','transfer_account_id']
+        // YNAB assigns split parents its own category ID instead of the null sent in a PUT.
+        // Child categories still have to match exactly, as do IDs on saved read-back results.
+        if (expected.subtransactions && expected.category_id == null) fields.remove('category_id')
         fields.every { actual[it] == expected[it] } &&
             (actual.subtransactions ?: []).collect { [it.amount,it.category_id,it.memo,it.payee_id] }.sort { it.toString() } ==
             (expected.subtransactions ?: []).collect { [it.amount,it.category_id,it.memo,it.payee_id] }.sort { it.toString() }
