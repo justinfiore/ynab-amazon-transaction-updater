@@ -181,9 +181,14 @@ class AmazonEnrichment {
                 Map changes = financial ? AmazonAllocation.payload(event,memo,plan) : [memo:memo]
                 String status = !financial ? 'memo_only' : !plan.eligible ? 'fallback' : plan.lines.size() == 1 ? 'category' : 'split'
                 stats.high_confidence++
+                if (old?.status == status && current.memo == memo && status in ['fallback','memo_only']) {
+                    stats.preview << [transaction_id:tx.id,status:status,reason:'unchanged',allocation_reason:plan.reason]
+                    stats.completed << tx.id
+                    return
+                }
                 stats.preview << [transaction_id:tx.id,order_id:order.orderId,event_key:event?.key,reason:plan.reason,
                     status:status,changes:changes,lines:plan.lines ?: []]
-                if (dryRun || (old?.status == status && current.memo == memo && status in ['fallback','memo_only'])) {
+                if (dryRun) {
                     stats.completed << tx.id
                     return
                 }

@@ -133,6 +133,40 @@ class AmazonEnrichment_IT extends Specification {
         remote.tx.memo.count('Keep me') == 1
     }
 
+    def 'confirmed unchanged #mode records are completed but never proposed or written again'() {
+        given:
+        config.amazonEnrichment = mode
+        def order = AmazonFixture.order()
+        order.financialEvidence = [:]
+        order.paymentEvents = [AmazonFixture.event()]
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction())
+        assert new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false).updated == 1
+        byte[] before = new File(config.amazonJournalFile).bytes
+
+        when:
+        def dry = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,true)
+
+        then:
+        dry.preview*.reason == ['unchanged']
+        !dry.preview.any { it.containsKey('changes') }
+        dry.completed == ['tx']
+        writes.size() == 1
+        new File(config.amazonJournalFile).bytes == before
+
+        when:
+        def live = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        live.preview*.reason == ['unchanged']
+        !live.preview.any { it.containsKey('changes') }
+        live.completed == ['tx']
+        live.updated == 0
+        writes.size() == 1
+
+        where:
+        mode << ['memo_only','item_categories']
+    }
+
     def 'human-owned state and ambiguous payment identities never authorize fallback'() {
         given:
         def order = AmazonFixture.order()

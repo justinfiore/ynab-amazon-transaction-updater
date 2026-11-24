@@ -117,7 +117,8 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
             [transaction_id:'split',status:'split',changes:[memo:'Exact item summary',approved:false,category_id:null,
                 subtransactions:[[amount:-21670L,category_id:'electronics',memo:'Cable'],[amount:-43330L,category_id:'pets',memo:'Food']]]],
             [transaction_id:'fallback',status:'fallback',reason:'refund_items_unknown',changes:[memo:'Refund summary',approved:false,category_id:null]],
-            [transaction_id:'skipped',reason:'ambiguous_or_incomplete_payment']
+            [transaction_id:'skipped',reason:'ambiguous_or_incomplete_payment'],
+            [transaction_id:'unchanged',status:'fallback',reason:'unchanged',allocation_reason:'refund_items_unknown']
         ]
         def log = LoggerFactory.getLogger(YNABAmazonTransactionUpdater)
         def appender = new ListAppender()
