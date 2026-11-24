@@ -58,10 +58,12 @@ class AmazonEnrichment {
             Set duplicated = events.countBy { it.key }.findAll { k,v -> v > 1 }.keySet()
             List<Map> pairs = []
             Map candidates = [:]
-            transactions.findAll { !legacyIds.contains(it.id) }.each { tx ->
+            // Excluded parents still compete for events; legacy IDs confer no event ownership.
+            transactions.each { tx ->
                 candidates[tx.id] = events.findAll { e -> matches(tx,e,accounts,config.amazonPaymentAccounts) }
             }
             candidates.each { id, options ->
+                if (legacyIds.contains(id)) return
                 if (options.size() != 1) {
                     if (options) stats.preview << [transaction_id:id,reason:'ambiguous_payment_match']
                     return
