@@ -1,5 +1,6 @@
 package com.ynab.amazon
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.ynab.amazon.config.Configuration
 import com.ynab.amazon.service.YNABService
 import com.ynab.amazon.service.AmazonService
@@ -157,7 +158,12 @@ class YNABAmazonTransactionUpdater {
         ]
         
         if (config.isDryRun()) {
-            logger.info("Amazon dry run complete. Would update ${amazonStats.updated} transactions (${amazonStats.high_confidence} high, ${amazonStats.medium_confidence} medium confidence)")
+            def preview = amazonStats.preview ?: []
+            def json = new ObjectMapper()
+            logger.info('Amazon dry-run amounts in YNAB milliunits (1000 = 1 currency unit)')
+            preview.each { logger.info('Amazon dry-run preview: {}',json.writeValueAsString(it)) }
+            int proposed = preview.findAll { it.changes }*.transaction_id.unique().size()
+            logger.info("Amazon dry run complete. Would update ${proposed} transactions (${amazonStats.high_confidence} high, ${amazonStats.medium_confidence} medium confidence)")
         } else {
             logger.info("Successfully updated ${amazonStats.updated} Amazon transactions (${amazonStats.high_confidence} high, ${amazonStats.medium_confidence} medium confidence)")
         }

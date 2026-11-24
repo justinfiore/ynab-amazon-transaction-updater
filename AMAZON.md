@@ -7,6 +7,12 @@ even though every write remains **unapproved**. Keep `app.dry_run: true` until
 you have reviewed the exact preview. No live account or paid inference is needed
 to run the repository's offline acceptance tests.
 
+Dry runs print each Amazon preview as JSON, including exact proposed changes,
+explicit null categories and skip reasons. The summary counts transactions with
+proposed changes, not completed writes. Payload amounts are signed YNAB milliunits
+(1000 = 1 currency unit). Previews contain local transaction and purchase details;
+review logs before sharing them.
+
 ## Independent setup
 
 Build the ordinary JVM distribution with `./gradlew installDist` (Java 25).
