@@ -145,6 +145,11 @@ their approval, categories, split rows and all other financial fields. Neither
 mode updates deleted or transfer parents. There is no distributed compare-and-swap
 in YNAB: avoid editing the same transaction during a run.
 
+Switching to `memo_only` suspends unapplied financial intents, including explicit
+null-category fallback. Already accepted writes can still be confirmed by
+read-back; they are not rolled back. Re-enabling `item_categories` permits replay
+of the saved intent only after the normal unchanged-policy and baseline checks.
+
 Confirmed fallback can advance once added noncontradictory evidence explains a
 first allocation. Source/bank identity contradictions stop it. Completed item
 allocations are frozen against source/policy/mapping drift. Lost-response and

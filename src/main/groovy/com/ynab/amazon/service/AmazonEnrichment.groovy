@@ -128,6 +128,9 @@ class AmazonEnrichment {
                     } else if (!GuardedTransactions.same(current,old.baseline)) {
                         stats.preview << [transaction_id:tx.id,reason:'unknown_write_outcome']; return
                     } else {
+                        if (!financial && old.changes.keySet().any { it != 'memo' }) {
+                            stats.preview << [transaction_id:tx.id,reason:'financial_opt_in_required']; return
+                        }
                         // Replay only the already durable intent; never replan an unresolved write.
                         if (old.fingerprint != frozen || (old.trusted && association(old.event) != association(event))) {
                             stats.preview << [transaction_id:tx.id,reason:'pending_intent_drift']; return

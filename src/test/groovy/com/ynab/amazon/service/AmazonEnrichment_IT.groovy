@@ -35,7 +35,7 @@ class AmazonEnrichment_IT extends Specification {
                     Map change = json.readValue(ex.requestBody,Map).transaction
                     writes << change
                     if (rejectWrite) { ex.sendResponseHeaders(503,-1); ex.close(); return }
-                    remote[id] += change
+                    remote[id] += json.readValue(json.writeValueAsString(change),Map)
                     remote[id].subtransactions?.eachWithIndex { row,i -> row.id = "${id}-${i}"; row.deleted = false }
                     if (remote[id].subtransactions) remote[id].category_id = 'split'
                     if (failReadback) { failedRead = true; failReadback = false }
@@ -82,13 +82,21 @@ class AmazonEnrichment_IT extends Specification {
         remote.tx.findAll { k,v -> !(k in ['memo','category_id','subtransactions']) } == baseline.findAll { k,v -> !(k in ['memo','category_id','subtransactions']) }
         remote.tx.memo.endsWith(AmazonFixture.URL)
 
-        when:
+        when: 'opting out still permits read-back confirmation of an accepted write'
+        config.amazonEnrichment = 'memo_only'
         def restarted = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
 
         then:
         writes.size() == 1
         restarted.preview*.reason == ['allocation_complete']
         new ProtectedJournal(config.amazonJournalFile).locked(true) { state,save -> !state.plans['plan/tx'].pending && state.plans['plan/tx'].status == 'split' }
+
+        when:
+        config.amazonEnrichment = 'item_categories'
+        new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        writes.size() == 1
 
         where:
         sign << [-1L,1L]
@@ -422,6 +430,47 @@ class AmazonEnrichment_IT extends Specification {
 
         where:
         variant << ['incomplete','duplicate','competing_parent','legacy_parent','competition_only']
+    }
+
+    def 'pending #intent financial intent waits for renewed opt-in without losing recovery'() {
+        given:
+        def order = AmazonFixture.order()
+        if (intent == 'fallback') order.financialEvidence = [:]
+        if (intent == 'category') order.financialEvidence.items = [order.financialEvidence.items[0] + [cents:6000L]]
+        order.paymentEvents = [AmazonFixture.event()]
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction())
+        rejectWrite = true
+        assert new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false).updated == 0
+        assert writes.size() == 1
+        byte[] pending = new File(config.amazonJournalFile).bytes
+        config.amazonEnrichment = 'memo_only'
+        rejectWrite = false
+
+        when:
+        def dry = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,true)
+        def live = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        dry.preview*.reason == ['financial_opt_in_required']
+        live.preview*.reason == ['financial_opt_in_required']
+        !dry.preview.any { it.changes }
+        !live.preview.any { it.changes }
+        writes.size() == 1
+        remote.tx.memo == 'Keep me'
+        new File(config.amazonJournalFile).bytes == pending
+
+        when:
+        config.amazonEnrichment = 'item_categories'
+        def resumed = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        resumed.updated == 1
+        writes.size() == 2
+        writes[1] == writes[0]
+        new ProtectedJournal(config.amazonJournalFile).locked(true) { state,save -> !state.plans['plan/tx'].pending }
+
+        where:
+        intent << ['category','split','fallback']
     }
 
     def 'an unresolved intent cannot replay against changed policy even when the bank baseline is unchanged'() {
