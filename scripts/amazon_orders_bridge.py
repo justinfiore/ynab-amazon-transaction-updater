@@ -143,7 +143,8 @@ def payment_history(session, days, order_id=None):
     cursor = None
     seen = set()
     events = []
-    cutoff = dt.date.today() - dt.timedelta(days=days)
+    # Bank parents at the lookback edge can match source events 14 days earlier.
+    cutoff = dt.date.today() - dt.timedelta(days=days + 14)
     for _ in range(20):
         loaded, cursor = page.get_page(session, url, cursor)
         for transaction in loaded:
@@ -377,7 +378,8 @@ def load_history(config_path, look_back_days, account_only=False, transaction_ev
                     # Recent charges outside purchase lookback still compete, but do
                     # not trigger purchase-detail backfill or authorize historical writes.
                     by_id[number] = {"order_number": number}
-                    if any(e["order_id"] == number and (e["signed_cents"] or 0) > 0 for e in recent):
+                    if any(e["order_id"] == number and (e["signed_cents"] or 0) > 0 and
+                           date_value(e["date"]) >= cutoff for e in recent):
                         try:
                             by_id[number] = orders.get_order(number)
                         except LoginRequired:
@@ -411,7 +413,8 @@ def load_history(config_path, look_back_days, account_only=False, transaction_ev
                     valid = recent_complete and len(copies) == 1 and all(e["complete"] for e in global_copies + order_copies)
                     for event in copies:
                         merged = dict(event, complete=valid)
-                        if (event["signed_cents"] or 0) < 0 and event["order_id"] not in seen:
+                        if ((event["signed_cents"] or 0) < 0 and event["order_id"] not in seen or
+                                (event["signed_cents"] or 0) > 0 and date_value(event["date"]) < cutoff):
                             merged["competition_only"] = True
                         combined.append(merged)
                 complete = complete and all(e["complete"] for e in combined if (e["signed_cents"] or 0) < 0)

@@ -336,16 +336,18 @@ class AmazonEnrichment_IT extends Specification {
         writes.empty
     }
 
-    def 'event-only historical charges compete without authorizing purchase backfill'() {
+    def 'event-only historical payments compete without authorizing backfill for sign #sign'() {
         given:
         def order = AmazonFixture.order()
-        order.paymentEvents = [AmazonFixture.event()]
+        Map currentEvent = AmazonFixture.event(sign * 6500L) + [date:'2026-11-21']
+        if (sign > 0) currentEvent.refund_evidence = order.financialEvidence
+        order.paymentEvents = [currentEvent]
         String oldId = '114-1111111-2222222'
-        Map oldEvent = AmazonFixture.event(-6500L,'old') + [order_id:oldId,competition_only:true]
+        Map oldEvent = AmazonFixture.event(sign * 6500L,'old') + [order_id:oldId,date:'2026-11-19',competition_only:true]
         def historical = new PythonAmazonOrderFetcher(config).mapEnvelope(json.writeValueAsString([
             schema_version:1,orders:[[order_number:oldId,payment_events:[oldEvent]]]
         ])).first()
-        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction())
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction('tx',sign * 65000L))
 
         when:
         def result = new AmazonEnrichment(config).process([transaction('tx')],[order,historical],ynab,false)
@@ -367,7 +369,10 @@ class AmazonEnrichment_IT extends Specification {
 
         then:
         result.updated == 1
-        writes*.subtransactions*.amount == [[-21670L,-43330L]]
+        writes*.subtransactions*.amount == [[sign * 21670L,sign * 43330L]]
+
+        where:
+        sign << [-1L,1L]
     }
 
     def 'legacy parents remain payment competitors without becoming write targets'() {

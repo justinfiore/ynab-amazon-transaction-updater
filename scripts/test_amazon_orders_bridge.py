@@ -507,6 +507,26 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual("python:visa:1234", events[0]["payment_identity"])
         self.assertIn("transactionTag=113-8849250-2919462", calls[0][0])
         self.assertEqual("cursor-1", calls[1][1]["json"]["exclusiveStartKey"])
+        cutoff = today - dt.timedelta(days=30)
+        current, old, edge, outside = "113-8849250-2919462", "114-1111111-2222222", "115-1111111-2222222", "116-1111111-2222222"
+        boundary_rows = [dict(row(amount, [{"orderDisplayString": "Order #" + number}]), formattedDate=day.strftime("%B %d, %Y"))
+                         for number, day, amount in [(current, cutoff + dt.timedelta(days=1), "-$65.00"),
+                                                     (old, cutoff - dt.timedelta(days=1), "-$65.00"),
+                                                     (edge, cutoff - dt.timedelta(days=14), "-$65.00"),
+                                                     (outside, cutoff - dt.timedelta(days=15), "-$65.00"),
+                                                     (old, cutoff - dt.timedelta(days=1), "$10.00")]]
+        session.post = lambda url, **kwargs: page([boundary_rows[0]]) if "transactionTag=" in url else page(boundary_rows)
+        self.assertEqual([current, old, edge, old], [e["order_id"] for e in bridge.payment_history(session, 30)])
+        real_history = bridge.payment_history
+        with patch.object(bridge, "payment_history", side_effect=lambda ignored, days, order_id=None: real_history(session, days, order_id)):
+            code, output, errors, _ = self.run_bridge({today.year: [Order(current, cutoff + dt.timedelta(days=1), 65)]}, ["--transaction-evidence"])
+        self.assertEqual((0, ""), (code, errors))
+        records = {r["order_number"]: r for r in json.loads(output)["orders"]}
+        self.assertEqual({current, old, edge}, set(records))
+        self.assertEqual([current], self.details)  # Boundary competitors never backfill old purchases or credits.
+        self.assertTrue(records[current]["financial_evidence"]["payments_complete"])
+        self.assertTrue(all(e["competition_only"] for number in (old, edge) for e in records[number]["payment_events"]))
+
         empty_form = types.SimpleNamespace(parsed=BeautifulSoup('<form><input name="ppw-widgetState"></form>', "html.parser"))
         session.post = lambda *args, **kwargs: empty_form
         with self.assertRaises(ValueError):
