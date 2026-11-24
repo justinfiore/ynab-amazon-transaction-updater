@@ -89,26 +89,47 @@ class WalmartEvidenceNormalizer_UT extends Specification {
         amount << ['$5.00','-$0.00','-$5.001','-$5','-$1,00.00']
     }
 
-    def 'nested savings never turn reconciled net item costs into a gross exception basis'() {
+    @Unroll
+    def 'unproven savings reduce only the default category: #orderSavings / #groupSavings / #itemCost / #total'() {
         given:
         def source=fixture()
         def raw=source.detail.data.order
-        raw.priceDetails=[grandTotal:[value:95]]
+        raw.priceDetails=[grandTotal:[value:total], savings:[value:orderSavings], taxTotal:[value:tax]]
         raw.groups_2101[0].categories=[]
-        raw.groups_2101[0].items[1].priceInfo.linePrice.value=15
-        raw.groups_2101[0].priceDetails=[savings:[value:5]]
+        raw.groups_2101[0].items[1].priceInfo.linePrice.value=itemCost
+        raw.groups_2101[0].priceDetails=[savings:[value:groupSavings]]
         def payment=source.ledger.data.getOrderLedger.paymentMethodsLedgers[0]
-        payment.transactions=[[chargeType:'FINAL_CHARGES',transactionLines:[[date:'Nov 21, 2026',rowLines:[[lineType:'ORDER_CHARGE',displayValues:['$95.00']]]]]]]
-
-        expect:
-        !WalmartEvidenceNormalizer.normalize(source).complete
-        WalmartEvidenceNormalizer.normalize(source).ineligibleReason=='discount_basis_unproven'
+        payment.transactions=[[chargeType:'FINAL_CHARGES',transactionLines:[[date:'Nov 21, 2026',rowLines:[
+            [lineType:'ORDER_CHARGE',displayValues:['$'+new BigDecimal(total).setScale(2)]]
+        ]]]]]
+        def tx=WalmartFixture.transactions()[0]
+        tx.amount=-total*1000L
 
         when:
-        raw.groups_2101[0].priceDetails.savings.value=0
+        def order=WalmartEvidenceNormalizer.normalize(source)
+        def matches=new TransactionMatcher().findWalmartMatches([tx],[order])
+        def plan=WalmartAllocation.plan(order,matches,'g',[a:[category_id:'g'],b:[category_id:'h']],['account'] as Set)
 
         then:
-        WalmartEvidenceNormalizer.normalize(source).complete
+        order.complete
+        order.adjustments.findAll { it.kind=='discount' }== (discount ? [[kind:'discount',cents:discount]] : [])
+        plan.eligible==eligible
+        if (eligible) {
+            assert plan.operations[0].lines.collect { [it.cents,it.category_id] }==expected
+        } else {
+            assert plan.reason==reason
+        }
+
+        where:
+        orderSavings | groupSavings | itemCost | tax | total | discount | eligible | expected                   | reason
+        0            | 5            | 15       | 0   | 95    | 0        | true     | [[1500,'h'],[8000,'g']]     | null
+        5            | 0            | 20       | 0   | 95    | 500      | true     | [[2000,'h'],[7500,'g']]     | null
+        5            | 5            | 20       | 0   | 95    | 500      | true     | [[2000,'h'],[7500,'g']]     | null
+        5            | 0            | 20       | 10  | 105   | 500      | true     | [[2000,'h'],[8500,'g']]     | null
+        80           | 0            | 20       | 0   | 20    | 8000     | true     | [[2000,'h']]                | null
+        85           | 0            | 20       | 0   | 15    | 8500     | false    | []                         | 'negative_default'
+        0            | 0            | 20       | 0   | 95    | 0        | false    | []                         | 'unreconciled_costs'
+        5            | 0            | 20       | 0   | 105   | 0        | false    | []                         | 'unreconciled_costs'
     }
 
     @Unroll
@@ -123,7 +144,7 @@ class WalmartEvidenceNormalizer_UT extends Specification {
         value << [12.345G, Double.NaN, Double.POSITIVE_INFINITY,1000000001G,'12.34',null]
     }
 
-    def 'a net line plus a separately identified discount is not treated as a proven gross basis'() {
+    def 'a net line plus separately reported savings is not discounted twice'() {
         given:
         def source=fixture()
         def raw=source.detail.data.order
@@ -139,8 +160,8 @@ class WalmartEvidenceNormalizer_UT extends Specification {
         then:
         order.items*.grossCents==[8000L,1500L]
         order.totalAmount==95G
-        !order.complete
-        order.ineligibleReason=='discount_basis_unproven'
+        order.complete
+        order.adjustments.empty
     }
 
     def 'a cancelled group is incomplete rather than a delivered charge basis'() {

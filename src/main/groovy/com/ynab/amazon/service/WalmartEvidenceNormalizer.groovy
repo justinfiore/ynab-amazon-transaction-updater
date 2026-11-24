@@ -40,13 +40,13 @@ class WalmartEvidenceNormalizer {
         if (pricing.taxTotal) adjustment('tax',pricing.taxTotal.value)
         if (pricing.driverTip) adjustment('tip',pricing.driverTip.value)
         (pricing.fees ?: []).each { adjustment('fee',it.value) }
-        if (pricing.savings && money(pricing.savings.value)!=0) incomplete('discount_basis_unproven')
+        boolean hasSavings = pricing.savings && money(pricing.savings.value)!=0
         Map items=[:]
         Set<String> returnedDescriptions=[] as Set
         if (!(raw.groups_2101 instanceof List)) invalid()
         raw.groups_2101.each { group ->
             if (!(group.status?.statusType in ['DELIVERED','PICKED_UP'])) incomplete('unfulfilled_or_unsupported')
-            if (group.priceDetails?.savings && money(group.priceDetails.savings.value)!=0) incomplete('discount_basis_unproven')
+            if (group.priceDetails?.savings && money(group.priceDetails.savings.value)!=0) hasSavings=true
             def displayed=(group.items ?: []) + (group.categories ?: []).collectMany { it.items ?: [] } +
                 (group.subGroups ?: []).collectMany { sub -> (sub.categories ?: []).collectMany { it.items ?: [] } }
             displayed.each { item ->
@@ -65,6 +65,14 @@ class WalmartEvidenceNormalizer {
             }
         }
         order.items=items.keySet().sort().collect { new WalmartOrderItem(items[it]) }
+        if (hasSavings) {
+            // Savings may already be included in line prices or repeated at group/order level.
+            // Only the remaining reduction belongs to the default category, not exception items.
+            long itemTotal=(order.items.sum { it.grossCents } ?: 0) as long
+            long costs=(order.adjustments.sum { it.cents } ?: 0) as long
+            long discount=itemTotal+costs-total
+            if (discount>0) order.adjustments << [kind:'discount',cents:discount]
+        }
         def payments=evidence.ledger?.data?.getOrderLedger?.paymentMethodsLedgers
         if (!(payments instanceof List)) invalid()
         Map ordinals=[:].withDefault { 0 }

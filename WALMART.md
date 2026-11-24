@@ -115,10 +115,13 @@ exceptions, never implicitly become default spending.
 
 The entire order must have supported USD final payments matched to unapproved,
 unsplit, non-transfer, non-reconciled transactions in open on-budget accounts.
-Incomplete payments, refunds, unknown currency/gross-discount semantics,
-unexplained residuals and negative default remainders prevent allocation; unique
-safe links may still be added. The Groovy normalizer deliberately marks
-nonzero savings with unproven gross/net semantics incomplete, not guessed gross.
+Incomplete payments, refunds, unknown currency, unexplained residuals and negative
+default remainders prevent allocation; unique safe links may still be added.
+When Walmart reports savings with unproven gross/net semantics, any remaining
+reduction from item prices plus tax/fees/tip to the order total is attributed
+entirely to the default category. Savings already reflected in item prices are
+not subtracted again, and repeated group/order savings are not added together.
+Without reported savings, an unexplained reduction still prevents allocation.
 
 Refunds have independent journal entries so a frozen purchase cannot block a
 later refund. In `exception_first` mode an eligible unapproved, unsplit inflow
@@ -129,7 +132,8 @@ split refunds can receive safe memo-only links without changing their categories
 or approval. Returned orders no longer invalidate the entire fetched batch.
 
 All separately proven tax/fee/tip costs increase the default; discounts decrease
-it. Exception prices are proven pre-discount extended costs. For groceries $80,
+it. Exception amounts retain Walmart's reported extended line prices; unproven
+discounts are not distributed across them. For groceries $80,
 Household $20, tax $5, fee $3, tip $2 and discount $10: Household is $20, default
 $80. With $70/$30 payments, place $20 Household + $50 default on $70 and simply
 categorize $30 as default. Default groceries are not itemized. Larger exceptions
