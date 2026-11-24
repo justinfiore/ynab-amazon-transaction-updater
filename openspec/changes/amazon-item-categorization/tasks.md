@@ -1,6 +1,6 @@
 ## 1. Preserve Walmart while extracting shared services
 
-- [ ] 1.1 Run existing Walmart classification/provider/onboarding/allocation/recovery tests and record the baseline; identify current journal/cache compatibility fixtures before moving code.
+- [x] 1.1 Run existing Walmart classification/provider/onboarding/allocation/recovery tests and record the baseline; identify current journal/cache compatibility fixtures before moving code.
 - [ ] 1.2 Extract neutral item evidence, `ItemClassificationService` decision resolution and `RemoteItemClassifier` provider HTTP; remove shared dependencies on Walmart models/configuration/fingerprint helpers. Preserve Walmart prompts, policies, limits, accepted decisions and failure behavior.
 - [ ] 1.3 Extract reusable category validation, provider-key lifecycle and retailer-targeted onboarding; preserve Walmart keys/flags/files/default validation and avoid deleting credentials referenced by another retailer.
 - [ ] 1.4 Pull up neutral YNAB catalog/account/currency/fresh-read/PUT primitives and reusable intent/read-back/atomic-state mechanics where both callers use them. Keep Walmart ledger matching, default accounting and metadata-only memo policy in Walmart owners.

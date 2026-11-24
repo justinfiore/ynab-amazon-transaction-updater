@@ -139,10 +139,18 @@ class YNABService {
      * Close HTTP client resources
      */
     Map getWalmartTransaction(String id) {
+        getTransaction(id)
+    }
+
+    Map getTransaction(String id) {
         walmartRequest('GET', "/transactions/${pathId(id)}").data.transaction as Map
     }
 
     String getWalmartPlanCurrency() {
+        getPlanCurrency()
+    }
+
+    String getPlanCurrency() {
         try {
             walmartRequest('GET', '/settings').data?.settings?.currency_format?.iso_code as String
         } catch (Exception ignored) {
@@ -152,6 +160,10 @@ class YNABService {
     }
 
     List<Map> getWalmartCategories() {
+        getCategoryCatalog()
+    }
+
+    List<Map> getCategoryCatalog() {
         def groups = walmartRequest('GET', '/categories').data.category_groups
         groups.collectMany { group ->
             group.categories.collect { category ->
@@ -162,10 +174,18 @@ class YNABService {
     }
 
     Set<String> getWalmartBudgetAccounts() {
+        getBudgetAccounts()
+    }
+
+    Set<String> getBudgetAccounts() {
         walmartRequest('GET', '/accounts').data.accounts.findAll { it.on_budget == true && !it.deleted && !it.closed }*.id as Set
     }
 
     void putWalmartTransaction(String id, Map changes) {
+        putTransaction(id, changes)
+    }
+
+    void putTransaction(String id, Map changes) {
         walmartRequest('PUT', "/transactions/${pathId(id)}", [transaction: changes])
     }
 
