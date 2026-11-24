@@ -28,7 +28,7 @@ class WalmartOnboarding {
             char[] secret = console.readPassword('Provider-issued API key (hidden): ')
             if (!secret?.length) return
             pending = [provider:provider, secret:secret]
-            output.println('Key is checked locally only. Setup sends no inference request and does not verify remote entitlement. Acceptance remains unqualified until separately evaluated.')
+            output.println('Key is checked locally only. Setup sends no inference request and does not verify remote entitlement. Production uses the configured confidence thresholds and billing limits.')
         }
         def ynab = new YNABService(config)
         try { selectCategories(file.toPath(), ynab, input, output, pending) }

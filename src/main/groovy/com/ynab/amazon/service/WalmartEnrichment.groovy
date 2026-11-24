@@ -37,7 +37,45 @@ class WalmartEnrichment {
                 if (!dryRun) save(state)
             }
             // A later refund must not reopen or be blocked by a frozen purchase allocation.
-            matches.groupBy { it.walmartOrder.orderId + (it.ynabTransaction.amount > 0 ? '/refunds/' + it.walmartCharge.key : '') }.each { String groupId, List<TransactionMatch> group ->
+            def groups = matches.groupBy { it.walmartOrder.orderId + (it.ynabTransaction.amount > 0 ? '/refunds/' + it.walmartCharge.key : '') }
+            Closure<List<WalmartOrderItem>> itemsFor = { List<TransactionMatch> group ->
+                if (config.walmartEnrichment != 'exception_first') return []
+                if (group[0].ynabTransaction.amount > 0) {
+                    def refund = group[0].walmartCharge
+                    return refund.description && WalmartAllocation.eligible(group[0].ynabTransaction, accounts, true, config.walmartAllowApprovedUncategorized) ?
+                        [new WalmartOrderItem(itemId:refund.key, title:refund.description)] : []
+                }
+                group[0].walmartOrder.complete ? group[0].walmartOrder.items : []
+            }
+            if (classifier && !dryRun && config.walmartEnrichment == 'exception_first') {
+                // Pool inference only. Order matching, allocation and write verification remain isolated.
+                try {
+                    String scope = classifier.scope(categories)
+                    state.inferred = state.inferred ?: [:]
+                    Map<String,WalmartOrderItem> pending = [:]
+                    groups.values().each { group ->
+                        itemsFor(group).each { item ->
+                            def evidence = state.mappings[config.ynabBudgetId + '/' + item.productId]
+                            if (evidence instanceof List && evidence) return
+                            String cacheKey = fingerprint([config.ynabBudgetId,item.productId,item.title,scope])
+                            if (state.inferred[cacheKey]?.scope != scope) {
+                                // Correlation IDs are local; the provider receives only titles and policy.
+                                pending[cacheKey] = new WalmartOrderItem(itemId:cacheKey, productId:item.productId, title:item.title)
+                            }
+                        }
+                    }
+                    pending.values().toList().collate(classifier.config.batch_size as int).each { batch ->
+                        def inferred = classifier.classify(batch, categories)
+                        batch.each { item -> state.inferred[item.itemId] = inferred[item.itemId] }
+                        save(state) // Preserve successful batches even if a later batch fails or hits the run cap.
+                    }
+                } catch (Exception ignored) {
+                    LOG.warn('Walmart batched classification failed: provider={} stage={} first_request_failure={} http_status={} requests={}; unresolved purchases skip allocation, refunds use default',
+                        config.walmartCategorization.provider, classifier.metrics.stage,
+                        classifier.metrics.failure_stage, classifier.metrics.last_http_status, classifier.metrics.requests)
+                }
+            }
+            groups.each { String groupId, List<TransactionMatch> group ->
                 String orderId = group[0].walmartOrder.orderId
                 boolean refunds = group[0].ynabTransaction.amount > 0
                 String key = config.ynabBudgetId + '/' + groupId
@@ -47,10 +85,15 @@ class WalmartEnrichment {
                 String inferenceReason = 'inference_unavailable'
                 def order = group[0].walmartOrder
                 def refund = refunds ? group[0].walmartCharge : null
-                List<WalmartOrderItem> classificationItems = refunds ? (refund.description ?
-                    [new WalmartOrderItem(itemId:refund.key, title:refund.description)] : []) : order.items
-                if (config.walmartEnrichment == 'exception_first' && (refunds ?
-                    WalmartAllocation.eligible(group[0].ynabTransaction, accounts, true, config.walmartAllowApprovedUncategorized) : order.complete)) {
+                if (!refunds) {
+                    def covered = group.collectMany { it.walmartCharge.components ?: [it.walmartCharge] }
+                    LOG.info('Walmart order grouping: order_id={} parents={} covered_events={} settled_events={} ledger_covered={} matched_cents={} total_cents={}',
+                        orderId, group.size(), covered.size(), order.charges.size(),
+                        covered.size() == order.charges.size() && covered*.key.toSet() == order.charges*.key.toSet(),
+                        group.sum { it.walmartCharge.cents }, order.totalAmount.movePointRight(2))
+                }
+                List<WalmartOrderItem> classificationItems = itemsFor(group)
+                if (classificationItems) {
                     classificationItems.each { item ->
                         def evidence = state.mappings[config.ynabBudgetId + '/' + item.productId]
                         def choices = evidence instanceof List ? evidence.toSet() : [] as Set
@@ -72,21 +115,18 @@ class WalmartEnrichment {
                             if (uncached) {
                                 if (dryRun) {
                                     inferenceFailed = true
-                                    inferenceReason = classifier.qualified(categories) ? 'inference_required' : 'inference_unavailable'
+                                    inferenceReason = 'inference_required'
                                 } else {
-                                    Map occurrences = uncached.groupBy { cacheKeys[it.itemId] }
-                                    def inferred = classifier.classify(occurrences.values().collect { it.first() }, categories)
-                                    occurrences.each { cacheKey, items ->
-                                        Map decision = inferred[items.first().itemId]
-                                        items.each { decisions[it.itemId] = decision }
-                                        state.inferred[cacheKey] = decision
-                                    }
-                                    save(state)
+                                    // The shared queue already attempted inference; do not replay failed batches.
+                                    inferenceFailed = true
                                 }
                             }
                         } catch (Exception ignored) {
                             inferenceFailed = true
-                            LOG.warn('Walmart remote classification unavailable/unqualified; purchases skip allocation, refunds use default. Check key setup, qualification and limits')
+                            // Only fixed local stages and numeric counters: never exception text, keys or response bodies.
+                            LOG.warn('Walmart remote classification failed: order_id={} provider={} stage={} first_request_failure={} http_status={} requests={}; purchases skip allocation, refunds use default',
+                                orderId, config.walmartCategorization.provider, classifier.metrics.stage,
+                                classifier.metrics.failure_stage, classifier.metrics.last_http_status, classifier.metrics.requests)
                         }
                     }
                 }

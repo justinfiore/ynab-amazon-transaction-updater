@@ -79,6 +79,68 @@ class WalmartService_IT extends Specification {
     }
     def cleanup() { ynab.close(); server.stop(0) }
 
+    @Unroll
+    def '#provider batches across orders without mixing item IDs and retains progress at request cap = #limited'() {
+        given:
+        Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),provider,'fixture'.toCharArray())
+        config.walmartCategorization=WalmartRemoteClassifier.defaults(provider)+[credentials_file:key.toString(),
+            categories:[[id:'g'],[id:'h']],batch_size:3,max_requests:limited ? 1 : 50]
+        def first=WalmartFixture.order()
+        def second=WalmartFixture.order()
+        second.orderId='456'; second.orderUrl=second.orderLink; second.totalAmount=63G
+        second.items[0].title='Towel'; second.items[0].productId='towel'; second.items[0].grossCents=4300L
+        second.items[1].title='Rice'; second.items[1].productId='rice'
+        second.charges=[second.charges[0]+[key:'other-large',cents:4300L],second.charges[1]+[key:'other-small',cents:2000L]]
+        def firstTransactions=WalmartFixture.transactions()
+        def secondTransactions=WalmartFixture.transactions()
+        secondTransactions[0].id='other-large'; secondTransactions[0].amount=-43000L
+        secondTransactions[1].id='other-small'; secondTransactions[1].amount=-20000L
+        def txs=firstTransactions+secondTransactions
+        txs.each { remote[it.id]=WalmartFixture.remote(it) }
+        def matches=new TransactionMatcher().findWalmartMatches(txs,[first,second])
+        List batches=[]
+        Closure transport={ endpoint,secret,body,limits ->
+            Map request=json.readValue(body,Map)
+            Map products=provider=='jev' ? request.state : json.readValue(request.input,Map)
+            batches << products.values()*.product*.title
+            Map answers=products.collectEntries { name,value ->
+                String label=value.product.title in ['Soap','Towel'] ? 'Household' : 'Groceries'
+                Map scores=['Groceries':label=='Groceries' ? 0.96 : 0.02,'Household':label=='Household' ? 0.96 : 0.02,(WalmartRemoteClassifier.ABSTAIN):0.02]
+                [(name):[name:name,type:'choice',choice:label,confidence:0.95,
+                    probabilities:provider=='jev' ? scores : scores.collect { k,v -> [value:k,probability:v] }]]
+            }
+            [status:200,body:json.writeValueAsString([model:request.model,answers:provider=='jev' ? answers : answers.values().toList(),usage:[input_tokens:100,output_tokens:0]])]
+        }
+
+        when:
+        def result=new WalmartEnrichment(config).process(matches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+
+        then:
+        result.updated==4 // Unclassified orders still receive safe memo-only updates.
+        batches==(limited ? [['Apples','Soap','Towel']] : [['Apples','Soap','Towel'],['Rice']])
+        remote.large.subtransactions*.amount==[-20000L,-50000L]
+        remote.large.subtransactions*.category_id==['h','g']
+        remote.small.category_id=='g'
+        remote['other-large'].category_id==(limited ? null : 'h')
+        remote['other-small'].category_id==(limited ? null : 'g')
+
+        when: 'a fresh run reuses completed batches and requests only the unfinished item'
+        // A new run fetches the current memo, including the earlier safe order link.
+        secondTransactions.each { it.memo=remote[it.id].memo }
+        def resumed=new WalmartEnrichment(config).process(matches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
+
+        then:
+        resumed.updated==(limited ? 2 : 0)
+        batches==[['Apples','Soap','Towel'],['Rice']]
+        remote['other-large'].category_id=='h'
+        remote['other-small'].category_id=='g'
+        remote['other-large'].amount==-43000L
+        remote['other-small'].amount==-20000L
+
+        where:
+        [provider,limited] << [['jev','openai'],[false,true]].combinations()
+    }
+
     def 'currency lookup works when full plan details are unavailable'() {
         expect:
         ynab.getWalmartPlanCurrency() == 'USD'
@@ -140,9 +202,7 @@ class WalmartService_IT extends Specification {
         Map baseline=new LinkedHashMap(remote.refund)
         Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture'.toCharArray())
         config.walmartCategorization=WalmartRemoteClassifier.defaults('jev')+[credentials_file:key.toString(),categories:[[id:'g'],[id:'h']],
-            acceptance:[qualified:true,evidence_id:'mock-only',probability:0.8,confidence:0.8,margin:0.2]]
-        config.walmartCategorization.acceptance.qualified_for=new WalmartRemoteClassifier(config.walmartCategorization).qualificationFingerprint(
-            WalmartAllocation.categories(ynab.getWalmartCategories(),config.walmartCategorization.categories,'g'))
+            acceptance:[probability:0.8,confidence:0.8,margin:0.2]]
         List descriptions=[]
         def classifier=new WalmartRemoteClassifier(config.walmartCategorization,{ endpoint,secret,body,limits ->
             Map request=json.readValue(body,Map)
@@ -162,7 +222,7 @@ class WalmartService_IT extends Specification {
         result.updated==1
         writes.size()==1
         writes[0].change.keySet()==['memo','approved','category_id'] as Set
-        remote.refund==baseline+[memo:matches[0].proposedMemo,approved:false,category_id:expected]
+        remote.refund==baseline+[memo:'🤖 '+matches[0].proposedMemo,approved:false,category_id:expected]
         remote.refund.memo.contains('Refund $5.00 | Returned items on order: Soap')
         remote.refund.subtransactions.empty
 
@@ -186,9 +246,7 @@ class WalmartService_IT extends Specification {
         given:
         Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),provider,'synthetic-not-live'.toCharArray())
         config.walmartCategorization=WalmartRemoteClassifier.defaults(provider)+[credentials_file:key.toString(),categories:[[id:'g'],[id:'h']],
-            acceptance:[qualified:true,evidence_id:'mock-only',probability:0.8,confidence:0.8,margin:0.2]]
-        config.walmartCategorization.acceptance.qualified_for=new WalmartRemoteClassifier(config.walmartCategorization).qualificationFingerprint(
-            WalmartAllocation.categories(ynab.getWalmartCategories(),config.walmartCategorization.categories,'g'))
+            acceptance:[probability:0.8,confidence:0.8,margin:0.2]]
         int calls=0
         Closure transport={ endpoint,secret,body,limits ->
             calls++
@@ -257,12 +315,8 @@ class WalmartService_IT extends Specification {
         freshTransactions.each { it.id='fresh-'+it.id; remote[it.id]=WalmartFixture.remote(it) }
         def freshMatches=new TransactionMatcher().findWalmartMatches(freshTransactions,[freshOrder])
         config.walmartCategorization.acceptance.margin=0.3
-        config.walmartCategorization.acceptance.qualified_for=new WalmartRemoteClassifier(config.walmartCategorization).qualificationFingerprint(
-            WalmartAllocation.categories(ynab.getWalmartCategories(),config.walmartCategorization.categories,'g'))
         new WalmartEnrichment(config).process(freshMatches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
         config.walmartCategorization.acceptance.margin=0.2
-        config.walmartCategorization.acceptance.qualified_for=new WalmartRemoteClassifier(config.walmartCategorization).qualificationFingerprint(
-            WalmartAllocation.categories(ynab.getWalmartCategories(),config.walmartCategorization.categories,'g'))
         Path replacement=WalmartProviderKeys.stage(new File(directory,'replacement-config.yml').toPath(),provider,'synthetic-not-live'.toCharArray())
         config.walmartCategorization.credentials_file=replacement.toString()
         def nextFresh=WalmartFixture.transactions()
@@ -271,7 +325,8 @@ class WalmartService_IT extends Specification {
         new WalmartEnrichment(config).process(nextFreshMatches,ynab,false,new WalmartRemoteClassifier(config.walmartCategorization,transport))
 
         then:
-        calls==3
+        // Initial inference, changed description, changed threshold, and replacement key.
+        calls==4
         !new File(config.walmartJournalFile).text.contains('synthetic-not-live')
 
         where:
@@ -283,9 +338,7 @@ class WalmartService_IT extends Specification {
         given:
         Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),provider,'synthetic-not-live'.toCharArray())
         config.walmartCategorization=WalmartRemoteClassifier.defaults(provider)+[credentials_file:key.toString(),categories:[[id:'g'],[id:'h']],
-            acceptance:[qualified:true,evidence_id:'mock-only',probability:0.8,confidence:0.8,margin:0.2]]
-        config.walmartCategorization.acceptance.qualified_for=new WalmartRemoteClassifier(config.walmartCategorization).qualificationFingerprint(
-            WalmartAllocation.categories(ynab.getWalmartCategories(),config.walmartCategorization.categories,'g'))
+            acceptance:[probability:0.8,confidence:0.8,margin:0.2]]
         int calls=0
         int questions=0
         Closure transport={ endpoint,secret,body,limits ->
@@ -346,7 +399,7 @@ class WalmartService_IT extends Specification {
         provider << ['openai','jev']
     }
 
-    def 'unqualified-provider preview is explicitly unavailable, not an executable uncategorized allocation'() {
+    def 'uncached-provider preview requires inference without making calls or executable allocations'() {
         given:
         Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture'.toCharArray())
         config.walmartCategorization=WalmartRemoteClassifier.defaults('jev')+[credentials_file:key.toString(),categories:[[id:'g'],[id:'h']]]
@@ -358,7 +411,7 @@ class WalmartService_IT extends Specification {
         when:
         def preview=new WalmartEnrichment(config).process(matches,ynab,true,classifier)
         then:
-        preview.preview[0].reason=='inference_unavailable'
+        preview.preview[0].reason=='inference_required'
         preview.preview[0].operations.every { !it.lines }
         calls==0 && writes.empty
         !new File(config.walmartJournalFile).exists()
@@ -368,9 +421,7 @@ class WalmartService_IT extends Specification {
         given:
         Path key=WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','synthetic-not-live'.toCharArray())
         config.walmartCategorization=WalmartRemoteClassifier.defaults('jev')+[credentials_file:key.toString(),categories:[[id:'g'],[id:'h']],
-            acceptance:[qualified:true,evidence_id:'mock-only',probability:0.8,confidence:0.8,margin:0.2]]
-        config.walmartCategorization.acceptance.qualified_for=new WalmartRemoteClassifier(config.walmartCategorization).qualificationFingerprint(
-            WalmartAllocation.categories(ynab.getWalmartCategories(),config.walmartCategorization.categories,'g'))
+            acceptance:[probability:0.8,confidence:0.8,margin:0.2]]
         int calls=0
         Closure transport={ a,b,c,d -> calls++; [status:401,body:'not logged'] }
         def txs=WalmartFixture.transactions()
@@ -566,8 +617,9 @@ class WalmartService_IT extends Specification {
         writes.size() == 2
         writes[0].id == 'large'
         writes[0].change == [memo:matches.find { it.ynabTransaction.id=='large' }.proposedMemo,approved:false,category_id:null,
-            subtransactions:[[amount:-20000,category_id:'h',memo:'Soap'],[amount:-50000,category_id:'g',memo:'Default Walmart Category']]]
+            subtransactions:[[amount:-20000,category_id:'h',memo:'🤖 Soap'],[amount:-50000,category_id:'g',memo:'🤖 Default Walmart Category']]]
         writes[1].change.category_id == 'g'
+        writes[1].change.memo.startsWith('🤖 ')
         !writes[1].change.containsKey('subtransactions')
         remote.large.amount == -70000
         remote.small.amount == -30000

@@ -52,8 +52,11 @@ walmart:
     categories: []  # [{id: "existing-id", description: "optional boundary"}]
     # --walmart-setup prompts for OpenAI Decisions or direct TypeSafe Jev, hidden key and consent.
     # No provider selected by default. Keys belong ONLY in protected provider records, not YAML.
-    # Setup adds exact model/policy, bounds, credential path and unqualified acceptance settings.
-    # Unqualified providers make no production calls; use separately authorized synthetic comparison.
+    # Setup adds exact model/policy, bounds, credential path and confidence thresholds.
+    # Enabled production inference needs no evaluation fingerprint; synthetic comparison is optional.
+    # max_requests: 50  # Per run, including retries and failed attempts.
+    # batch_size: 8     # Uncached items from multiple orders can share one request.
+    # Token usage is measured; there are no max_tokens/max_request_tokens budgets.
 
 # Application Configuration
 app:

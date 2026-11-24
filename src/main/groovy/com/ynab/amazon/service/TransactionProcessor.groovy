@@ -121,12 +121,18 @@ class TransactionProcessor {
                 def order = match.amazonOrder
                 
                 if (match.isHighConfidence()) {
+                    String memo = match.proposedMemo
+                    if (!memo || (!memo.startsWith('🤖 ') && memo.length() > 497)) {
+                        logger.warn("Cannot add Amazon marker without exceeding memo limit for transaction ${ynabTxn.id}")
+                        return
+                    }
+                    if (!memo.startsWith('🤖 ')) memo = '🤖 ' + memo
                     logTransactionDetails(match, dryRun ? "Would update" : "Updating")
                     
                     if (!dryRun) {
                         boolean success = ynabService.updateTransactionMemo(
                             ynabTxn.id, 
-                            match.proposedMemo
+                            memo
                         )
                         
                         if (success) {

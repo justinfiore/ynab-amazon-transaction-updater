@@ -27,21 +27,19 @@ class WalmartRemoteClassifier {
     final Map connection
     final Closure transport
     final Map metrics = [requests:0, retries:0, input_tokens:0L, output_tokens:0L, usage_complete:true, failures:0, elapsed_ms:0L,
-        cached_tokens:0L, cache_write_tokens:0L, cache_usage_complete:true, last_http_status:null]
-    private long reservedTokens
+        cached_tokens:0L, cache_write_tokens:0L, cache_usage_complete:true, last_http_status:null, stage:'initialization', failure_stage:null]
     private boolean stopped
 
     WalmartRemoteClassifier(Map config, Closure transport = null) {
         this.config = config
         route = ROUTES[config.provider]
         if (!route || config.model != route.model || config.policy_version != POLICY) throw new IllegalStateException('Unsupported provider/model/policy')
-        ['connect_ms','read_ms','total_ms','max_input_bytes','max_response_bytes','batch_size','concurrency','max_requests','max_tokens','max_request_tokens'].each { key ->
+        ['connect_ms','read_ms','total_ms','max_input_bytes','max_response_bytes','batch_size','concurrency','max_requests'].each { key ->
             if (!(config[key] instanceof Number) || config[key] <= 0 || config[key] > Integer.MAX_VALUE || config[key] != config[key].longValue()) throw new IllegalStateException('Invalid provider limit')
         }
         // Sequential execution is a deliberately bounded concurrency of one.
         if (config.concurrency != 1 || config.batch_size > (config.provider == 'jev' ? 64 : 400) ||
             config.max_input_bytes > 131072 || config.max_response_bytes > 2097152 ||
-            config.max_request_tokens < config.max_input_bytes || config.max_tokens < config.max_request_tokens ||
             config.total_ms > 120000 || config.connect_ms > config.total_ms || config.read_ms > config.total_ms) throw new IllegalStateException('Unsupported provider limits')
         if (!(config.max_retries instanceof Number) || config.max_retries < 0 || config.max_retries > 2 || config.max_retries != config.max_retries.intValue()) throw new IllegalStateException('Invalid retry limit')
         connection = WalmartProviderKeys.read(config.credentials_file?.toString(), config.provider.toString())
@@ -52,8 +50,8 @@ class WalmartRemoteClassifier {
         if (!ROUTES[provider]) throw new IllegalArgumentException('Unknown provider')
         [provider:provider, model:ROUTES[provider].model, policy_version:POLICY, connect_ms:5000, read_ms:15000,
             total_ms:20000, max_input_bytes:16384, max_response_bytes:262144, batch_size:8, concurrency:1,
-            max_requests:20, max_request_tokens:16384, max_tokens:327680, max_retries:1,
-            acceptance:[qualified:false, probability:0.8, confidence:0.8, margin:0.2]]
+            max_requests:50, max_retries:1,
+            acceptance:[probability:0.8, confidence:0.8, margin:0.2]]
     }
 
     String scope(Map categories) {
@@ -61,19 +59,8 @@ class WalmartRemoteClassifier {
             acceptance:config.acceptance, categories:categories, connection:connection.connection_id])
     }
 
-    String qualificationFingerprint(Map categories) {
-        WalmartEnrichment.fingerprint([route:route,policy:POLICY,instructions:INSTRUCTIONS,
-            choices:choices(categories).collectEntries { label,category -> [(label):category.description] },
-            gates:config.acceptance?.findAll { k,v -> k in ['probability','confidence','margin'] }])
-    }
-
-    boolean qualified(Map categories) {
-        config.acceptance?.qualified == true && config.acceptance?.evidence_id instanceof String &&
-            config.acceptance.evidence_id.trim() && config.acceptance.qualified_for == qualificationFingerprint(categories)
-    }
-
-    Map classify(List<WalmartOrderItem> items, Map categories, boolean evaluation = false) {
-        if (!evaluation && !qualified(categories)) throw new IllegalStateException('Provider acceptance is not qualified for this policy/shortlist; use synthetic comparison first')
+    Map classify(List<WalmartOrderItem> items, Map categories) {
+        metrics.stage = 'input_validation'
         Map choices = choices(categories)
         Map gates = config.acceptance ?: [:]
         ['probability','confidence','margin'].each { if (!score(gates[it])) throw new IllegalStateException('Invalid acceptance policy') }
@@ -101,6 +88,7 @@ class WalmartRemoteClassifier {
             String body = JSON.writeValueAsString(payload)
             if (body.getBytes('UTF-8').length > config.max_input_bytes) throw new IllegalStateException('Provider input/choice limit; nothing truncated')
             Map root = request(body)
+            metrics.stage = 'answer_schema'
             Map answers = [:]
             if (config.provider == 'openai') {
                 if (!(root.answers instanceof List)) throw new IllegalStateException('Invalid Decisions answer array')
@@ -112,11 +100,14 @@ class WalmartRemoteClassifier {
                 if (!(root.answers instanceof Map)) throw new IllegalStateException('Invalid Jev answer object')
                 answers = root.answers
             }
+            metrics.stage = 'answer_correlations'
             if (answers.keySet() != questions.keySet()) throw new IllegalStateException('Incomplete provider correlations')
             Map validated = [:]
             batch.eachWithIndex { item,i ->
                 Map answer = answers['item_' + i] instanceof Map ? answers['item_' + i] : [:]
+                metrics.stage = 'answer_confidence'
                 if (answer.type != 'choice' || !score(answer.confidence)) throw new IllegalStateException('Provider refusal/invalid confidence')
+                metrics.stage = 'answer_distribution'
                 Map probabilities = [:]
                 if (config.provider == 'openai') {
                     if (!(answer.probabilities instanceof List)) throw new IllegalStateException('Invalid Decisions distribution')
@@ -140,6 +131,7 @@ class WalmartRemoteClassifier {
             }
             decisions.putAll(validated) // a malformed batch never returns partial decisions
         }
+        metrics.stage = 'complete'
         decisions
     }
 
@@ -164,15 +156,17 @@ class WalmartRemoteClassifier {
             Map response
             int attempt=0
             while (true) {
-                if (stopped || metrics.requests >= config.max_requests || reservedTokens + config.max_request_tokens > config.max_tokens) throw new IllegalStateException('Provider run budget exhausted')
+                metrics.stage = 'run_limits'
+                if (stopped || metrics.requests >= config.max_requests) throw new IllegalStateException('Provider run budget exhausted')
                 long remaining=(config.total_ms as long)-(System.nanoTime()-start).intdiv(1000000)
                 if (remaining<=0) throw new IllegalStateException('Provider total deadline')
-                // Reserve before every billed attempt; unknown/failed usage is never refunded.
-                reservedTokens += config.max_request_tokens as long
+                // Count every potentially billed attempt, including failed requests and retries.
                 metrics.requests++
+                metrics.stage = 'transport'
                 response=transport(route.endpoint, connection.key, body, config + [total_ms:remaining,
                     connect_ms:Math.min(remaining,config.connect_ms as long), read_ms:Math.min(remaining,config.read_ms as long)])
                 metrics.last_http_status = response.status
+                metrics.stage = 'http_status'
                 if (!(response.status in [429,500,502,503,504]) || attempt >= config.max_retries) break
                 metrics.failures++; metrics.usage_complete=false
                 metrics.cache_usage_complete=false; metrics.cached_tokens=null; metrics.cache_write_tokens=null
@@ -193,14 +187,16 @@ class WalmartRemoteClassifier {
                 stopped = true // includes auth/quota; no replay, cross-provider fallback or uncertain duplicate billing
                 throw new IllegalStateException(response.status in [401,403] ? 'Provider key rejected; replace it using setup' : 'Provider request failed; inference stopped for this run')
             }
+            metrics.stage = 'response_size'
             if (!(response.body instanceof String) || response.body.getBytes('UTF-8').length > config.max_response_bytes) throw new IllegalStateException('Provider response limit')
+            metrics.stage = 'response_json'
             Map root = JSON.readValue(response.body, Map)
+            metrics.stage = 'response_model'
             if (root.model != route.model) throw new IllegalStateException('Unqualified provider model drift')
+            metrics.stage = 'response_usage'
             Map usage = root.usage instanceof Map ? root.usage : [:]
             if (['input_tokens','output_tokens'].every { usage[it] instanceof Number && usage[it] >= 0 && usage[it] == usage[it].longValue() }) {
-                long used = Math.addExact(usage.input_tokens.longValue(), usage.output_tokens.longValue())
                 metrics.input_tokens += usage.input_tokens.longValue(); metrics.output_tokens += usage.output_tokens.longValue()
-                if (used > config.max_request_tokens) { stopped = true; throw new IllegalStateException('Provider token allowance exceeded') }
                 Map cache = usage.input_tokens_details instanceof Map ? usage.input_tokens_details : [:]
                 if (['cached_tokens','cache_write_tokens'].every { cache[it] instanceof Number && cache[it] >= 0 &&
                     cache[it] == cache[it].longValue() && cache[it] <= usage.input_tokens }) {
@@ -215,6 +211,7 @@ class WalmartRemoteClassifier {
             } else { metrics.usage_complete = false; throw new IllegalStateException('Missing/invalid provider usage') }
             root
         } catch (Exception ignored) {
+            if (!metrics.failure_stage) metrics.failure_stage = metrics.stage
             metrics.failures++; metrics.usage_complete=false; stopped = true
             metrics.cache_usage_complete=false; metrics.cached_tokens=null; metrics.cache_write_tokens=null
             throw new IllegalStateException('Provider inference failed; no decisions accepted. Replace rejected keys using setup; check limits/response contract. No automatic replay.')

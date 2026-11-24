@@ -96,7 +96,7 @@ class TransactionProcessor_UT extends Specification {
         )
         
         and: "YNABService returns success"
-        mockYnabService.updateTransactionMemo("tx1", "Updated memo") >> true
+        mockYnabService.updateTransactionMemo("tx1", "🤖 Updated memo") >> true
         
         when: "updateTransactions is called in normal mode"
         def result = processor.updateTransactions([match], mockYnabService, false)
@@ -104,6 +104,24 @@ class TransactionProcessor_UT extends Specification {
         then: "transactions should be updated"
         result.updated == 1
         result.high_confidence == 1
+    }
+
+    def 'Amazon marker is idempotent and does not truncate a full memo'() {
+        given:
+        def processor = new TransactionProcessor(mockConfig)
+        def order = new AmazonOrder(orderId: 'order1')
+        def matches = [
+            new TransactionMatch(ynabTransaction: new YNABTransaction(id:'marked'), amazonOrder:order, proposedMemo:'🤖 Existing', confidenceScore:0.9),
+            new TransactionMatch(ynabTransaction: new YNABTransaction(id:'long'), amazonOrder:order, proposedMemo:'x' * 498, confidenceScore:0.9)
+        ]
+
+        when:
+        def result = processor.updateTransactions(matches, mockYnabService, false)
+
+        then:
+        1 * mockYnabService.updateTransactionMemo('marked', '🤖 Existing') >> true
+        0 * mockYnabService.updateTransactionMemo('long', _)
+        result.updated == 1
     }
     
     def "updateTransactions should not make API calls in dry run mode"() {

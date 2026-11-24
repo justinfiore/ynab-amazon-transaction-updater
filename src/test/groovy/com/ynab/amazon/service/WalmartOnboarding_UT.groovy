@@ -9,7 +9,7 @@ class WalmartOnboarding_UT extends Specification {
     @TempDir File directory
     def catalog=[[id:'a',group_name:'Food',name:'Same'],[id:'b',group_name:'Home',name:'Same']]
     @Unroll
-    def '#provider activation preserves duplicate category names through qualification and inference without leaking IDs'() {
+    def '#provider activation preserves duplicate category names through inference without leaking IDs'() {
         given:
         File file=new File(directory,'config.yml'); file.text='walmart: {enabled: false, enrichment: link_only}\n'
         def ynab=Stub(YNABService) { getWalmartCategories() >> catalog }
@@ -24,7 +24,7 @@ class WalmartOnboarding_UT extends Specification {
         saved
         config.walmart.categorization.provider==provider
         config.walmart.categorization.model==WalmartRemoteClassifier.ROUTES[provider].model
-        !config.walmart.categorization.acceptance.qualified
+        config.walmart.categorization.acceptance==[probability:0.8,confidence:0.8,margin:0.2]
         config.walmart.default_category_id=='b'
         !config.walmart.enabled && config.walmart.enrichment=='link_only'
         WalmartProviderKeys.read(config.walmart.categorization.credentials_file,provider).consent
@@ -44,9 +44,6 @@ class WalmartOnboarding_UT extends Specification {
             [status:200,body:WalmartRemoteClassifier.JSON.writeValueAsString([model:providerConfig.model,
                 answers:provider=='openai' ? [answer] : [item_0:answer],usage:[input_tokens:50,output_tokens:0]])]
         })
-        providerConfig.acceptance.qualified_for=classifier.qualificationFingerprint(normalized)
-        providerConfig.acceptance.qualified=true
-        providerConfig.acceptance.evidence_id='mock-only'
         def decisions=classifier.classify([new com.ynab.amazon.model.WalmartOrderItem(itemId:'private-item',title:'A household product')],normalized)
         then:
         decisions['private-item'].category_id=='b'

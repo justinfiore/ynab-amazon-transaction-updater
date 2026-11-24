@@ -84,8 +84,8 @@ User note | 2026-11-20 | Total $100.00 | #123 | https://www.walmart.com/orders/d
 The whole memo must fit 500 characters; overflow skips the write. Matching and
 allocation previews are returned by the processing API; normal logs include
 counts only, not raw purchase details. A dry run reports the planned category
-lines or a source-specific skip reason such as an ambiguous charge, an
-unqualified provider, or a changed parent. It does not PUT, mark the order
+lines or a source-specific skip reason such as an ambiguous charge,
+required inference, or a changed parent. It does not PUT, mark the order
 complete, or save a journal. Compact memos keep the existing user text, the
 order date, the full order total, the order ID, and the direct Walmart URL.
 They do not list item names.
@@ -215,14 +215,22 @@ Windows ACL protection and macOS onboarding remain unqualified; protected key
 operations fail closed without the verified POSIX security contract.
 
 Setup writes explicit connect/read/total deadlines, input/response/batch limits,
-sequential concurrency `1`, per-run request/token reservations and at most one
-transient retry (configurable 0–2). Each retry consumes a fresh request/token
-reservation. Only HTTP 429/500/502/503/504 may retry, with bounded backoff and
+sequential concurrency `1`, a per-run `max_requests` cap (default `50`) and at most
+one transient retry (configurable 0–2). Retries and failed attempts count toward
+the request cap. Only HTTP 429/500/502/503/504 may retry, with bounded backoff and
 Retry-After; long Retry-After stops instead of being shortened. Redirects,
 auth failures and uncertain transport outcomes never replay. Automatic HTTP
-retries/cookies/redirects are disabled. Missing usage remains unknown, not free;
-failed attempts retain their full reserved token allowance. Local token bounds
-are conservative reservations, not a guarantee of the provider's eventual bill.
+retries/cookies/redirects are disabled. Token usage is measured but not capped
+locally: `max_tokens` and `max_request_tokens` are no longer used. Request count
+and batch size bound calls/items, not the provider's eventual dollar bill.
+
+Uncached products from different orders share batches of up to `batch_size`
+items (default `8`), with duplicate products/titles sharing a decision. Each
+successful batch is saved before proceeding, so a later failure or request cap
+does not discard earlier work. Matching, allocations and write verification
+remain per-order. Dry runs make no inference calls. Larger batches are
+configurable, subject to the input-byte limit and application ceilings of `64`
+items for Jev or `400` for OpenAI; these ceilings are not throughput guarantees.
 
 Validated decisions require complete correlations and distributions, finite
 probabilities and separate confidence, bounded distribution sum and agreement
@@ -235,17 +243,14 @@ Dry runs never upload. Cache entries include provider/model/policy, scores and
 plan/product/title/shortlist/descriptions/acceptance/connection fingerprints.
 Changes invalidate inferred reuse and stop already-frozen application plans.
 
-**Neither paid provider is quality-qualified by this implementation.** Setup sets
-`acceptance.qualified: false`; production makes no inference requests under an
-unqualified policy. Example probability/confidence/margin gates are test values,
-not calibrated recommendations. Separately authorize synthetic evaluation,
-calibrate provider-specific gates without held-out tuning, review the evidence
-and record the acceptance `evidence_id` and exact `qualified_for` fingerprint
-before deliberately enabling the matching provider/model/policy. The fingerprint
-binds the actual labels/descriptions, prompt, route/model and gates; changing any
-of those removes qualification. A boolean flag alone is insufficient. Comparison
-prints this fingerprint for its frozen shortlist, not for arbitrary private
-shortlists. Contract tests cannot establish accuracy, latency or cost.
+Production inference requires an explicitly configured provider, protected key,
+data-transfer/billing consent and enabled enrichment, but no separate evaluation
+approval or qualification fingerprint. The probability/confidence/margin gates,
+complete response validation, billing limits, exact reconciliation and edit
+protection remain enforced. Category changes invalidate cached decisions and
+frozen-plan drift protection still applies. Synthetic comparison is optional;
+example thresholds are not calibrated guarantees. Contract tests cannot
+establish accuracy, latency or cost.
 
 ## Separate synthetic provider comparison
 
@@ -255,7 +260,7 @@ Copy each explicitly configured provider's `categorization` block to
 `providers.openai` / `providers.jev` in that dedicated file, keeping only paths to
 their separate protected records. Include the model/policy, acceptance and all
 positive limits from setup. Both must be configured. The command prints each
-request/token budget and requires typing `PAY BOTH PROVIDERS`; builds/tests
+request cap and batch size and requires typing `PAY BOTH PROVIDERS`; builds/tests
 never invoke paid calls. For an explicitly authorized single-provider run use
 `--walmart-compare comparison.yml --provider jev` (or `openai`); only the selected
 provider record is needed and consent becomes `PAY JEV ONLY` (or `PAY OPENAI ONLY`).
@@ -288,7 +293,7 @@ Run `.agents/scripts/build.sh -Pwalmart`,
 `.agents/scripts/run-integration-tests.sh -Pwalmart`. Enabled tests include Go
 unit/contract tests and JUnit XML under `build/test-results/walmart*`; defaults
 remain model-download/account-free. See `openspec/changes/walmart-integration/tasks.md`
-for tasks still incomplete, especially paid quality qualification and
+for tasks still incomplete, especially paid quality measurement and
 native cross-platform/ACL verification. Passing app fixtures are not live-account
 or model readiness claims. Go has no inference dependency; both paid wire
 contracts and comparison use synthetic fake transports in the default tests.
@@ -299,5 +304,5 @@ unchanged 12 calibration and 60 held-out titles, batch 8, concurrency 1, at most
 accuracy was 58/60 and accepted accuracy 48/48 at 80% coverage. Fixed gates were
 not tuned. It consumed 33,686 input and 10,199 output tokens; the listed-base-rate
 estimate was $0.001414812, with actual billed cost unavailable. No OpenAI calls,
-private purchases or live YNAB writes occurred. Neither provider is production
-qualified, and that one-time authorization does not permit further paid runs.
+private purchases or live YNAB writes occurred. Those measurements are not a
+production accuracy guarantee, and that one-time authorization does not permit further paid runs.
