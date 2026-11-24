@@ -863,7 +863,7 @@ class TransactionMatcher_UT extends Specification {
         def memo = matcher.findWalmartMatches([transaction], [walmartOrder])[0].proposedMemo
         
         then: "the memo should contain the order ID and item title"
-        memo == '2023-05-15 | Total $25.99 | #1234 | https://www.walmart.com/orders/details?orderId=1234'
+        memo == '2023-05-15 | Total $25.99 | #1234 | https://www.walmart.com/orders/1234'
         !memo.contains('Test Product')
     }
     
@@ -893,7 +893,20 @@ class TransactionMatcher_UT extends Specification {
         def memo = matcher.findWalmartMatches([transaction], [walmartOrder])[0].proposedMemo
         
         then: "the memo should preserve the original memo"
-        memo == 'Original memo | 2023-05-15 | Total $25.99 | #1234 | https://www.walmart.com/orders/details?orderId=1234'
+        memo == 'Original memo | 2023-05-15 | Total $25.99 | #1234 | https://www.walmart.com/orders/1234'
+    }
+
+    def 'Walmart legacy metadata is upgraded without duplicating the order or robot marker'() {
+        given:
+        def transaction = createSampleTransaction('tx1', '2023-05-15', 25.99, 'WALMART',
+            '🤖 2023-05-15 | Total $25.99 | #1234 | https://www.walmart.com/orders/details?orderId=1234')
+        def order = createSampleWalmartOrder('1234', '2023-05-15', 25.99)
+
+        when:
+        def memo = matcher.findWalmartMatches([transaction], [order])[0].proposedMemo
+
+        then:
+        memo == '🤖 2023-05-15 | Total $25.99 | #1234 | https://www.walmart.com/orders/1234'
     }
     
     def "Walmart never falls back to whole order total"() {

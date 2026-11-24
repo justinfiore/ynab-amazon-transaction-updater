@@ -173,7 +173,7 @@ class WalmartService_IT extends Specification {
         then:
         calls==0
         writes.size()==purchaseWrites+1
-        writes.last()==[id:'refund',change:[memo:'Human note | Walmart refund 2026-11-23 | Refund $10.56 | #123 | https://www.walmart.com/orders/details?orderId=123']]
+        writes.last()==[id:'refund',change:[memo:'Human note | Walmart refund 2026-11-23 | Refund $10.56 | #123 | https://www.walmart.com/orders/123']]
         remote.refund==baseline+[memo:writes.last().change.memo]
         result.refund_matches==1
         result.refund_memos_updated==1
@@ -284,7 +284,7 @@ class WalmartService_IT extends Specification {
         Arrays.equals(beforePreview,new File(config.walmartJournalFile).bytes)
 
         when: 'a new order previews the same cached financial plan as live execution, without uploading or saving'
-        def nextOrder=WalmartFixture.order(); nextOrder.orderId='456'; nextOrder.orderUrl='https://www.walmart.com/orders/details?orderId=456'
+        def nextOrder=WalmartFixture.order(); nextOrder.orderId='456'; nextOrder.orderUrl='https://www.walmart.com/orders/456'
         def nextTransactions=WalmartFixture.transactions()
         nextTransactions.each { it.id='next-'+it.id; remote[it.id]=WalmartFixture.remote(it) }
         def nextMatches=new TransactionMatcher().findWalmartMatches(nextTransactions,[nextOrder])
@@ -310,7 +310,7 @@ class WalmartService_IT extends Specification {
         drift.preview*.reason.contains('applied_plan_drift')
 
         when: 'an acceptance or connection change cannot reuse the previous inferred decision'
-        def freshOrder=WalmartFixture.order(); freshOrder.orderId='789'; freshOrder.orderUrl='https://www.walmart.com/orders/details?orderId=789'
+        def freshOrder=WalmartFixture.order(); freshOrder.orderId='789'; freshOrder.orderUrl='https://www.walmart.com/orders/789'
         def freshTransactions=WalmartFixture.transactions()
         freshTransactions.each { it.id='fresh-'+it.id; remote[it.id]=WalmartFixture.remote(it) }
         def freshMatches=new TransactionMatcher().findWalmartMatches(freshTransactions,[freshOrder])
@@ -897,7 +897,7 @@ class WalmartService_IT extends Specification {
         given:
         def purchase = { String id ->
             def order = new WalmartOrder(orderId:id,orderDate:'2026-11-20',currency:'USD',complete:true,totalAmount:10.00,
-                orderUrl:"https://www.walmart.com/orders/details?orderId=${id}",
+                orderUrl:"https://www.walmart.com/orders/${id}",
                 items:[new WalmartOrderItem(itemId:'item',productId:'soap',title:'Soap',quantity:1,grossCents:1000L)],
                 charges:[[key:'charge',date:'2026-11-21',payment:'VISA',currency:'USD',cents:1000L]])
             def tx = new YNABTransaction(id:id,date:'2026-11-21',amount:-10000L,payee_name:'WALMART',payee_id:'payee',
@@ -1038,7 +1038,7 @@ class WalmartService_IT extends Specification {
 class WalmartFixture {
     static WalmartOrder order() {
         new WalmartOrder(orderId:'123',orderDate:'2026-11-20',orderStatus:'Delivered',currency:'USD',complete:true,totalAmount:100.00,
-            orderUrl:'https://www.walmart.com/orders/details?orderId=123',
+            orderUrl:'https://www.walmart.com/orders/123',
             items:[new WalmartOrderItem(itemId:'a',productId:'food',title:'Apples',quantity:1.25,grossCents:8000L),
                 new WalmartOrderItem(itemId:'b',productId:'soap',title:'Soap',quantity:2,grossCents:2000L)],
             adjustments:[[kind:'tax',cents:500L],[kind:'fee',cents:300L],[kind:'tip',cents:200L],[kind:'discount',cents:1000L]],

@@ -177,7 +177,7 @@ class TransactionProcessor_UT extends Specification {
         def config = new Configuration(walmartJournalFile: new File(tempFolder, 'walmart.json').path)
         def tx = new YNABTransaction(id: 'w1', date: '2026-11-20', amount: -70000, memo: 'User note', payee_name: 'WALMART')
         def order = new WalmartOrder(orderId: '123', orderDate: '2026-11-20', totalAmount: 100.00, currency: 'USD',
-            orderUrl: 'https://www.walmart.com/orders/details?orderId=123',
+            orderUrl: 'https://www.walmart.com/orders/123',
             charges: [[key:'c1',date:'2026-11-20',cents:7000L,currency:'USD',payment:'CREDITCARD:VISA:1234']])
         def matches = new TransactionMatcher().findWalmartMatches([tx], [order])
 
@@ -186,7 +186,7 @@ class TransactionProcessor_UT extends Specification {
 
         then:
         result.updated == 0
-        result.preview[0].operations[0].memo == 'User note | 2026-11-20 | Total $100.00 | #123 | https://www.walmart.com/orders/details?orderId=123'
+        result.preview[0].operations[0].memo == 'User note | 2026-11-20 | Total $100.00 | #123 | https://www.walmart.com/orders/123'
         !new File(config.walmartJournalFile).exists()
         1 * mockYnabService.getWalmartPlanCurrency() >> 'USD'
         0 * mockYnabService._

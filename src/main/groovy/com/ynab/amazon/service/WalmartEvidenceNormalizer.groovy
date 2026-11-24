@@ -29,7 +29,8 @@ class WalmartEvidenceNormalizer {
         long total = pricing.totalWithTip ? money(pricing.totalWithTip.value) : Math.addExact(money(pricing.grandTotal.value),tip)
         if (total<=0 || tip<0) invalid()
         def order = new WalmartOrder(orderId:raw.id,orderDate:date,currency:currency,totalAmount:BigDecimal.valueOf(total,2),
-            orderUrl:"https://www.walmart.com/orders/details?orderId=${raw.id}",complete:true,items:[],charges:[],adjustments:[])
+            complete:true,items:[],charges:[],adjustments:[])
+        order.orderUrl = order.orderLink
         def incomplete = { String why -> order.complete=false; order.ineligibleReason=why }
         if (currency != 'USD') incomplete(currency ? 'unsupported_currency' : 'currency_unproven')
         def adjustment = { String kind, Object value ->

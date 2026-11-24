@@ -78,7 +78,7 @@ Parent metadata preserves user text, contains no generated product names and
 never calls a shortener. Example for a $70 charge in a $100 USD order:
 
 ```text
-User note | 2026-11-20 | Total $100.00 | #123 | https://www.walmart.com/orders/details?orderId=123
+User note | 2026-11-20 | Total $100.00 | #123 | https://www.walmart.com/orders/123
 ```
 
 The whole memo must fit 500 characters; overflow skips the write. Matching and

@@ -78,7 +78,7 @@ class WalmartContracts_UT extends Specification {
         matches.size()==2
         credit.walmartCharge.cents==-1056L
         credit.matchReason=='unique_final_refund'
-        credit.proposedMemo=='User refund note | Walmart refund 2026-11-09 | Refund $10.56 | #123 | https://www.walmart.com/orders/details?orderId=123'
+        credit.proposedMemo=='User refund note | Walmart refund 2026-11-09 | Refund $10.56 | #123 | https://www.walmart.com/orders/123'
         !WalmartAllocation.plan(order,matches,'g',[:],['account'] as Set).eligible
         matcher.findWalmartMatches([refund],[order],[(order.charges[0].payment):'elsewhere']).empty
 

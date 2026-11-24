@@ -53,7 +53,7 @@ class WalmartOrder {
     }
     
     String getOrderLink() {
-        return "https://www.walmart.com/orders/details?orderId=${orderId}"
+        return "https://www.walmart.com/orders/${orderId}"
     }
     
     boolean isDelivered() {
