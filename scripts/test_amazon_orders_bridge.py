@@ -451,14 +451,17 @@ class BridgeTests(unittest.TestCase):
 
         config = AmazonOrdersConfig(data={"domain": "amazon.com"})
 
-        def detail(extra="", tax="5.00", quantity="1", first_price="$20.00"):
+        def detail(extra="", tax="5.00", quantity="1", first_price="$20.00", current_layout=False):
             totals = [("Item(s) Subtotal", "$60.00"), ("Total before tax", "$60.00"),
-                      ("Estimated tax", "$" + tax), ("Grand Total", "$65.00")]
+                      ("Estimated tax to be collected" if current_layout else "Estimated tax", "$" + tax),
+                      ("Grand Total", "$65.00")]
             html = '<div id="orderDetails"><div class="displayAddressDiv"><li class="displayAddressFullName">Fixture</li></div><div data-component="purchasedItems">'
             for title, asin, price, qty in [("Cable", "B000000001", first_price, quantity), ("Pet food", "B000000002", "$40.00", "1")]:
                 html += f'''<div class="a-fixed-left-grid"><div data-component="itemTitle"><a href="/dp/{asin}">{title}</a></div>
                     <span class="od-item-view-qty">{qty}</span><div data-component="unitPrice"><span class="a-text-price"><span>{price}</span></span></div></div>'''
             html += '</div><div data-component="orderSubtotals">'
+            if current_layout:
+                html += '<div class="a-row a-spacing-small"><h5>Order Summary</h5></div>'
             html += ''.join(f'<div class="a-row"><span>{label}:</span><div class="a-span-last">{amount}</div></div>' for label, amount in totals)
             html += extra + '</div></div>'
             return RealOrder(BeautifulSoup(html, "html.parser"), config, full_details=True, order_number="113-8849250-2919462")
@@ -469,10 +472,16 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual([2000, 4000], [i["cents"] for i in evidence["items"]])
         self.assertEqual([{"id": "estimated_tax", "kind": "tax", "cents": 500}], evidence["adjustments"])
         self.assertEqual((6500, 0), (evidence["full_total_cents"], evidence["gift_cents"]))
+        current = bridge.financial_evidence(detail(current_layout=True))
+        self.assertTrue(current["complete"], current)
+        self.assertEqual("USD", current["currency"])
+        self.assertEqual((6500, 0, 0), (current["full_total_cents"], current["gift_cents"], current["reward_cents"]))
         gift = detail('<div class="a-row"><span>Gift Card:</span><div class="a-span-last">-$15.00</div></div>')
         self.assertEqual(1500, bridge.financial_evidence(gift)["gift_cents"])
         self.assertTrue(bridge.financial_evidence(gift)["complete"])
-        for invalid in [detail(tax="unknown"), detail(quantity=""), detail(first_price="EUR20.00"),
+        for invalid in [detail(tax="unknown"), detail(quantity=""), detail(quantity="", current_layout=True),
+                        detail(first_price="EUR20.00"), detail(first_price="EUR20.00", current_layout=True),
+                        detail('<div class="a-row"><h5>Order Summary $1.00</h5></div>', current_layout=True),
                         detail('<div class="a-row"><span>New tax service:</span><div class="a-span-last">$0.00</div></div>')]:
             self.assertFalse(bridge.financial_evidence(invalid)["complete"])
 

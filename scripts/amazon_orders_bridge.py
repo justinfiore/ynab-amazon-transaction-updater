@@ -53,6 +53,9 @@ def financial_evidence(order):
     if parsed is not None and config is not None:
         from amazonauth.util import select
         rows = select(parsed, config.selectors.FIELD_ORDER_SUBTOTALS_TAG_ITERATOR_SELECTOR)
+        # The current totals selector includes this nonfinancial section heading.
+        rows = [row for row in rows if not (row.select_one('h5') is not None and
+                row.get_text(' ', strip=True) == 'Order Summary')]
         try:
             detail_total = cents(order._parse_grand_total())
         except Exception:
@@ -64,6 +67,7 @@ def financial_evidence(order):
                     "coupon savings": "coupon_savings", "subscribe & save": "subscription_discount",
                     "subscription discount": "subscription_discount", "multibuy discount": "multibuy_discount",
                     "amazon discount": "amazon_discount", "estimated tax": "estimated_tax", "tax collected": "estimated_tax",
+                    "estimated tax to be collected": "estimated_tax",
                     "gift wrap": "gift_wrap", "total before tax": "total_before_tax", "grand total": "grand_total",
                     "total for this order": "grand_total", "gift card amount": "gift_card", "gift card": "gift_card",
                     "reward points": "reward_points", "refund total": "refund_total"}
