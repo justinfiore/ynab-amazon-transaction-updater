@@ -18,6 +18,7 @@ class AmazonEnrichment_IT extends Specification {
     Configuration config
     Map remote = [:]
     List<Map> writes = []
+    int learningReads
     boolean loseResponse
     boolean failReadback
     boolean failedRead
@@ -33,6 +34,7 @@ class AmazonEnrichment_IT extends Specification {
             if (path == '/settings') response = [data:[settings:[currency_format:[iso_code:'USD']]]]
             else if (path == '/accounts') response = [data:[accounts:[[id:'account',on_budget:true,closed:false,deleted:false]]]]
             else if (path == '/categories') response = [data:[category_groups:[[name:'Spending',categories:[[id:'e',name:'Electronics'],[id:'pets',name:'Pets']]]]]]
+            else if (path == '/transactions') { learningReads++; response = [data:[transactions:remote.values() as List]] }
             else {
                 String id = path.tokenize('/').last()
                 if (ex.requestMethod == 'GET' && failedRead) { failedRead = false; ex.sendResponseHeaders(503,-1); ex.close(); return }
@@ -826,6 +828,7 @@ class AmazonEnrichment_IT extends Specification {
         order.paymentEvents = [AmazonFixture.event()]
         remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction())
         new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+        assert learningReads == 0
         remote.tx.approved = true
         remote.tx.subtransactions[0].category_id = 'pets'
 
@@ -837,6 +840,7 @@ class AmazonEnrichment_IT extends Specification {
         new AmazonEnrichment(config).process([transaction('credit')],[order],ynab,false)
 
         then:
+        learningReads == 1
         writes.last().subtransactions*.category_id == ['pets','pets']
         new ProtectedJournal(config.amazonJournalFile).locked(true) { state,save -> state.mappings['amazon/plan/cable'] == ['pets'] }
     }

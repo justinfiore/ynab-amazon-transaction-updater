@@ -79,6 +79,8 @@ class TransactionProcessor {
     
     /** Add a retryable notice without marking the transaction as processed. */
     void addAmazonLoginNotices(List<YNABTransaction> transactions, YNABService ynabService, boolean dryRun) {
+        List<Map> updates = []
+        List<YNABTransaction> candidates = []
         getUnprocessedTransactions(transactions).each { transaction ->
             if (transaction.memo?.contains(AmazonAuthNotice.MESSAGE)) return
             String existing = transaction.memo && transaction.memo != 'null' ? transaction.memo : ''
@@ -87,16 +89,26 @@ class TransactionProcessor {
                 logger.warn("Cannot append Amazon login notice without truncating transaction ${transaction.id} memo")
                 return
             }
+            if (!(transaction.getApproved() in ['true', 'false'])) {
+                logger.warn("Cannot add Amazon login notice without a known approval state for transaction ${transaction.id}")
+                return
+            }
             if (dryRun) {
                 logger.info("Would add Amazon login notice to transaction ${transaction.id}")
                 return
             }
-            try {
-                if (ynabService.updateTransactionMemo(transaction.id, memo)) transaction.memo = memo
+            updates << [id: transaction.id, memo: memo, approved: transaction.getApproved() == 'true']
+            candidates << transaction
+        }
+        if (updates.isEmpty()) return
+        try {
+            Set<String> savedIds = ynabService.updateTransactionMemos(updates) ?: [] as Set
+            candidates.eachWithIndex { transaction, index ->
+                if (savedIds.contains(transaction.id)) transaction.memo = updates[index].memo
                 else logger.warn("Unable to add Amazon login notice to transaction ${transaction.id}")
-            } catch (Exception ignored) {
-                logger.warn("Unable to add Amazon login notice to transaction ${transaction.id}")
             }
+        } catch (Exception e) {
+            logger.warn('Unable to add Amazon login notices', e)
         }
     }
 

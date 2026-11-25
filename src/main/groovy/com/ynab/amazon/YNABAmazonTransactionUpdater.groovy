@@ -70,8 +70,15 @@ class YNABAmazonTransactionUpdater {
             TransactionMatcher matcher = (TransactionMatcher) services[3]
             TransactionProcessor processor = (TransactionProcessor) services[4]
             
-            // Execute the main workflow
-            executeWorkflow(ynabService, amazonService, walmartService, matcher, processor, config)
+            // Share non-boundary reads only within this workflow.
+            ynabService.beginWorkflow()
+            try {
+                executeWorkflow(ynabService, amazonService, walmartService, matcher, processor, config)
+                ynabService.checkRateLimit()
+            } finally {
+                ynabService.logRequestCounts()
+                ynabService.close()
+            }
             
             logger.info("YNAB Amazon Transaction Updater completed successfully")
             

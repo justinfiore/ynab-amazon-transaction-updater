@@ -445,8 +445,9 @@ Confidence thresholds:
    - Refresh expired captures manually. The removed browser paths have no fallback; model/platform qualification remains incomplete.
 
 9. **API Rate Limits**
-   - YNAB has rate limits; the application includes delays between requests
-    - If you get rate limit errors, wait a few minutes and try again
+   - YNAB allows 200 requests per access token in a rolling hour, including requests from other applications using the same token.
+   - On HTTP 429 the application stops YNAB requests for the run. Retry once enough requests have left the rolling window; pending guarded writes are reconciled on the next run.
+   - The application logs request-attempt counts by endpoint without transaction details.
 
 10. **Python bridge preflight or fetch failure**
     - Verify the isolated interpreter and tested dependencies: `.venv-amazon-orders/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight`
