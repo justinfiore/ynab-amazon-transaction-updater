@@ -40,6 +40,10 @@ class AmazonEnrichment {
                 byOrder[id] = best
             }
             List<Map> events = orders.collectMany { it.paymentEvents ?: [] }.collect { new LinkedHashMap(it) }
+            events.each { event ->
+                String orderDate = byOrder[event.order_id]?.orderDate
+                if (orderDate && event.signed_cents < 0) event.matching_dates = ((event.matching_dates ?: []) + [orderDate]).unique()
+            }
             // Email notices corroborate payment occurrences; they never create extra bank credits.
             List refunds = orders.findAll { it.isReturn && it.refundEvidence }
             Map refundCandidates = [:]
@@ -60,21 +64,49 @@ class AmazonEnrichment {
             Map candidates = [:]
             // Excluded parents still compete for events; legacy IDs confer no event ownership.
             transactions.each { tx ->
-                candidates[tx.id] = events.findAll { e -> matches(tx,e,accounts,config.amazonPaymentAccounts) }
+                def options = events.findAll { e -> matches(tx,e,accounts,config.amazonPaymentAccounts) }
+                def closest = options.collect { dateDistance(tx,it) }.min()
+                candidates[tx.id] = options.findAll { dateDistance(tx,it) == closest }
+            }
+            if (financial) {
+                List orderEvents = byOrder.values().collect { orderEvent(it) }.findAll { it }
+                Map orderCandidates = transactions.collectEntries { tx ->
+                    def options = orderEvents.findAll { matches(tx,it,accounts,config.amazonPaymentAccounts) }
+                    def closest = options.collect { dateDistance(tx,it) }.min()
+                    [(tx.id):options.findAll { dateDistance(tx,it) == closest }]
+                }
+                transactions.each { tx ->
+                    def options = orderCandidates[tx.id]
+                    Map previous = state.plans[config.ynabBudgetId + '/' + tx.id]
+                    if (legacyIds.contains(tx.id) || options.size() != 1 ||
+                        (previous?.trusted && previous.event?.source != 'order') ||
+                        !new TransactionMatcher().isPotentialAmazonTransaction(tx)) return
+                    Map event = new LinkedHashMap(options[0])
+                    if (event.competition_only || conflicts.contains(event.order_id) ||
+                        orderCandidates.values().count { it.any { it.order_id == event.order_id } } != 1 ||
+                        candidates[tx.id].any { it.order_id != event.order_id } ||
+                        claimed(state,tx.id,event)) return
+                    AmazonOrder order = byOrder[event.order_id]
+                    if (!AmazonAllocation.plan(order,event,events,[:]).eligible) return
+                    event.order_only = !events.any { it.order_id == event.order_id && it.complete == true &&
+                        !duplicated.contains(it.key) && it.competition_only != true && matches(tx,it,accounts,config.amazonPaymentAccounts) }
+                    pairs << [tx:tx,order:order,event:event,trusted:true]
+                }
             }
             candidates.each { id, options ->
-                if (legacyIds.contains(id)) return
+                if (legacyIds.contains(id) || pairs.any { it.tx.id == id }) return
                 if (options.size() != 1) {
                     if (options) stats.preview << [transaction_id:id,reason:'ambiguous_payment_match']
                     return
                 }
                 Map event = options[0]
+                if (event.signed_cents < 0 && pairs.any { it.order.orderId == event.order_id && it.event.source == 'order' }) return
                 if (event.competition_only == true) {
                     stats.preview << [transaction_id:id,reason:'historical_competitor_only']; return
                 }
                 if (event.complete != true || duplicated.contains(event.key) || !event.key ||
                     candidates.values().count { it.any { it.key == event.key } } != 1 || conflicts.contains(event.order_id) ||
-                    state.plans.any { k,v -> k.startsWith(config.ynabBudgetId + '/') && k != config.ynabBudgetId + '/' + id && v.event?.key == event.key }) {
+                    claimed(state,id,event)) {
                     stats.preview << [transaction_id:id,reason:'ambiguous_or_incomplete_payment']; return
                 }
                 AmazonOrder order = byOrder[event.order_id] ?: new AmazonOrder(orderId:event.order_id)
@@ -84,9 +116,10 @@ class AmazonEnrichment {
             state.plans.findAll { k,v -> k.startsWith(config.ynabBudgetId + '/') && v.trusted && (v.pending || v.status in ['fallback','memo_only']) }.each { key,entry ->
                 def tx = transactions.find { config.ynabBudgetId + '/' + it.id == key && !legacyIds.contains(it.id) }
                 if (!tx || pairs.any { it.tx.id == tx.id }) return
-                if (!matches(tx,entry.event,accounts,config.amazonPaymentAccounts)) return
+                if (!matches(tx,entry.event,accounts,config.amazonPaymentAccounts) || claimed(state,tx.id,entry.event)) return
                 boolean contradicts = events.any { it.key == entry.event.key &&
-                    (association(it) != association(entry.event) || it.complete != true || it.competition_only == true || duplicated.contains(it.key)) } ||
+                    (association(it) != association(entry.event) || it.complete != true || it.competition_only == true || duplicated.contains(it.key) ||
+                        !matches(tx,it,accounts,config.amazonPaymentAccounts)) } ||
                     (candidates[tx.id] ?: []).any { it.key != entry.event.key } ||
                     candidates.any { id,options -> id != tx.id && options.any { it.key == entry.event.key } }
                 if (contradicts || conflicts.contains(entry.event.order_id)) return
@@ -98,7 +131,8 @@ class AmazonEnrichment {
                 def legacy = new TransactionMatcher().findMatches(remaining,orders,false).findAll { it.highConfidence }
                 legacy.findAll { match -> legacy.count { it.amazonOrder.orderId == match.amazonOrder.orderId } == 1 }.each { match ->
                     pairs << [tx:match.ynabTransaction,order:match.amazonOrder,event:match.amazonOrder.isReturn ?
-                        [signed_cents:match.amazonOrder.totalAmount.movePointRight(2).longValueExact(),date:match.amazonOrder.orderDate] : null,trusted:false]
+                        [signed_cents:match.amazonOrder.totalAmount.movePointRight(2).longValueExact(),date:match.amazonOrder.orderDate,order_only:true] :
+                        [order_only:true],trusted:false]
                 }
             }
             if (financial) transactions.findAll { !legacyIds.contains(it.id) && !pairs.any { pair -> pair.tx.id == it.id } && new TransactionMatcher().isPotentialAmazonTransaction(it) }.each { tx ->
@@ -149,14 +183,19 @@ class AmazonEnrichment {
                 if (old?.facts && contradicts(old.facts,evidence)) {
                     stats.preview << [transaction_id:tx.id,reason:'source_drift']; return
                 }
-                if (old?.status in ['category','split']) {
+                boolean categorized = current.subtransactions ? current.subtransactions.every { it.category_id } : current.category_id != null
+                boolean ownedIncompleteSplit = old?.status in ['split','fallback'] && old.result?.subtransactions && !categorized
+                if (old?.status in ['category','split'] && categorized) {
                     stats.preview << [transaction_id:tx.id,reason:old.fingerprint == frozen ? 'allocation_complete' : 'applied_plan_drift']; return
                 }
-                if (!eligible(current,accounts,financial)) {
+                if (ownedIncompleteSplit && !financial) {
+                    stats.preview << [transaction_id:tx.id,reason:'financial_opt_in_required']; return
+                }
+                if (!eligible(ownedIncompleteSplit ? current + [subtransactions:[]] : current,accounts,financial)) {
                     stats.preview << [transaction_id:tx.id,reason:'ineligible_parent']; return
                 }
                 // Parent non-null category is not evidence of app ownership, even if auto-categorized.
-                if (financial && current.category_id != null && (current.approved == true || !(old?.result && old.status == 'memo_only' && old.owned_category))) {
+                if (financial && !ownedIncompleteSplit && current.category_id != null && (current.approved == true || !(old?.result && old.status == 'memo_only' && old.owned_category))) {
                     stats.preview << [transaction_id:tx.id,reason:'non_owned_category']; return
                 }
                 String userText = old?.user_text != null ? old.user_text : AmazonAuthNotice.withoutNotice(current.memo)?.with { it == 'null' ? '' : it } ?: ''
@@ -179,7 +218,15 @@ class AmazonEnrichment {
                         boolean unavailable = config.amazonCategorization.provider && !classifier && resolved.decisions.values().any { it.source == 'unresolved' }
                         if (resolved.failed || unavailable) plan = [eligible:false,reason:dryRun ? 'inference_required' : 'inference_unavailable']
                         else plan = AmazonAllocation.plan(order,event,events,resolved.decisions)
+                        if (plan.eligible && plan.lines.any { !it.category_id }) plan = [eligible:false,reason:'unresolved_categories']
                     }
+                }
+                if (financial && ownedIncompleteSplit && !plan.eligible) {
+                    stats.preview << [transaction_id:tx.id,reason:plan.reason]
+                    if (!dryRun) {
+                        old.status = 'fallback'; old.allocation_reason = plan.reason; save(state)
+                    }
+                    return
                 }
                 Map changes = financial ? AmazonAllocation.payload(event,memo,plan) : [memo:memo]
                 if (financial && current.approved == true) changes.approved = true
@@ -187,6 +234,9 @@ class AmazonEnrichment {
                 stats.high_confidence++
                 if (old?.status == status && current.memo == memo && status in ['fallback','memo_only']) {
                     stats.preview << [transaction_id:tx.id,status:status,reason:'unchanged',allocation_reason:plan.reason]
+                    if (!dryRun && old.allocation_reason != plan.reason) {
+                        old.allocation_reason = plan.reason; save(state)
+                    }
                     stats.completed << tx.id
                     return
                 }
@@ -197,7 +247,7 @@ class AmazonEnrichment {
                     return
                 }
                 Map entry = [trusted:pair.trusted,event:event,user_text:userText,facts:knownFacts(evidence),
-                    fingerprint:frozen,
+                    fingerprint:frozen,allocation_reason:plan.reason,
                     baseline:current,intent:current + changes,changes:changes,pending:true,target_status:status,
                     lines:plan.lines ?: [],order_id:order.orderId,order_date:order.orderDate,refund:event?.signed_cents > 0]
                 state.plans[key] = entry
@@ -219,14 +269,43 @@ class AmazonEnrichment {
         save(state); stats.updated++; stats.completed << current.id
     }
 
+    private boolean claimed(Map state, String transactionId, Map event) {
+        state.plans.any { key,entry -> key.startsWith(config.ynabBudgetId + '/') && key != config.ynabBudgetId + '/' + transactionId &&
+            (entry.event?.key == event.key || (event.signed_cents < 0 && entry.event?.signed_cents != null && entry.event.signed_cents < 0 &&
+                entry.order_id == event.order_id && (event.source == 'order' || entry.event.source == 'order'))) }
+    }
+
+    private static Map orderEvent(AmazonOrder order) {
+        Map evidence = order.financialEvidence
+        if (evidence.source != 'python' || evidence.purchase_eligible != true ||
+            !evidence.payment_identity || !AmazonMemos.realId(order.orderId)) return null
+        try {
+            Long total = AmazonAllocation.integer(evidence.full_total_cents) ? evidence.full_total_cents as Long :
+                order.@totalAmount?.abs()?.movePointRight(2)?.longValueExact()
+            if (total == null) return null
+            boolean qualified = evidence.complete == true && AmazonAllocation.integer(evidence.gift_cents) && evidence.reward_cents == 0
+            long bank = total - (AmazonAllocation.integer(evidence.gift_cents) ? evidence.gift_cents as long : 0L)
+            if (bank <= 0) return null
+            [key:'order/' + order.orderId,order_id:order.orderId,date:order.orderDate,signed_cents:-bank,
+                payment_identity:evidence.payment_identity,currency:evidence.currency,source:'order',order_only:true,
+                competition_only:!qualified]
+        } catch (Exception ignored) { null }
+    }
+
     static boolean matches(YNABTransaction tx, Map event, Set accounts, Map paymentAccounts) {
         try {
             AmazonMemos.realId(event.order_id as String) && event.currency == 'USD' && event.payment_identity &&
                 tx.amount != null && tx.amount % 10 == 0 && event.signed_cents instanceof Number &&
                 event.signed_cents == (event.signed_cents as long) && tx.amount == (event.signed_cents as long) * 10L &&
                 accounts.contains(tx.account_id) && paymentAccounts[event.payment_identity] == tx.account_id &&
-                Math.abs(ChronoUnit.DAYS.between(LocalDate.parse(tx.date),LocalDate.parse(event.date as String))) <= 14
+                dateDistance(tx,event) <= 14
         } catch (Exception ignored) { false }
+    }
+
+    private static long dateDistance(YNABTransaction tx, Map event) {
+        ([event.date] + (event.matching_dates ?: [])).collect { date ->
+            Math.abs(ChronoUnit.DAYS.between(LocalDate.parse(tx.date),LocalDate.parse(date as String)))
+        }.min() as long
     }
 
     private static Map association(Map event) { event?.subMap(['key','order_id','date','signed_cents','payment_identity','currency']) }
@@ -269,7 +348,8 @@ class AmazonEnrichment {
     private void learn(Map state, YNABService ynab) {
         Map observations = [:].withDefault { [] }
         Map originals = [:].withDefault { [] }
-        state.plans.findAll { k,v -> k.startsWith(config.ynabBudgetId + '/') && v.status in ['category','split'] && v.result }.each { key,entry ->
+        state.plans.findAll { k,v -> k.startsWith(config.ynabBudgetId + '/') && v.result &&
+            (v.status in ['category','split'] || (v.status == 'fallback' && v.result.subtransactions)) }.each { key,entry ->
             Map current = ynab.getTransaction(entry.result.id)
             Map before = entry.result
             boolean intact = current?.approved == true && !current.deleted &&

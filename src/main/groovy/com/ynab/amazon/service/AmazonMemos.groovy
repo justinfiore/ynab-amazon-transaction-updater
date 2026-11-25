@@ -12,7 +12,7 @@ class AmazonMemos {
     static String parent(AmazonOrder order, Map event, String userText = '') {
         boolean refund = event?.signed_cents > 0
         String id = order.orderId?.replaceFirst(/^RETURN-/, '')
-        List required = ['🤖' + (userText ? ' ' + userText : '')]
+        List required = [(event?.order_only == true ? '🤖❓' : '🤖') + (userText ? ' ' + userText : '')]
         String date = refund ? event.date : order.orderDate
         if (date) {
             if (userText) required << date
@@ -24,7 +24,7 @@ class AmazonMemos {
             Long total = evidence ? evidence.full_total_cents as Long :
                 order.@totalAmount != null ? order.@totalAmount.abs().movePointRight(2).longValueExact() : null
             if (total != null) required << 'Total $' + money(total) + (evidence.currency ? ' ' + evidence.currency : '')
-            if (evidence.gift_cents > 0 && event) {
+            if (evidence.gift_cents > 0 && event?.signed_cents != null) {
                 required << 'Gift card $' + money(evidence.gift_cents as long)
                 required << 'Charged $' + money(Math.abs(event.signed_cents as long))
             }
@@ -38,6 +38,7 @@ class AmazonMemos {
             (evidence.items ?: order.items.collect { [title:it.title] })
         String summary = items.size() > 1 ? "${items.size()} items: " : ''
         summary += items.take(3).collect { it.title }.findAll { it }.join(', ')
+        if (!items) summary = "❌ Amazon Order (Couldn't identify items)"
         if (items.size() > 3) summary += '…'
         int room = 500 - (base + suffix).length() - 3
         if (summary && room > 12) base += ' | ' + bounded(summary,room)

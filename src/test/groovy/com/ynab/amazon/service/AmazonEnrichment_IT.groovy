@@ -36,7 +36,7 @@ class AmazonEnrichment_IT extends Specification {
                     writes << change
                     if (rejectWrite) { ex.sendResponseHeaders(503,-1); ex.close(); return }
                     remote[id] += json.readValue(json.writeValueAsString(change),Map)
-                    remote[id].subtransactions?.eachWithIndex { row,i -> row.id = "${id}-${i}"; row.deleted = false }
+                    remote[id].subtransactions?.eachWithIndex { row,i -> row.id = "${id}-${i}".toString(); row.deleted = false }
                     if (remote[id].subtransactions) remote[id].category_id = 'split'
                     if (failReadback) { failedRead = true; failReadback = false }
                     if (loseResponse) { loseResponse = false; ex.close(); return }
@@ -218,6 +218,422 @@ class AmazonEnrichment_IT extends Specification {
         remote.tx.approved == true
     }
 
+    def 'order-first #shape allocation works without a ledger and marks only uncorroborated matches'() {
+        given:
+        def order = orderBased()
+        if (shape == 'category') order.financialEvidence.items = [[itemId:'a',productId:'cable',title:'Cable',cents:6000L,quantity:1]]
+        order.paymentEvents = corroborated ? [AmazonFixture.event()] : []
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction()) + [approved:true]
+        byte[] before = new File(config.amazonJournalFile).bytes
+
+        when:
+        def preview = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,true)
+
+        then:
+        preview.preview[0].status == shape
+        preview.preview[0].changes.memo.startsWith(corroborated ? '🤖 Keep me |' : '🤖❓ Keep me |')
+        writes.empty
+        new File(config.amazonJournalFile).bytes == before
+
+        when:
+        def result = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        result.updated == 1
+        writes == [preview.preview[0].changes]
+        remote.tx.amount == -65000L
+        remote.tx.approved == true
+        remote.tx.memo.endsWith(AmazonFixture.URL)
+        if (shape == 'split') {
+            assert remote.tx.subtransactions*.amount == [-21670L,-43330L]
+            assert remote.tx.subtransactions*.category_id == ['e','pets']
+        } else assert remote.tx.category_id == 'e'
+
+        when:
+        new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        writes.size() == 1
+
+        where:
+        shape      | corroborated
+        'category' | false
+        'split'    | false
+        'category' | true
+        'split'    | true
+    }
+
+    def 'an order-only allocation still owns its purchase after its bank parent leaves the window with cached fallback #cachedFallback'() {
+        given:
+        def order = orderBased()
+        remote.original = AmazonEnrichment.snapshot(AmazonFixture.transaction('original')) + [date:'2026-11-06']
+        assert new AmazonEnrichment(config).process([transaction('original')],[order],ynab,false).updated == 1
+        order.paymentEvents = [AmazonFixture.event()]
+        remote.other = AmazonEnrichment.snapshot(AmazonFixture.transaction('other'))
+        if (cachedFallback) new ProtectedJournal(config.amazonJournalFile).locked(false) { state,save ->
+            state.plans['plan/other'] = [trusted:true,status:'fallback',order_id:order.orderId,event:AmazonFixture.event(),
+                result:new LinkedHashMap(remote.other),user_text:'Keep me']
+            save(state)
+        }
+        Map before = new LinkedHashMap(remote.other)
+
+        when: 'only a different bank parent is in the next fetch'
+        def result = new AmazonEnrichment(config).process([transaction('other')],[order],ynab,false)
+
+        then:
+        result.updated == 0
+        writes.size() == 1
+        remote.other == before
+
+        when: 'a genuine refund for that order arrives'
+        order.paymentEvents = [AmazonFixture.event(6500L,'refund') + [refund_evidence:order.financialEvidence]]
+        remote.credit = AmazonEnrichment.snapshot(AmazonFixture.transaction('credit',65000L))
+        new AmazonEnrichment(config).process([transaction('credit')],[order],ynab,false)
+
+        then:
+        writes.size() == 2
+        remote.credit.subtransactions*.amount == [21670L,43330L]
+
+        where:
+        cachedFallback << [false,true]
+    }
+
+    def 'a refund never matches a credit solely near the original purchase date'() {
+        given:
+        def order = AmazonFixture.order()
+        order.orderDate = '2026-09-01'
+        order.paymentEvents = [AmazonFixture.event(6500L,'refund') + [refund_evidence:order.financialEvidence]]
+        remote.old = AmazonEnrichment.snapshot(AmazonFixture.transaction('old',65000L)) + [date:'2026-09-02']
+
+        when:
+        new AmazonEnrichment(config).process([transaction('old')],[order],ynab,false)
+
+        then:
+        writes.empty
+        remote.old.memo == 'Keep me'
+        remote.old.category_id == null
+
+        when: 'the credit is near the actual refund date'
+        remote.credit = AmazonEnrichment.snapshot(AmazonFixture.transaction('credit',65000L)) + [date:'2026-11-21']
+        new AmazonEnrichment(config).process([transaction('credit')],[order],ynab,false)
+
+        then:
+        writes.size() == 1
+        remote.credit.subtransactions*.amount == [21670L,43330L]
+        remote.credit.subtransactions*.category_id == ['e','pets']
+    }
+
+    def 'a stored refund link cannot restore a purchase-date match contradicted by current payment evidence'() {
+        given:
+        def order = AmazonFixture.order()
+        order.orderDate = '2026-09-01'
+        Map refund = AmazonFixture.event(6500L,'refund') + [refund_evidence:order.financialEvidence]
+        order.paymentEvents = [refund]
+        remote.old = AmazonEnrichment.snapshot(AmazonFixture.transaction('old',65000L)) + [date:'2026-09-02']
+        new ProtectedJournal(config.amazonJournalFile).locked(false) { state,save ->
+            state.plans['plan/old'] = [trusted:true,status:'fallback',order_id:order.orderId,
+                event:refund + [matching_dates:[order.orderDate]],result:new LinkedHashMap(remote.old),user_text:'Keep me']
+            save(state)
+        }
+
+        when:
+        new AmazonEnrichment(config).process([transaction('old')],[order],ynab,false)
+
+        then:
+        writes.empty
+        remote.old.category_id == null
+        remote.old.memo == 'Keep me'
+    }
+
+    def 'newly qualified order details upgrade the existing trusted payment fallback without changing its association'() {
+        given:
+        def order = AmazonFixture.order()
+        order.financialEvidence = [:]
+        order.paymentEvents = [AmazonFixture.event()]
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction())
+        assert new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false).updated == 1
+
+        when:
+        order.financialEvidence = orderBased().financialEvidence
+        def result = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        result.updated == 1
+        writes.size() == 2
+        remote.tx.subtransactions*.amount == [-21670L,-43330L]
+        remote.tx.subtransactions*.category_id == ['e','pets']
+        remote.tx.memo.count('Keep me') == 1
+    }
+
+    def 'unresolved #shape categories remain retryable until all item categories are known'() {
+        given:
+        def order = orderBased()
+        if (shape == 'category') order.financialEvidence.items = [[itemId:'a',productId:'cable',title:'Cable',cents:6000L,quantity:1]]
+        new ProtectedJournal(config.amazonJournalFile).locked(false) { state,save ->
+            state.mappings.remove('amazon/plan/cable'); save(state)
+        }
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction()) + [approved:true]
+
+        when:
+        def unresolved = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        unresolved.preview[0].status == 'fallback'
+        unresolved.preview[0].reason == 'unresolved_categories'
+        remote.tx.category_id == null
+        !remote.tx.subtransactions
+        remote.tx.approved == true
+
+        when: 'a later approved mapping supplies the missing category'
+        new ProtectedJournal(config.amazonJournalFile).locked(false) { state,save ->
+            state.mappings['amazon/plan/cable'] = ['e']; save(state)
+        }
+        def resolved = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        resolved.updated == 1
+        writes.size() == 2
+        if (shape == 'category') assert remote.tx.category_id == 'e'
+        else assert remote.tx.subtransactions*.category_id == ['e','pets']
+        remote.tx.approved == true
+
+        where:
+        shape << ['category','split']
+    }
+
+    def 'a valid provider answer below the acceptance threshold remains a retryable memo fallback'() {
+        given:
+        def order = orderBased()
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction())
+        new ProtectedJournal(config.amazonJournalFile).locked(false) { state,save ->
+            state.mappings.remove('amazon/plan/cable'); save(state)
+        }
+        def key = ProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture-key'.toCharArray(),'amazon')
+        config.amazonCategorization = RemoteItemClassifier.defaults('jev') + [policy_version:'amazon-choice-v1',
+            consent:true,categories:[[id:'e'],[id:'pets']],credentials_file:key.toString()]
+        int calls = 0
+        def classifier = new RemoteItemClassifier(config.amazonCategorization,{ endpoint,secret,body,limits ->
+            calls++
+            [status:200,body:json.writeValueAsString([model:'jev-1.14.0',usage:[input_tokens:100,output_tokens:0],
+                answers:[item_0:[type:'choice',choice:'Electronics',confidence:0.95,
+                    probabilities:['Electronics':0.7,'Pets':0.2,'Insufficient or ambiguous evidence':0.1]]]])]
+        })
+
+        when:
+        def result = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false,[] as Set,classifier)
+
+        then:
+        calls == 1
+        result.preview[0].reason == 'unresolved_categories'
+        result.preview[0].status == 'fallback'
+        remote.tx.category_id == null
+        !remote.tx.subtransactions
+
+        when: 'an unchanged retry reuses the rejected classification without billing or rewriting'
+        def retry = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false,[] as Set,classifier)
+
+        then:
+        calls == 1
+        writes.size() == 1
+        retry.preview[0].reason == 'unchanged'
+        retry.preview[0].allocation_reason == 'unresolved_categories'
+    }
+
+    def 'manual #edit after a memo fallback is preserved even when automatic categories become available'() {
+        given:
+        def order = orderBased()
+        new ProtectedJournal(config.amazonJournalFile).locked(false) { state,save -> state.mappings.clear(); save(state) }
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction()) + [approved:approved]
+        new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+        remote.tx.category_id = edit == 'category' ? 'human' : 'split'
+        if (edit == 'split') remote.tx.subtransactions = [
+            [id:'human-1',amount:-10000L,category_id:'human',memo:'My first split'],
+            [id:'human-2',amount:-55000L,category_id:'pets',memo:'My other split']]
+        Map before = json.readValue(json.writeValueAsString(remote.tx),Map)
+        writes.clear()
+        new ProtectedJournal(config.amazonJournalFile).locked(false) { state,save ->
+            state.mappings = ['amazon/plan/cable':['e'],'amazon/plan/pet':['pets']]; save(state)
+        }
+
+        when:
+        def result = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        result.updated == 0
+        writes.empty
+        remote.tx == before
+
+        where:
+        edit       | approved
+        'category' | true
+        'category' | false
+        'split'    | true
+        'split'    | false
+    }
+
+    def 'legacy completed #shape records with blank categories can upgrade but never overwrite later human edits'() {
+        given:
+        def order = orderBased()
+        if (shape == 'category') order.financialEvidence.items = [[itemId:'a',productId:'cable',title:'Cable',cents:6000L,quantity:1]]
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction())
+        new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+        // Model the older journal contract: an accepted financial allocation was
+        // labeled complete even when an item category was null.
+        if (shape == 'category') remote.tx.category_id = null
+        else remote.tx.subtransactions[0].category_id = null
+        new ProtectedJournal(config.amazonJournalFile).locked(false) { state,save ->
+            state.plans['plan/tx'].result = json.readValue(json.writeValueAsString(remote.tx),Map)
+            state.plans['plan/tx'].lines[0].category_id = null
+            state.mappings.remove('amazon/plan/cable')
+            save(state)
+        }
+        if (humanEdit) {
+            if (shape == 'category') remote.tx.category_id = 'human'
+            else remote.tx.subtransactions[0].category_id = 'human'
+        }
+        Map before = json.readValue(json.writeValueAsString(remote.tx),Map)
+        writes.clear()
+
+        when: 'unresolved classification must not complete or destroy existing splits'
+        def unresolved = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        !unresolved.preview.any { it.reason in ['allocation_complete','applied_plan_drift'] }
+        remote.tx == before
+        if (!humanEdit) assert new ProtectedJournal(config.amazonJournalFile).locked(true) { state,save ->
+            state.plans['plan/tx'].status == 'fallback'
+        }
+
+        when: 'opting out does not discard ownership of an existing partial allocation'
+        writes.clear()
+        config.amazonEnrichment = 'memo_only'
+        if (shape == 'split') new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        writes.empty
+        remote.tx == before
+
+        when:
+        config.amazonEnrichment = 'item_categories'
+        new ProtectedJournal(config.amazonJournalFile).locked(false) { state,save ->
+            state.mappings['amazon/plan/cable'] = ['e']; save(state)
+        }
+        def resolved = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        resolved.updated == (humanEdit ? 0 : 1)
+        if (humanEdit) {
+            assert writes.empty
+            assert remote.tx == before
+        } else if (shape == 'category') assert remote.tx.category_id == 'e'
+        else assert remote.tx.subtransactions*.category_id == ['e','pets']
+
+        where:
+        shape      | humanEdit
+        'category' | false
+        'split'    | false
+        'category' | true
+        'split'    | true
+    }
+
+    def 'payment history can resolve tied orders but unavailable history never chooses a tie'() {
+        given:
+        def order = orderBased()
+        def other = orderBased()
+        other.orderId = '114-0000000-1111111'
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction())
+
+        when:
+        new AmazonEnrichment(config).process([transaction('tx')],[other,order],ynab,false)
+
+        then:
+        writes.empty
+
+        when:
+        order.paymentEvents = [AmazonFixture.event()]
+        new AmazonEnrichment(config).process([transaction('tx')],[other,order],ynab,false)
+
+        then:
+        writes.size() == 1
+        remote.tx.memo.startsWith('🤖 Keep me |')
+        remote.tx.memo.endsWith(AmazonFixture.URL)
+        remote.tx.subtransactions*.amount == [-21670L,-43330L]
+    }
+
+    def 'order-first matching preserves financial identity ambiguity and human-edit guards: #condition'() {
+        given:
+        def order = orderBased()
+        order.financialEvidence.putAll(evidenceChange)
+        order.paymentEvents = payments
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction()) + parentChange
+        List parents = [transaction('tx')]
+        if (condition == 'excluded competitor') {
+            remote.other = AmazonEnrichment.snapshot(AmazonFixture.transaction('other')) + [memo:'Human memo',category_id:'human']
+            parents << transaction('other')
+        }
+
+        when:
+        new AmazonEnrichment(config).process(parents,[order],ynab,false,
+            condition == 'excluded competitor' ? ['other'] as Set : [] as Set)
+
+        then:
+        writes.empty
+
+        where:
+        condition             | evidenceChange                           | parentChange              | payments
+        'unknown items'       | [complete:false]                         | [:]                       | []
+        'unmapped card'       | [payment_identity:'python:visa:4321']     | [:]                       | []
+        'unknown funding'     | [gift_cents:null]                        | [:]                       | []
+        'reward funding'      | [reward_cents:100L]                      | [:]                       | []
+        'old backfilled order'| [purchase_eligible:false]                | [:]                       | []
+        'currency'            | [currency:'CAD']                         | [:]                       | []
+        'precision'           | [:]                                      | [amount:-65001L]          | []
+        'human category'      | [:]                                      | [category_id:'human']     | []
+        'reconciled'          | [:]                                      | [cleared:'reconciled']    | []
+        'excluded competitor' | [:]                                      | [:]                       | []
+        'partial charge'      | [:]                                      | [:]                       | [AmazonFixture.event(-3000L)]
+        'other payment card'  | [:]                                      | [:]                       | [AmazonFixture.event() + [payment_identity:'python:visa:4321']]
+        'duplicate payments'  | [:]                                      | [:]                       | [AmazonFixture.event(),AmazonFixture.event(-6500L,'second')]
+    }
+
+    def 'repeat purchases match the uniquely closest accepted #basis date independent of input order'() {
+        given:
+        def first = AmazonFixture.order()
+        first.orderDate = '2026-11-08'
+        first.paymentEvents = [AmazonFixture.event() + [date:'2026-11-10',matching_dates:['2026-11-09','2026-11-10']]]
+        def second = AmazonFixture.order()
+        second.orderId = '114-0000000-1111111'
+        second.orderDate = '2026-11-17'
+        second.paymentEvents = [AmazonFixture.event(-6500L,'second') +
+            [order_id:second.orderId,date:'2026-11-19',matching_dates:['2026-11-18','2026-11-19']]]
+        remote.first = AmazonEnrichment.snapshot(AmazonFixture.transaction('first')) + [date:firstDate]
+        remote.second = AmazonEnrichment.snapshot(AmazonFixture.transaction('second')) + [date:secondDate]
+        def parents = [transaction('first'),transaction('second')]
+        def orders = [first,second]
+        if (orderOnly) orders.each {
+            it.financialEvidence += [payment_identity:'python:visa:1234',purchase_eligible:true,payments_complete:false]
+            it.paymentEvents = []
+        }
+
+        when:
+        def result = new AmazonEnrichment(config).process(reverse ? parents.reverse() : parents,
+            reverse ? orders.reverse() : orders,ynab,false)
+
+        then:
+        result.updated == 2
+        writes.size() == 2
+        remote.first.memo.endsWith(AmazonFixture.URL)
+        remote.second.memo.endsWith('orderID=' + second.orderId)
+        [remote.first,remote.second].every { it.subtransactions*.amount == [-21670L,-43330L] }
+
+        where:
+        basis        | firstDate    | secondDate   | reverse | orderOnly
+        'order'      | '2026-11-08' | '2026-11-17' | false   | false
+        'global'     | '2026-11-10' | '2026-11-19' | true    | false
+        'ledger'     | '2026-11-09' | '2026-11-18' | false   | false
+        'order only' | '2026-11-08' | '2026-11-17' | true    | true
+    }
+
     def 'multiple charges get independent fallbacks but competing events and parents are never chosen greedily'() {
         given:
         def order = AmazonFixture.order()
@@ -265,7 +681,7 @@ class AmazonEnrichment_IT extends Specification {
         result.updated == 1
         writes.size() == 1
         writes[0].keySet() == ['memo'] as Set
-        remote.tx.memo.startsWith('🤖 Keep me |')
+        remote.tx.memo.startsWith(eventEvidence ? '🤖 Keep me |' : '🤖❓ Keep me |')
         remote.tx.memo.endsWith(AmazonFixture.URL)
         remote.tx.findAll { k,v -> k != 'memo' } == before.findAll { k,v -> k != 'memo' }
 
@@ -356,6 +772,7 @@ class AmazonEnrichment_IT extends Specification {
     def 'event-only historical payments compete without authorizing backfill for sign #sign'() {
         given:
         def order = AmazonFixture.order()
+        order.orderDate = '2026-11-21'
         Map currentEvent = AmazonFixture.event(sign * 6500L) + [date:'2026-11-21']
         if (sign > 0) currentEvent.refund_evidence = order.financialEvidence
         order.paymentEvents = [currentEvent]
@@ -620,6 +1037,12 @@ Order #113-8849250-2919462
         true | true | 0
         false | false | 0
         false | true | 1
+    }
+
+    private static AmazonOrder orderBased() {
+        def order = AmazonFixture.order()
+        order.financialEvidence += [payment_identity:'python:visa:1234',purchase_eligible:true,payments_complete:false]
+        order
     }
 
     private YNABTransaction transaction(String id) {

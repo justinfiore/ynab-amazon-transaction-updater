@@ -151,6 +151,8 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual([{"title": "First", "asin": "ASIN1", "price": 1.25, "quantity": 2}, {"title": "Second", "asin": "ASIN2", "price": 40.92, "quantity": None}], record["items"])
         self.assertIsNone(record["financial_evidence"]["items"][1]["cents"])
         self.assertFalse(record["financial_evidence"]["complete"])
+        self.assertEqual("python:visa:0012", record["financial_evidence"]["payment_identity"])
+        self.assertTrue(record["financial_evidence"]["purchase_eligible"])
         self.assertNotIn("recipient", json.dumps(record))
         self.assertNotIn("shipping_address", json.dumps(record))
 
@@ -486,6 +488,51 @@ class BridgeTests(unittest.TestCase):
             self.assertFalse(bridge.financial_evidence(invalid)["complete"])
 
     @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install the reviewed requirements lock")
+    def test_single_item_quantity_inference_and_observed_coupon_label(self):
+        from amazonorders.conf import AmazonOrdersConfig
+        from amazonorders.entity.order import Order as RealOrder
+        from bs4 import BeautifulSoup
+
+        config = AmazonOrdersConfig(data={"domain": "amazon.com"})
+        blank = '<div data-component="quantity"><span class="a-size-small"></span></div>'
+
+        def detail(quantity=blank, price="$23.45", coupon=False):
+            totals = [("Item(s) Subtotal", "$24.50" if coupon else "$23.45"), ("Shipping & Handling", "$0.00")]
+            if coupon:
+                totals.append(("Your Coupon Savings", "-$1.50"))
+            totals += [("Total before tax", "$23.00" if coupon else "$23.45"),
+                       ("Estimated tax to be collected", "$1.55"), ("Grand Total", "$24.55" if coupon else "$25.00")]
+            html = f'''<div id="orderDetails"><div class="displayAddressDiv"><li class="displayAddressFullName">Fixture</li></div>
+                <div data-component="purchasedItems"><div class="a-fixed-left-grid">
+                <div data-component="itemTitle"><a href="/dp/B000000001">Fixture item</a></div>{quantity}
+                <div data-component="unitPrice"><span class="a-text-price"><span>{price}</span></span></div></div></div>
+                <div data-component="orderSubtotals"><div class="a-row"><h5>Order Summary</h5></div>'''
+            html += ''.join(f'<div class="a-row"><span>{label}:</span><div class="a-span-last">{amount}</div></div>' for label, amount in totals)
+            return RealOrder(BeautifulSoup(html + '</div></div>', "html.parser"), config, full_details=True, order_number="113-8849250-2919462")
+
+        inferred = bridge.financial_evidence(detail())
+        self.assertTrue(inferred["complete"], inferred)
+        self.assertEqual((1, 2345, "single_item_subtotal"),
+                         tuple(inferred["items"][0][key] for key in ("quantity", "cents", "quantity_source")))
+        explicit = bridge.financial_evidence(detail(blank + '<span class="od-item-view-qty">2</span>', "$12.25", True))
+        self.assertTrue(explicit["complete"], explicit)
+        self.assertEqual((2, 2450), (explicit["items"][0]["quantity"], explicit["items"][0]["cents"]))
+        self.assertEqual([{"id":"coupon_savings", "kind":"discount", "cents":-150},
+                          {"id":"estimated_tax", "kind":"tax", "cents":155}], explicit["adjustments"])
+        self.assertEqual(2455, explicit["full_total_cents"])
+        for order in [detail(quantity=""), detail(quantity=blank.replace('</span>', 'unknown</span>')),
+                      detail(quantity=blank + '<span class="a-size-small">Qty: 0.31 lb</span>'),
+                      detail(quantity=blank + '<span class="od-item-view-qty">unknown</span>'),
+                      detail(price="$11.72"), detail(price="$0.00"), detail(price="CAD23.45")]:
+            self.assertFalse(bridge.financial_evidence(order)["complete"])
+        order = detail()
+        order.item_count = 2
+        self.assertFalse(bridge.financial_evidence(order)["complete"])
+        order = detail()
+        order.items *= 2
+        self.assertFalse(bridge.financial_evidence(order)["complete"])
+
+    @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install the reviewed requirements lock")
     def test_real_payment_parser_preserves_pages_and_fails_closed_before_flattening(self):
         from amazonorders.conf import AmazonOrdersConfig
         from bs4 import BeautifulSoup
@@ -622,7 +669,7 @@ class BridgeTests(unittest.TestCase):
     @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install the reviewed requirements lock")
     def test_payment_form_qualifies_complete_rows_and_rejects_lost_or_ambiguous_evidence(self):
         from amazonorders.conf import AmazonOrdersConfig
-        from amazonorders.exception import AmazonOrdersEntityError
+        from amazonorders.exception import AmazonOrdersEntityError, AmazonOrdersError
         from bs4 import BeautifulSoup
 
         config = AmazonOrdersConfig(data={"domain": "amazon.com"})
@@ -657,6 +704,41 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual([number, number], [e["order_id"] for e in events])
         self.assertEqual(["python:visa:1234"] * 2, [e["payment_identity"] for e in events])
         self.assertEqual('fixture', calls[1]['data']['ppw-widgetState'])
+
+        error_page = '''<div class="a-alert-container"><h4 class="a-alert-heading">Oops.  Something went wrong.</h4>
+            <div class="a-alert-content">We encountered an error.  Please refresh your page.</div></div>'''
+        # A refresh must preserve pagination input, and is available only once
+        # for the whole retrieval, not once per page or in an unbounded loop.
+        calls.clear()
+        pages = [html.replace('</form>', '<input type="submit" name="ppw-widgetEvent:DefaultNextPageNavigationEvent" value="Next"></form>'), error_page, html.replace('-$17.29', '$3.41')]
+        def recovering_post(url, **kwargs):
+            calls.append(kwargs)
+            return response(pages[len(calls) - 1])
+        session.post = recovering_post
+        recovered = bridge.payment_history(session, 30, number)
+        self.assertEqual([-1729, 341], [e['signed_cents'] for e in recovered])
+        self.assertTrue(all(e['complete'] for e in recovered))
+        self.assertEqual(calls[1], calls[2])
+        calls.clear()
+        pages[:] = [error_page, error_page]
+        with self.assertRaises(AmazonOrdersError):
+            bridge.payment_history(session, 30, number)
+        self.assertEqual(2, len(calls))
+        calls.clear()
+        pages[:] = [error_page, pages[0].replace('Please refresh your page.', 'Unknown response.')]
+        with self.assertRaises(AmazonOrdersError):
+            bridge.payment_history(session, 30, number)
+        self.assertEqual(2, len(calls))
+        calls.clear()
+        pages[:] = [error_page, html.replace('</form>', '<input type="submit" name="ppw-widgetEvent:DefaultNextPageNavigationEvent" value="Next"></form>'), error_page]
+        with self.assertRaises(AmazonOrdersError):
+            bridge.payment_history(session, 30, number)
+        self.assertEqual(3, len(calls))
+        calls.clear()
+        pages[:] = [error_page.replace('Please refresh your page.', 'Unknown response.')]
+        with self.assertRaises(AmazonOrdersError):
+            bridge.payment_history(session, 30, number)
+        self.assertEqual(1, len(calls))
 
         # Duplicate occurrences are incomplete, not silently deduplicated.
         session.post = lambda *args, **kwargs: response(html.replace(row, row + row))
@@ -699,6 +781,7 @@ class BridgeTests(unittest.TestCase):
         record = json.loads(output)["orders"][0]
         self.assertEqual((dt.date.today() - dt.timedelta(days=500)).isoformat(), record["order_placed_date"])
         self.assertEqual([event], record["payment_events"])
+        self.assertFalse(record["financial_evidence"]["purchase_eligible"])
         self.assertNotIn("refund_evidence", record)
         self.assertEqual(1, payments.call_count)
 
@@ -733,6 +816,41 @@ class BridgeTests(unittest.TestCase):
                 self.assertTrue(all(e["key"] == "current" for e in events))
                 self.assertEqual(mode not in ("global_duplicate", "detail_duplicate", "global_failure"), all(e["complete"] for e in events))
                 self.assertEqual(mode == "corroborated", records[current]["financial_evidence"]["payments_complete"])
+
+    def test_unique_charge_corroboration_accepts_different_dates_without_merging_repeated_charges(self):
+        today = dt.date.today()
+        number = "113-8849250-2919462"
+        charge = {"key": "global", "order_id": number, "signed_cents": -6500,
+                  "date": today.isoformat(), "complete": True, "payment_identity": "python:visa:1234", "currency": "USD"}
+        earlier = (today - dt.timedelta(days=1)).isoformat()
+        ledger_charge = dict(charge, key="ledger", date=earlier)
+        for mode in ("unique", "pending", "global_repeat", "ledger_repeat", "other_card", "other_amount"):
+            with self.subTest(mode=mode):
+                observed = [dict(charge)]
+                ledger = [dict(ledger_charge)]
+                if mode == "pending":
+                    ledger[0]["complete"] = False
+                if mode == "global_repeat":
+                    observed.append(dict(charge, key="repeat", date=earlier))
+                if mode == "ledger_repeat":
+                    ledger.append(dict(ledger_charge, key="repeat", date=today.isoformat()))
+                if mode == "other_card":
+                    ledger[0]["payment_identity"] = "python:visa:4321"
+                if mode == "other_amount":
+                    ledger[0]["signed_cents"] = -6400
+                with patch.object(bridge, "payment_history", side_effect=lambda session, days, order_id=None: ledger if order_id else observed):
+                    code, output, errors, _ = self.run_bridge({today.year: [Order(number, today, 65)]}, ["--transaction-evidence"])
+                self.assertEqual((0, ""), (code, errors))
+                record = json.loads(output)["orders"][0]
+                self.assertEqual(mode == "unique", record["financial_evidence"]["payments_complete"])
+                events = record["payment_events"]
+                if mode in ("unique", "pending"):
+                    self.assertEqual(1, len(events))
+                    self.assertEqual("global", events[0]["key"])
+                    self.assertEqual([earlier, today.isoformat()], events[0]["matching_dates"])
+                    self.assertEqual(mode == "unique", events[0]["complete"])
+                else:
+                    self.assertGreaterEqual(len(events), 2)
 
     def test_preflight_rejects_unreviewed_auth_version(self):
         output, errors = io.StringIO(), io.StringIO()

@@ -60,6 +60,10 @@ class AmazonCategorization_UT extends Specification {
         '2026-12-05' | -65000L | [:] | false
         '2026-11-06' | -65000L | [:] | true
         '2026-11-05' | -65000L | [:] | false
+        '2026-11-05' | -65000L | [matching_dates:['2026-11-19']] | true
+        '2026-11-04' | -65000L | [matching_dates:['2026-11-19']] | false
+        '2026-12-05' | -65000L | [matching_dates:['2026-11-21']] | true
+        '2026-12-06' | -65000L | [matching_dates:['2026-11-21']] | false
         '2026-11-20' | -65001L | [:] | false
         '2026-11-20' | -65010L | [:] | false
         '2026-11-20' | -65000L | [payment_identity:'python:visa:4321'] | false
@@ -181,9 +185,11 @@ class AmazonCategorization_UT extends Specification {
         memo.startsWith('🤖 Keep my text | 2026-11-20 | Total $65.00 USD')
         memo.endsWith(AmazonFixture.URL)
         memo.length() <= 500
+        AmazonMemos.parent(order,AmazonFixture.event() + [order_only:true],'Keep my text').startsWith('🤖❓ Keep my text |')
         AmazonMemos.parent(order,AmazonFixture.event(-6500L),'x' * 450) == null
         !AmazonMemos.parent(new AmazonOrder(orderId:'SUB-123',items:[new AmazonOrderItem(title:'Delivery')]),null).contains('https:')
         AmazonMemos.parent(new AmazonOrder(orderId:AmazonFixture.ID),AmazonFixture.event(2167L)).contains('Refund $21.67 USD')
+        AmazonMemos.parent(new AmazonOrder(orderId:AmazonFixture.ID),AmazonFixture.event()).contains("❌ Amazon Order (Couldn't identify items)")
     }
 
     def 'approved evidence and inferred cache are isolated by retailer and plan without a default'() {

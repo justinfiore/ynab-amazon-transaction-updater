@@ -64,7 +64,7 @@ def financial_evidence(order):
     # arbitrary future labels. A missing/unparseable known field is not zero.
     label_fields = {"item(s) subtotal": "subtotal", "subtotal": "subtotal", "shipping & handling": "shipping_total",
                     "shipping": "shipping_total", "free shipping": "free_shipping", "promotion applied": "promotion_applied",
-                    "coupon savings": "coupon_savings", "subscribe & save": "subscription_discount",
+                    "coupon savings": "coupon_savings", "your coupon savings": "coupon_savings", "subscribe & save": "subscription_discount",
                     "subscription discount": "subscription_discount", "multibuy discount": "multibuy_discount",
                     "amazon discount": "amazon_discount", "estimated tax": "estimated_tax", "tax collected": "estimated_tax",
                     "estimated tax to be collected": "estimated_tax",
@@ -88,6 +88,20 @@ def financial_evidence(order):
                       re.fullmatch(r"\$[0-9,]+\.[0-9]{2}", item.simple_parse(config.selectors.FIELD_ITEM_PRICE_SELECTOR) or "")
                       for item in value(order, "items") or []))
     count = value(order, "item_count")
+    # Only the observed blank quantity layout on a single whole-unit item may
+    # infer one, backed by an exact unit-price/subtotal match. Unknown layouts,
+    # weighted items and malformed explicit quantity badges remain unknown.
+    if (len(items) == 1 and items[0]["quantity"] is None and labels_known and usd and prices_usd and
+            not failures and count in (None, 1)):
+        item = value(order, "items")[0]
+        blank = item.parsed.select('[data-component="quantity"]')
+        badges = select(item.parsed, config.selectors.FIELD_ITEM_QUANTITY_SELECTOR)
+        price = cents(value(item, "price"))
+        if (len(blank) == 1 and len(blank[0].select('span.a-size-small')) == 1 and
+                not blank[0].get_text(strip=True) and all(not badge.get_text(strip=True) for badge in badges) and
+                not re.search(r"\bQty\s*:", item.parsed.get_text(" ", strip=True), re.IGNORECASE) and
+                price is not None and price > 0 and price == fields["subtotal"]):
+            items[0].update(quantity=1, cents=price, quantity_source="single_item_subtotal")
     count_matches = count is None or (all(isinstance(i["quantity"], int) for i in items) and count == sum(i["quantity"] for i in items))
     adjustments = [{"id": name, "kind": kind, "cents": fields[name]} for name, kind in ADJUSTMENTS.items()
                    if fields[name] is not None and fields[name] != 0]
@@ -104,7 +118,11 @@ def financial_evidence(order):
                 fields["total_before_tax"] + fields["estimated_tax"] == full_total and
                 detail_total in (full_total, full_total - (gift or 0) - (rewards or 0)) and
                 fields["grand_total"] in (full_total, detail_total) and not fields["refund_total"])
+    method = re.sub(r"\s*\*+\s*\d+.*$", "", value(order, "payment_method") or "").strip().lower()
+    last4 = value(order, "payment_method_last_4")
+    identity = "python:" + method + ":" + str(last4) if re.fullmatch(r"[a-z0-9 -]+", method) and re.fullmatch(r"\d{4}", str(last4)) else None
     return {"version": 1, "source": "python", "currency": "USD" if usd else None, "complete": bool(complete),
+            "payment_identity": identity, "purchase_eligible": value(order, "bridge_purchase_eligible") is True,
             "reason": "incomplete_source" if not complete else None, "items": items, "adjustments": adjustments,
             "adjustments_distinct": distinct, "full_total_cents": full_total if complete else None, "gift_cents": gift, "reward_cents": rewards,
             "payments_complete": value(order, "bridge_payments_complete") is True,
@@ -119,6 +137,25 @@ def payment_history(session, days, order_id=None):
 
     class ObservedPage(TransactionsPage):
         qualified = True
+        refreshed = False
+
+        def _get_form_page(self, amazon_session, url, next_page_data):
+            response = amazon_session.post(url, data=next_page_data)
+            amazon_session.check_response(response, meta=next_page_data)
+            # Amazon sometimes returns HTTP 200 with its refresh-required error
+            # page instead of a ledger. Refresh once per history, never certify
+            # that response as empty or relax parsing of the replacement page.
+            alerts = response.parsed.select('.a-alert-container')
+            if not self.refreshed and any(
+                    alert.select_one('.a-alert-heading') is not None and
+                    ' '.join(alert.select_one('.a-alert-heading').get_text().split()) == 'Oops. Something went wrong.' and
+                    alert.select_one('.a-alert-content') is not None and
+                    ' '.join(alert.select_one('.a-alert-content').get_text().split()) ==
+                    'We encountered an error. Please refresh your page.' for alert in alerts):
+                self.refreshed = True
+                response = amazon_session.post(url, data=next_page_data)
+                amazon_session.check_response(response, meta=next_page_data)
+            return self.parse_page(response.parsed)
 
         def _parse_transaction_data_tag(self, tag):
             state = json.loads(tag.string or "")["props"]["pageProps"]["state"]["transactionResponseState"]
@@ -449,12 +486,20 @@ def load_history(config_path, look_back_days, account_only=False, transaction_ev
                         ledger = payment_history(session, look_back_days, number)
                         complete = bool(ledger) and all(e["complete"] and e["order_id"] == number for e in ledger)
                         charges = [e for e in ledger if (e["signed_cents"] or 0) < 0]
-                        complete = complete and all(any(c["key"] == e["key"] for c in charges)
-                                                    for e in observed if (e["signed_cents"] or 0) < 0)
                     except LoginRequired:
                         raise
                     except Exception:
                         pass
+                # A single charge in each source can corroborate despite date
+                # differences. Never collapse repeated occurrences within a source.
+                observed_charges = [e for e in observed if (e["signed_cents"] or 0) < 0]
+                if (len(observed_charges) == len(charges) == 1 and
+                        all(observed_charges[0][field] == charges[0][field] for field in
+                            ("order_id", "signed_cents", "payment_identity", "currency"))):
+                    global_charge, ledger_charge = observed_charges[0], charges[0]
+                    charges = [dict(ledger_charge, key=global_charge["key"], date=global_charge["date"],
+                                    matching_dates=sorted({global_charge["date"], ledger_charge["date"]}))]
+                complete = complete and all(any(c["key"] == e["key"] for c in charges) for e in observed_charges)
                 # Corroborating histories describe the same occurrences. Retain the
                 # larger multiplicity for each key; indistinguishable duplicates stay unsafe.
                 versions = {}
@@ -467,6 +512,9 @@ def load_history(config_path, look_back_days, account_only=False, transaction_ev
                     valid = recent_complete and len(copies) == 1 and all(e["complete"] for e in global_copies + order_copies)
                     for event in copies:
                         merged = dict(event, complete=valid)
+                        dates = {date for e in global_copies + order_copies for date in e.get("matching_dates", [e["date"]])}
+                        if len(dates) > 1:
+                            merged["matching_dates"] = sorted(dates)
                         if ((event["signed_cents"] or 0) < 0 and event["order_id"] not in seen or
                                 (event["signed_cents"] or 0) > 0 and date_value(event["date"]) < cutoff):
                             merged["competition_only"] = True
@@ -479,6 +527,12 @@ def load_history(config_path, look_back_days, account_only=False, transaction_ev
                     order.bridge_payment_events = combined
                     order.bridge_payments_complete = complete
             history = list(by_id.values())
+        for order in history:
+            eligible = value(order, "order_number") in seen
+            if isinstance(order, dict):
+                order["bridge_purchase_eligible"] = eligible
+            else:
+                order.bridge_purchase_eligible = eligible
         return history
     except auth_errors.AmazonAuthRedirectError as error:
         raise LoginRequired("Amazon sign-in is required") from error

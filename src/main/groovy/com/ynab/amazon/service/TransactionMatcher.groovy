@@ -321,6 +321,7 @@ class TransactionMatcher {
         if (!order.items || order.items.isEmpty()) {
             String summary = order.isReturn ? "Amazon Return (Couldn't identify items)" :
                 (isSubscribeAndSave ? "S&S: Amazon Order (Couldn't identify items)" : "Amazon Order (Couldn't identify items)")
+            summary = '❌ ' + summary
             String existingMemo = AmazonAuthNotice.withoutNotice(transaction.memo)
             if (transaction.memo?.contains(AmazonAuthNotice.MESSAGE) && existingMemo && existingMemo != 'null') {
                 return "${existingMemo} | ${summary}".take(500)

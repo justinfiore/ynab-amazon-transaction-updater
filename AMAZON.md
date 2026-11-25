@@ -68,14 +68,23 @@ diagnostic; it never guesses missing item amounts.
 The bridge qualifies a bounded US-English detail-totals layout and JSON or
 HTML-form payment history using the real pinned `amazon-orders==6.0.0` parser.
 It retains nullable quantities, exact-cent costs, adjustment/funding provenance
-and parse/completeness flags, never recipients or raw pages. Unknown labels,
-currency, missing quantities, overlapping promotions, count mismatches,
+and parse/completeness flags, never recipients or raw pages. The observed blank
+quantity component may infer one only for a single, non-weighted item whose
+explicit USD price exactly equals the subtotal, with no conflicting count,
+quantity badge or parse failure. Inferred quantities carry `quantity_source:
+single_item_subtotal`; all total, tax, funding and payment checks still apply.
+The detail label `Your Coupon Savings` is accepted as the existing coupon discount,
+not a second adjustment. Unknown labels,
+currency, other missing quantities, overlapping promotions, count mismatches,
 incomplete pages or ambiguous multi-order
 references block financial authority. Qualified forms require complete row coverage,
 one signed-dollar amount and masked payment identity per row, one matching order
 link/reference, known status text, and valid pagination controls. Pending form
 rows remain incomplete payment competitors, not completed-payment authority.
-Unknown or empty forms remain unqualified. History totals may be payable rather
+Unknown or empty forms remain unqualified. Amazon's exact HTTP-success error page
+asking to refresh gets at most one refresh per history retrieval, preserving any
+pagination input. Persistent errors still block payment completeness; an error
+page never establishes an empty ledger. History totals may be payable rather
 than full order value; a residual is never assumed to be tax or gift funding. Pages are capped at
 20 per history retrieval and detail orders at 200, additionally bounded by the
 existing subprocess timeout/output limits. Global payment history stops on a
@@ -88,7 +97,9 @@ Recent purchase events remain payment competitors even when the order is outside
 purchase lookback or its charge ledger is unavailable. Out-of-window purchase
 events are competition-only: they do not fetch old purchase details or authorize
 historical writes. Corroborating global/order histories count an occurrence once;
-indistinguishable repeated occurrences remain ambiguous. Global payment evidence
+when each history has exactly one charge for the same order, amount, card and
+currency, differing payment dates are retained as alternatives for that occurrence.
+Repeated charges within either history are not collapsed. Global payment evidence
 retains a 14-day margin before lookback to cover the bank matching window. Credits
 in that margin are competition-only too; they do not trigger old-order retrieval
 or historical credit writes.
@@ -107,8 +118,31 @@ promise that every real notification contains them.
 
 ## Accounting and fallback
 
-Purchases require a unique completed exact-cent event, confirmed payment/account
-identity and bank date within 14 days; the plan/source must be USD. All item costs
+Purchases first match qualified Python order details: an explicit mapped card,
+exact reconciled bank amount after known gift funding, and a uniquely closest
+order date within 14 days. The order must come from purchase history within the
+lookback, not an older original fetched for a refund. One category or item splits
+can be assigned without payment history or a complete order-specific ledger.
+The parent memo starts with `🤖❓` when the match lacks a completed, unambiguous
+payment-history event; `🤖` indicates payment corroboration. Split item memos keep
+their ordinary robot prefix. Missing-item summaries start with `❌`.
+
+Payment history can corroborate order matches or resolve orders that cannot be
+uniquely matched from their order data. Payment-based matches require a unique
+completed exact-cent event, mapped payment/account identity and a bank date within
+14 days of either payment-history date (purchases may also use the order date).
+Refund credits never use the original purchase date. The plan/source must be
+USD. Equal-distance ties and associations claimed by multiple parents remain
+blocked; excluded and human-edited parents continue to compete. Known multiple
+charges or conflicting payment amounts, cards or currencies cannot be bypassed
+by the order-only path. Refunds still require completed payment evidence.
+Unavailable optional payment history alone does not block qualified order matches.
+An order-only purchase association continues to reserve that order when its bank
+parent leaves the lookback window; a later payment event cannot allocate it again.
+Existing trusted payment associations are retained when order details become
+qualified, so metadata fallbacks can progress without changing association keys.
+Already completed financial allocations are not rewritten just to change the marker.
+All item costs
 and nonoverlapping adjustments must explain full order value exactly. Discounts
 apply to explicitly identified items first, otherwise proportionally. Known tax,
 shipping and fees are proportional over discounted merchandise, rounded by stable
@@ -130,8 +164,14 @@ Refunds use positive amounts; original purchases are never edited.
 
 Keep one nonzero row per item, even for equal categories. One nonzero item uses
 a parent category-only write; zero items never learn that parent's category.
-Uncertain categories remain null. Provider operational errors block item
-allocation, not an independently eligible fallback.
+All nonzero items must have accepted categories before creating a category or
+split allocation. Otherwise the parent remains a retryable metadata fallback,
+not a completed categorization. Provider operational errors block item allocation,
+not an independently eligible fallback. Older completed records with blank
+categories can be reconsidered only while the current parent and every split
+still match the saved app result. Existing partial splits are left intact until
+all categories resolve. Manual category, split, memo, or approval edits block
+automatic rewriting. New journal entries retain the allocation/fallback reason.
 
 **Fallback is a category write:** in `item_categories`, a trustworthy eligible
 match lacking item allocation confidence gets known robot/date/total metadata,

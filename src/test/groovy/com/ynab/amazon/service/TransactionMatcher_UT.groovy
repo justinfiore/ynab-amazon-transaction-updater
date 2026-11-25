@@ -32,7 +32,7 @@ class TransactionMatcher_UT extends Specification {
 
         then:
         matches*.ynabTransaction*.id == ['amazon']
-        matches[0].proposedMemo == "Personal | Amazon Order (Couldn't identify items)"
+        matches[0].proposedMemo == "Personal | ❌ Amazon Order (Couldn't identify items)"
     }
 
     def "findMatches should return empty list when no transactions provided"() {

@@ -62,8 +62,14 @@ class AmazonAllocation {
             if (evidence.mixed_tender || evidence.full_total_cents != bank) return [eligible:false,reason:'unreconciled_refund']
         } else {
             List charges = events.findAll { it.order_id == order.orderId && it.signed_cents < 0 }
-            if (evidence.payments_complete != true || charges.size() != 1 || charges[0].key != event.key ||
-                !integer(evidence.gift_cents) || evidence.reward_cents != 0 || bank + evidence.gift_cents != evidence.full_total_cents) return [eligible:false,reason:'unsupported_payment_coverage']
+            boolean orderBacked = evidence.source == 'python' && evidence.purchase_eligible == true &&
+                evidence.payment_identity && evidence.payment_identity == event.payment_identity && event.currency == 'USD'
+            if (!integer(evidence.gift_cents) || evidence.reward_cents != 0 || bank + evidence.gift_cents != evidence.full_total_cents ||
+                (orderBacked ? charges.size() > 1 || charges.any { charge ->
+                    charge.competition_only == true || !charge.key ||
+                        ['signed_cents','payment_identity','currency'].any { charge[it] != event[it] }
+                } : event.source == 'order' || evidence.payments_complete != true || charges.size() != 1 || charges[0].key != event.key))
+                return [eligible:false,reason:'unsupported_payment_coverage']
         }
         Map amounts = refund ? calculated.costs : distribute(bank,calculated.costs)
         List lines = calculated.items.findAll { amounts[it.itemId] > 0 }.collect { item ->
