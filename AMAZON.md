@@ -90,7 +90,10 @@ explicit USD price exactly equals the subtotal, with no conflicting count,
 quantity badge or parse failure. Inferred quantities carry `quantity_source:
 single_item_subtotal`; all total, tax, funding and payment checks still apply.
 The detail label `Your Coupon Savings` is accepted as the existing coupon discount,
-not a second adjustment. Unknown labels,
+not a second adjustment. The exact observed eligibility subtotal is informational,
+not a charge or discount: its single, nonnegative USD row may be present without
+changing allocated costs. Duplicates, malformed values and other unknown labels
+remain disqualifying. Unknown labels,
 currency, other missing quantities, overlapping promotions, count mismatches,
 incomplete pages or ambiguous multi-order
 references block financial authority. Qualified forms require complete row coverage,
@@ -171,12 +174,19 @@ $16.67/$33.33. There is no gift offset row. Fully gift-funded purchases need no
 YNAB target, write or inference. Multiple external purchase charges are deliberately
 nonallocating; each independently trustworthy eligible charge may get fallback.
 
+Partial or full refunds do not automatically disqualify the original purchase.
+Its original item costs, tax and adjustments must still explain the original
+total and match the original charge plus known gift funding exactly. The
+cumulative refund total must be nonnegative and no greater than that original
+total; it is never subtracted from purchase costs or used to identify refund
+items. Pages whose totals instead describe the net after refund remain blocked.
+
 Refunds require event-specific identified products and reconciled net credits,
 not guessed percentages, original full order items or subset sums. Explicitly
 refunded tax/shipping/fees follow the same allocation convention; withheld fees
 are deductions, not negative rows. Approved provenance-backed original item
 categories take precedence, with out-of-list/conflicting evidence unresolved.
-Refunds use positive amounts; original purchases are never edited.
+Refunds use positive amounts; processing a credit never edits the original purchase.
 
 Keep one nonzero row per item, even for equal categories. One nonzero item uses
 a parent category-only write; zero items never learn that parent's category.

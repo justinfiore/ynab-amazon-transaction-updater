@@ -254,6 +254,49 @@ class AmazonEnrichment_IT extends Specification {
         remote.tx.approved == true
     }
 
+    def 'refunded purchases keep original splits while credits require separate completed item evidence: #completed'() {
+        given:
+        def order = orderBased()
+        order.financialEvidence.fields = [refund_total:6500L]
+        def refund = AmazonFixture.event(2167L,'refund') + [complete:completed]
+        order.paymentEvents = [AmazonFixture.event(),refund]
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction())
+        remote.credit = AmazonEnrichment.snapshot(AmazonFixture.transaction('credit',21670L))
+        Map creditBaseline = new LinkedHashMap(remote.credit)
+
+        when:
+        def result = new AmazonEnrichment(config).process([transaction('tx'),transaction('credit')],[order],ynab,false)
+
+        then:
+        result.updated == (completed ? 2 : 1)
+        remote.tx.subtransactions*.amount == [-21670L,-43330L]
+        remote.tx.subtransactions*.category_id == ['e','pets']
+        remote.tx.amount == -65000L
+        remote.credit.category_id == null
+        !remote.credit.subtransactions
+        if (completed) assert result.preview.any { it.transaction_id == 'credit' && it.reason == 'refund_items_unknown' }
+        else assert remote.credit == creditBaseline
+
+        when: 'the specific credit gains completed, reconciled refund-item evidence'
+        refund.complete = true
+        refund.refund_evidence = [version:1,complete:true,currency:'USD',final_net:true,
+            full_total_cents:2167L,adjustments:[],adjustments_distinct:true,
+            items:[[itemId:'returned-a',productId:'cable',title:'Fixture refund item',cents:2167L]]]
+        int previousWrites = writes.size()
+        def creditResult = new AmazonEnrichment(config).process([transaction('credit')],[order],ynab,false)
+
+        then:
+        creditResult.updated == 1
+        writes.size() == previousWrites + 1
+        remote.credit.category_id == 'e'
+        remote.credit.amount == 21670L
+        !remote.credit.subtransactions
+        remote.tx.subtransactions*.amount == [-21670L,-43330L]
+
+        where:
+        completed << [false,true]
+    }
+
     def 'order-first #shape allocation works without a ledger and marks only uncorroborated matches'() {
         given:
         def order = orderBased()

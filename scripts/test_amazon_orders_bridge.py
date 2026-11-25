@@ -453,10 +453,10 @@ class BridgeTests(unittest.TestCase):
 
         config = AmazonOrdersConfig(data={"domain": "amazon.com"})
 
-        def detail(extra="", tax="5.00", quantity="1", first_price="$20.00", current_layout=False):
+        def detail(extra="", tax="5.00", quantity="1", first_price="$20.00", current_layout=False, grand_total="$65.00"):
             totals = [("Item(s) Subtotal", "$60.00"), ("Total before tax", "$60.00"),
                       ("Estimated tax to be collected" if current_layout else "Estimated tax", "$" + tax),
-                      ("Grand Total", "$65.00")]
+                      ("Grand Total", grand_total)]
             html = '<div id="orderDetails"><div class="displayAddressDiv"><li class="displayAddressFullName">Fixture</li></div><div data-component="purchasedItems">'
             for title, asin, price, qty in [("Cable", "B000000001", first_price, quantity), ("Pet food", "B000000002", "$40.00", "1")]:
                 html += f'''<div class="a-fixed-left-grid"><div data-component="itemTitle"><a href="/dp/{asin}">{title}</a></div>
@@ -481,6 +481,21 @@ class BridgeTests(unittest.TestCase):
         gift = detail('<div class="a-row"><span>Gift Card:</span><div class="a-span-last">-$15.00</div></div>')
         self.assertEqual(1500, bridge.financial_evidence(gift)["gift_cents"])
         self.assertTrue(bridge.financial_evidence(gift)["complete"])
+        for refund in ("$21.67", "$65.00"):
+            with self.subTest(refund=refund):
+                refunded = bridge.financial_evidence(detail(
+                    f'<div class="a-row"><span>Refund Total:</span><div class="a-span-last">{refund}</div></div>'))
+                self.assertTrue(refunded["complete"], refunded)
+                self.assertEqual(6500, refunded["full_total_cents"])
+                self.assertEqual([2000, 4000], [item["cents"] for item in refunded["items"]])
+                self.assertEqual([{"id": "estimated_tax", "kind": "tax", "cents": 500}], refunded["adjustments"])
+        for refund in ("-$1.00", "$65.01", "unknown"):
+            with self.subTest(invalid_refund=refund):
+                self.assertFalse(bridge.financial_evidence(detail(
+                    f'<div class="a-row"><span>Refund Total:</span><div class="a-span-last">{refund}</div></div>'))["complete"])
+        # A refunded purchase must still explain the original charge, never its net after refund.
+        net_total = detail('<div class="a-row"><span>Refund Total:</span><div class="a-span-last">$21.67</div></div>', grand_total="$43.33")
+        self.assertFalse(bridge.financial_evidence(net_total)["complete"])
         for invalid in [detail(tax="unknown"), detail(quantity=""), detail(quantity="", current_layout=True),
                         detail(first_price="EUR20.00"), detail(first_price="EUR20.00", current_layout=True),
                         detail('<div class="a-row"><h5>Order Summary $1.00</h5></div>', current_layout=True),
@@ -496,7 +511,7 @@ class BridgeTests(unittest.TestCase):
         config = AmazonOrdersConfig(data={"domain": "amazon.com"})
         blank = '<div data-component="quantity"><span class="a-size-small"></span></div>'
 
-        def detail(quantity=blank, price="$23.45", coupon=False):
+        def detail(quantity=blank, price="$23.45", coupon=False, extra=""):
             totals = [("Item(s) Subtotal", "$24.50" if coupon else "$23.45"), ("Shipping & Handling", "$0.00")]
             if coupon:
                 totals.append(("Your Coupon Savings", "-$1.50"))
@@ -508,7 +523,7 @@ class BridgeTests(unittest.TestCase):
                 <div data-component="unitPrice"><span class="a-text-price"><span>{price}</span></span></div></div></div>
                 <div data-component="orderSubtotals"><div class="a-row"><h5>Order Summary</h5></div>'''
             html += ''.join(f'<div class="a-row"><span>{label}:</span><div class="a-span-last">{amount}</div></div>' for label, amount in totals)
-            return RealOrder(BeautifulSoup(html + '</div></div>', "html.parser"), config, full_details=True, order_number="113-8849250-2919462")
+            return RealOrder(BeautifulSoup(html + extra + '</div></div>', "html.parser"), config, full_details=True, order_number="113-8849250-2919462")
 
         inferred = bridge.financial_evidence(detail())
         self.assertTrue(inferred["complete"], inferred)
@@ -520,6 +535,17 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual([{"id":"coupon_savings", "kind":"discount", "cents":-150},
                           {"id":"estimated_tax", "kind":"tax", "cents":155}], explicit["adjustments"])
         self.assertEqual(2455, explicit["full_total_cents"])
+        informational = '<div class="a-row"><span>FSA or HSA eligible: (inc. tax and shipping)</span><div class="a-span-last">$19.95</div></div>'
+        eligible = bridge.financial_evidence(detail(extra=informational))
+        self.assertTrue(eligible["complete"], eligible)
+        self.assertEqual((2500, 1), (eligible["full_total_cents"], eligible["items"][0]["quantity"]))
+        self.assertEqual([{"id": "estimated_tax", "kind": "tax", "cents": 155}], eligible["adjustments"])
+        for invalid in (informational * 2, informational.replace("inc.", "exc."),
+                        informational.replace("$19.95", "-$19.95"), informational.replace("$19.95", "CAD19.95"),
+                        informational.replace("$19.95", "unknown")):
+            with self.subTest(informational_row=invalid):
+                self.assertFalse(bridge.financial_evidence(detail(extra=invalid))["complete"])
+        self.assertFalse(bridge.financial_evidence(detail(extra=informational, price="$11.72"))["complete"])
         for order in [detail(quantity=""), detail(quantity=blank.replace('</span>', 'unknown</span>')),
                       detail(quantity=blank + '<span class="a-size-small">Qty: 0.31 lb</span>'),
                       detail(quantity=blank + '<span class="od-item-view-qty">unknown</span>'),

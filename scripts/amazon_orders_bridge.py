@@ -76,8 +76,16 @@ def financial_evidence(order):
     for row in rows:
         text = row.get_text(" ", strip=True).lower()
         match = re.fullmatch(r"(.+?)\s*:?\s+(-?\$[0-9,]+\.[0-9]{2})", text)
-        field = label_fields.get(match[1].rstrip(": ")) if match else None
+        label = match[1].rstrip(": ") if match else None
         amount = cents(match[2].replace("$", "").replace(",", "")) if match else None
+        # This exact informational subtotal is not an adjustment or payment.
+        # Still reject duplicate, malformed, negative or non-USD rows.
+        if label == "fsa or hsa eligible: (inc. tax and shipping)":
+            if label in observed or amount is None or amount < 0:
+                labels_known = False
+            observed.append(label)
+            continue
+        field = label_fields.get(label)
         if not field or field in observed or amount is None or (field != "grand_total" and fields[field] != amount):
             labels_known = False
         observed.append(field)
@@ -112,12 +120,16 @@ def financial_evidence(order):
     gift = abs(fields["gift_card"] or 0) if labels_known else None
     rewards = abs(fields["reward_points"] or 0) if labels_known else None
     item_sum = sum(i["cents"] for i in items) if items and all(i["cents"] is not None for i in items) else None
+    # Qualify the original purchase, never a purchase net of refunds. Original
+    # item costs/totals must still reconcile; each credit needs its own payment
+    # and item evidence downstream, not the order's cumulative refund total.
     complete = (value(order, "full_details") is True and not value(order, "cancelled") and not value(order, "bridge_conflicting_summary") and labels_known and usd and prices_usd and count_matches and
                 not failures and distinct and item_sum is not None and item_sum == fields["subtotal"] and
                 fields["estimated_tax"] is not None and fields["total_before_tax"] is not None and full_total is not None and
                 fields["total_before_tax"] + fields["estimated_tax"] == full_total and
                 detail_total in (full_total, full_total - (gift or 0) - (rewards or 0)) and
-                fields["grand_total"] in (full_total, detail_total) and not fields["refund_total"])
+                fields["grand_total"] in (full_total, detail_total) and
+                (fields["refund_total"] is None or 0 <= fields["refund_total"] <= full_total))
     method = re.sub(r"\s*\*+\s*\d+.*$", "", value(order, "payment_method") or "").strip().lower()
     last4 = value(order, "payment_method_last_4")
     identity = "python:" + method + ":" + str(last4) if re.fullmatch(r"[a-z0-9 -]+", method) and re.fullmatch(r"\d{4}", str(last4)) else None
