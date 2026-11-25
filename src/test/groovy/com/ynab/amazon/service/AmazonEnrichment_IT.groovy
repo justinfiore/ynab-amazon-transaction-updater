@@ -194,11 +194,28 @@ class AmazonEnrichment_IT extends Specification {
         where:
         change | removeMapping | reason
         [category_id:'human'] | false | 'non_owned_category'
-        [approved:true] | false | 'ineligible_parent'
+        [approved:true,category_id:'human'] | false | 'non_owned_category'
         [subtransactions:[[amount:-65000L,category_id:'e']]] | false | 'ineligible_parent'
         [cleared:'reconciled'] | false | 'ineligible_parent'
         [amount:-65001L] | false | 'payment_evidence_required'
         [:] | true | 'missing_payment_account_mapping'
+    }
+
+    def 'approved uncategorized purchase is classified without changing its approval'() {
+        given:
+        def order = AmazonFixture.order()
+        order.paymentEvents = [AmazonFixture.event()]
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction()) + [approved:true]
+
+        when:
+        def result = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        result.updated == 1
+        writes.size() == 1
+        writes[0].approved == true
+        writes[0].subtransactions*.category_id == ['e','pets']
+        remote.tx.approved == true
     }
 
     def 'multiple charges get independent fallbacks but competing events and parents are never chosen greedily'() {
@@ -260,7 +277,7 @@ class AmazonEnrichment_IT extends Specification {
         then:
         result.updated == 0
         writes.size() == 1
-        result.preview.any { it.reason == 'ineligible_parent' }
+        result.preview.any { it.reason == (state == 'approved' ? 'non_owned_category' : 'ineligible_parent') }
 
         where:
         state        | eventEvidence

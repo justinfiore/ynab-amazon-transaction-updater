@@ -557,6 +557,129 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bridge.payment_history(session, 30)
 
+    @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install the reviewed requirements lock")
+    def test_payment_history_stops_after_the_inclusive_competition_window_not_the_page_bound(self):
+        from amazonorders.conf import AmazonOrdersConfig
+        from bs4 import BeautifulSoup
+
+        config = AmazonOrdersConfig(data={"domain": "amazon.com"})
+        cutoff = dt.date.today() - dt.timedelta(days=44)
+        number = "113-8849250-2919462"
+        calls = []
+
+        def post(url, **kwargs):
+            index = len(calls)
+            calls.append(kwargs)
+            # Dates can be reordered within a page, and equal dates straddle
+            # pages. Stop only on a wholly older page, not an individual row.
+            dates = [[cutoff, cutoff + dt.timedelta(days=1)],
+                     [cutoff - dt.timedelta(days=1), cutoff],
+                     [cutoff - dt.timedelta(days=2)]]
+            records = [{"formattedDate": day.strftime("%B %d, %Y"), "formattedAmount": f"-${index + 1}.{i + 10:02d}",
+                        "orderData": [{"orderDisplayString": "Order #" + number}],
+                        "paymentMethodDisplayStringData": {"paymentMethodName": "Visa", "paymentMethodNumber": {"lastDigits": "1234"}}}
+                       for i, day in enumerate(dates[min(index, 2)])]
+            if "json" in kwargs:
+                return types.SimpleNamespace(response=types.SimpleNamespace(json=lambda: {
+                    "displayResponse": {"transactionsList": records, "lastEvaluatedKey": f"cursor-{index}"}}))
+            payload = {"props": {"pageProps": {"token": "fixture", "request": {"locale": "en_US"},
+                       "state": {"transactionResponseState": {"visibleTransactionResponse": {"transactionList": records},
+                                 "hasMore": True, "lastEvaluatedPageKey": "cursor-0"}}}}}
+            return types.SimpleNamespace(parsed=BeautifulSoup('<script id="__NEXT_DATA__">' + json.dumps(payload) + '</script>', "html.parser"))
+
+        session = types.SimpleNamespace(config=config, post=post, check_response=lambda *args, **kwargs: None)
+        events = bridge.payment_history(session, 30)
+        self.assertEqual(3, len(calls))
+        self.assertEqual([-110, -111, -211], [e["signed_cents"] for e in events])
+        self.assertEqual([str(cutoff), str(cutoff + dt.timedelta(days=1)), str(cutoff)], [e["date"] for e in events])
+        self.assertTrue(all(e["complete"] for e in events))
+        calls.clear()
+        with self.assertRaisesRegex(ValueError, "Transaction page bound"):
+            bridge.payment_history(session, 30, number)  # Order coverage is never date-truncated.
+        self.assertEqual(20, len(calls))
+
+        # A continuation returning newer dates must not certify a truncated ledger.
+        calls.clear()
+        original_post = post
+        def unordered_post(url, **kwargs):
+            response = original_post(url, **kwargs)
+            if "json" in kwargs:
+                response.response.json()["displayResponse"]["transactionsList"][0]["formattedDate"] = dt.date.today().strftime("%B %d, %Y")
+            return response
+        session.post = unordered_post
+        with self.assertRaisesRegex(ValueError, "Unordered transaction history"):
+            bridge.payment_history(session, 30)
+
+    @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install the reviewed requirements lock")
+    def test_payment_form_qualifies_complete_rows_and_rejects_lost_or_ambiguous_evidence(self):
+        from amazonorders.conf import AmazonOrdersConfig
+        from amazonorders.exception import AmazonOrdersEntityError
+        from bs4 import BeautifulSoup
+
+        config = AmazonOrdersConfig(data={"domain": "amazon.com"})
+        number = "113-8849250-2919462"
+        old = dt.date.today() - dt.timedelta(days=500)
+        # Minimal redacted version of the observed form: the second a-span12 is
+        # seller text, not a second order. No source tokens or account data remain.
+        order_row = f'<div><div><div class="a-span12"><a class="a-link-normal" href="/gp/your-account/order-details?orderID={number}">Order #{number}</a></div></div></div>'
+        row = f'''<div class="apx-transactions-line-item-component-container">
+            <div><div><span class="a-size-base">Visa ****1234</span></div>
+                 <div><span class="a-size-base-plus">-$17.29</span></div></div>
+            {order_row}
+            <div><div><div class="a-span12"><span>Fixture seller</span></div></div></div></div>'''
+        html = f'''<form><input name="ppw-widgetState" value="fixture"><input name="ie" value="UTF8">
+            <div class="apx-transaction-date-container"><span>{old.strftime('%B %d, %Y')}</span></div>
+            <div>{row}</div></form>'''
+
+        def response(markup):
+            return types.SimpleNamespace(parsed=BeautifulSoup(markup, "html.parser"))
+
+        session = types.SimpleNamespace(config=config, check_response=lambda *args, **kwargs: None)
+        calls = []
+        def post(url, **kwargs):
+            calls.append(kwargs)
+            return response(html.replace('</form>', '<input type="submit" name="ppw-widgetEvent:DefaultNextPageNavigationEvent" value="Next"></form>')
+                            if len(calls) == 1 else html.replace('-$17.29', '$3.41'))
+        session.post = post
+        events = bridge.payment_history(session, 30, number)
+        self.assertEqual([-1729, 341], [e["signed_cents"] for e in events])
+        self.assertEqual([str(old), str(old)], [e["date"] for e in events])
+        self.assertTrue(all(e["complete"] for e in events))
+        self.assertEqual([number, number], [e["order_id"] for e in events])
+        self.assertEqual(["python:visa:1234"] * 2, [e["payment_identity"] for e in events])
+        self.assertEqual('fixture', calls[1]['data']['ppw-widgetState'])
+
+        # Duplicate occurrences are incomplete, not silently deduplicated.
+        session.post = lambda *args, **kwargs: response(html.replace(row, row + row))
+        duplicates = bridge.payment_history(session, 30, number)
+        self.assertEqual(2, len(duplicates))
+        self.assertTrue(all(not e['complete'] for e in duplicates))
+
+        pending = html.replace(order_row, '<div><div><span class="a-size-base a-color-base">Pending</span></div></div>' + order_row)
+        session.post = lambda *args, **kwargs: response(pending)
+        pending_events = bridge.payment_history(session, 30, number)
+        self.assertEqual([-1729], [e['signed_cents'] for e in pending_events])
+        self.assertFalse(pending_events[0]['complete'])
+
+        invalid = [html.replace('-$17.29', '-$17.29 CAD'),
+                   html.replace('Visa ****1234', 'Visa ending 1234'),
+                   html.replace('Order #' + number, 'Order #' + number + ' and 114-1111111-2222222'),
+                   html.replace('orderID=' + number, 'orderID=114-1111111-2222222'),
+                   html.replace('href="/gp/', 'href="https://example.com/gp/'),
+                   html.replace('Fixture seller', 'Order #114-1111111-2222222'),
+                   html.replace(row, row + '<div class="apx-transactions-line-item-component-container"></div>'),
+                   html.replace(old.strftime('%B %d, %Y'), 'not a date'),
+                   html.replace('<input name="ie" value="UTF8">', '<input type="submit" name="ppw-widgetEvent:DefaultNextPageNavigationEvent" value="Next">'),
+                   html.replace('-$17.29</span>', '-$17.29</span><span class="a-size-base-plus">$1.00</span>'),
+                   html.replace('<input name="ie" value="UTF8">', '<input name="ie" value="UTF8"><input name="ie" value="UTF8">'),
+                   html.replace(order_row, '<div><div><span>Unknown status</span></div></div>' + order_row),
+                   html.replace('value="fixture"', 'value=""')]
+        for markup in invalid:
+            with self.subTest(markup=markup):
+                session.post = lambda *args, **kwargs: response(markup)
+                with self.assertRaises((ValueError, AmazonOrdersEntityError)):
+                    bridge.payment_history(session, 30, number)
+
     def test_recent_credit_fetches_old_original_without_purchase_lookback_or_guessed_refund_items(self):
         event = {"key": "credit", "order_id": "113-8849250-2919462", "signed_cents": 6500,
                  "date": dt.date.today().isoformat(), "complete": True, "payment_identity": "python:visa:1234", "currency": "USD"}

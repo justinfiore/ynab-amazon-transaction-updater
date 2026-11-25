@@ -156,7 +156,7 @@ class AmazonEnrichment {
                     stats.preview << [transaction_id:tx.id,reason:'ineligible_parent']; return
                 }
                 // Parent non-null category is not evidence of app ownership, even if auto-categorized.
-                if (financial && current.category_id != null && !(old?.result && old.status == 'memo_only' && old.owned_category)) {
+                if (financial && current.category_id != null && (current.approved == true || !(old?.result && old.status == 'memo_only' && old.owned_category))) {
                     stats.preview << [transaction_id:tx.id,reason:'non_owned_category']; return
                 }
                 String userText = old?.user_text != null ? old.user_text : AmazonAuthNotice.withoutNotice(current.memo)?.with { it == 'null' ? '' : it } ?: ''
@@ -182,6 +182,7 @@ class AmazonEnrichment {
                     }
                 }
                 Map changes = financial ? AmazonAllocation.payload(event,memo,plan) : [memo:memo]
+                if (financial && current.approved == true) changes.approved = true
                 String status = !financial ? 'memo_only' : !plan.eligible ? 'fallback' : plan.lines.size() == 1 ? 'category' : 'split'
                 stats.high_confidence++
                 if (old?.status == status && current.memo == memo && status in ['fallback','memo_only']) {
@@ -255,7 +256,7 @@ class AmazonEnrichment {
     }
     static boolean eligible(Map tx, Set accounts, boolean financial) {
         tx && !tx.deleted && !tx.transfer_account_id && tx.amount &&
-            (!financial || (tx.approved == false && !tx.subtransactions && tx.cleared in ['cleared','uncleared'] &&
+            (!financial || (tx.approved in [true, false] && !tx.subtransactions && tx.cleared in ['cleared','uncleared'] &&
                 tx.amount % 10 == 0 && accounts.contains(tx.account_id)))
     }
     static Map snapshot(YNABTransaction tx) {

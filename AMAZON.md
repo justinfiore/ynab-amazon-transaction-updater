@@ -3,7 +3,7 @@
 Amazon defaults to `amazon.enrichment: memo_only`. This updates summaries and
 links, not categories. The optional `item_categories` mode writes categories or
 item splits into the **live budget**, affecting available balances immediately
-even though every write remains **unapproved**. Keep `app.dry_run: true` until
+even when a transaction is approved. Existing approval is preserved. Keep `app.dry_run: true` until
 you have reviewed the exact preview. No live account or paid inference is needed
 to run the repository's offline acceptance tests.
 
@@ -65,16 +65,24 @@ its existing mailbox parser without requiring Python unless payment evidence is
 explicitly enabled. An unavailable optional source fails closed with a bounded
 diagnostic; it never guesses missing item amounts.
 
-The bridge qualifies a bounded US-English detail-totals layout and JSON payment
-history using the real pinned `amazon-orders==6.0.0` parser. It retains nullable
-quantities, exact-cent costs, adjustment/funding provenance and parse/completeness
-flags, never recipients or raw pages. Unknown labels, currency, missing quantities,
-overlapping promotions, count mismatches, incomplete pages or ambiguous multi-order
-references block financial authority. HTML-form transaction layouts are currently
-display-only/unqualified. History totals may be payable rather than full order
-value; a residual is never assumed to be tax or gift funding. Pages are capped at
+The bridge qualifies a bounded US-English detail-totals layout and JSON or
+HTML-form payment history using the real pinned `amazon-orders==6.0.0` parser.
+It retains nullable quantities, exact-cent costs, adjustment/funding provenance
+and parse/completeness flags, never recipients or raw pages. Unknown labels,
+currency, missing quantities, overlapping promotions, count mismatches,
+incomplete pages or ambiguous multi-order
+references block financial authority. Qualified forms require complete row coverage,
+one signed-dollar amount and masked payment identity per row, one matching order
+link/reference, known status text, and valid pagination controls. Pending form
+rows remain incomplete payment competitors, not completed-payment authority.
+Unknown or empty forms remain unqualified. History totals may be payable rather
+than full order value; a residual is never assumed to be tax or gift funding. Pages are capped at
 20 per history retrieval and detail orders at 200, additionally bounded by the
-existing subprocess timeout/output limits.
+existing subprocess timeout/output limits. Global payment history stops on a
+page wholly older than the lookback plus 14-day margin; equal-boundary dates
+remain included. Rows may be reordered within pages, but page date ranges must
+advance newest-first or the retrieval fails closed.
+Order-specific payment ledgers are never truncated by that date window.
 
 Recent purchase events remain payment competitors even when the order is outside
 purchase lookback or its charge ledger is unavailable. Out-of-window purchase
@@ -128,8 +136,8 @@ allocation, not an independently eligible fallback.
 **Fallback is a category write:** in `item_categories`, a trustworthy eligible
 match lacking item allocation confidence gets known robot/date/total metadata,
 the full mobile order URL and explicit `category_id: null`, no splits, unchanged
-amount and `approved: false`. Missing/ambiguous event identity or a human-owned
-category, approval or split blocks it. `memo_only` never clears categories.
+amount and approval. Missing/ambiguous event identity or a human-owned
+category or split blocks it. `memo_only` never clears categories.
 Unknown fallback totals/dates are omitted, not invented. Parent memos preserve
 user text and required fields; generated titles yield first to the 500-character
 limit. If required content cannot fit, the whole update skips. The mobile URL is
@@ -142,7 +150,8 @@ ownership, distinct event/item provenance, separate memo/fallback/category/split
 completion, classifier scope and durable intent. A fresh baseline check precedes
 each PUT; uncertain outcomes are read back before any retry. Human changes since
 a saved result stop further updates. Financial writes additionally require
-unapproved, unsplit, unreconciled parents in eligible accounts. Default memo-only
+unsplit, unreconciled parents in eligible accounts; approved parents must be
+uncategorized. Default memo-only
 enrichment may add metadata to approved, split or reconciled parents, preserving
 their approval, categories, split rows and all other financial fields. Neither
 mode updates deleted or transfer parents. There is no distributed compare-and-swap

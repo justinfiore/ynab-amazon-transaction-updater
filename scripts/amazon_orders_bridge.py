@@ -11,7 +11,7 @@ import re
 import hashlib
 from decimal import Decimal, InvalidOperation
 import sys
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 SCHEMA_VERSION = 1
 LOGIN_REQUIRED_EXIT_CODE = 3
@@ -132,9 +132,46 @@ def payment_history(session, days, order_id=None):
             return result
 
         def _parse_transaction_form_tag(self, tag):
-            # Form layouts have not yet been independently qualified for financial authority.
-            self.qualified = False
-            return super()._parse_transaction_form_tag(tag)
+            from amazonauth.util import select
+
+            result, cursor = super()._parse_transaction_form_tag(tag)
+            selectors = self.config.selectors
+            # The upstream parser can skip date groups or select only the first
+            # amount/reference. Qualify the observed form, not those fallbacks.
+            rows = tag.select('div.apx-transactions-line-item-component-container')
+            if not rows or sorted(map(id, rows)) != sorted(id(t.parsed) for t in result):
+                raise ValueError("Unqualified transaction history layout")
+            for selector in (selectors.TRANSACTIONS_NEXT_PAGE_INPUT_STATE_SELECTOR,
+                             selectors.TRANSACTIONS_NEXT_PAGE_INPUT_IE_SELECTOR):
+                controls = select(tag, selector)
+                if len(controls) != 1 or not controls[0].get('value'):
+                    raise ValueError("Unqualified transaction history layout")
+            next_buttons = select(tag, selectors.TRANSACTIONS_NEXT_PAGE_INPUT_SELECTOR)
+            if len(next_buttons) > 1 or (next_buttons and not cursor):
+                raise ValueError("Unqualified transaction history layout")
+            for transaction in result:
+                row = transaction.parsed
+                amounts = select(row, selectors.FIELD_TRANSACTION_GRAND_TOTAL_SELECTOR)
+                payments = select(row, selectors.FIELD_TRANSACTION_PAYMENT_METHOD_SELECTOR)
+                links = select(row, selectors.FIELD_TRANSACTION_ORDER_LINK_SELECTOR)
+                statuses = row.select(':scope > div:nth-child(2)')
+                if len(amounts) != 1 or len(payments) != 1 or len(links) != 1 or len(statuses) != 1:
+                    raise ValueError("Unqualified transaction history layout")
+                amount = amounts[0].get_text(strip=True)
+                link = urlsplit(links[0].get('href', ''))
+                number = transaction.order_number
+                status = statuses[0].get_text(' ', strip=True)
+                if (not re.fullmatch(r'[+-]?\$[0-9,]+\.[0-9]{2}', amount) or
+                        cents(amount.replace('$', '').replace(',', '')) != cents(transaction.grand_total) or
+                        not re.fullmatch(r'[A-Za-z0-9 -]+ \*{4}\d{4}', payments[0].get_text(strip=True)) or
+                        status not in ('Pending', 'Order #' + str(number)) or
+                        links[0].get_text(strip=True) != 'Order #' + str(number) or
+                        set(re.findall(r'\d{3}-\d{7}-\d{7}', row.get_text(' ', strip=True))) != {number} or
+                        link.scheme not in ('', 'https') or link.hostname not in (None, 'www.amazon.com') or
+                        parse_qs(link.query).get(self.config.constants.ORDER_ID_QUERY_PARAM) != [number]):
+                    raise ValueError("Unqualified transaction history layout")
+                transaction.bridge_pending = status == 'Pending'
+            return result, cursor
 
     page = ObservedPage(session.config)
     url = session.config.constants.TRANSACTION_HISTORY_URL
@@ -143,6 +180,7 @@ def payment_history(session, days, order_id=None):
     cursor = None
     seen = set()
     events = []
+    previous_oldest = None
     # Bank parents at the lookback edge can match source events 14 days earlier.
     cutoff = dt.date.today() - dt.timedelta(days=days + 14)
     for _ in range(20):
@@ -158,7 +196,7 @@ def payment_history(session, days, order_id=None):
             facts = [number, str(date), amount, identity]
             key = hashlib.sha256(json.dumps(facts, separators=(",", ":")).encode()).hexdigest()
             valid = bool(date and amount and re.fullmatch(r"\d{3}-\d{7}-\d{7}", str(number)) and identity and
-                         not value(transaction, "parse_failures"))
+                         not value(transaction, "parse_failures") and not value(transaction, "bridge_pending"))
             events.append({"key": key, "order_id": number, "date": str(date) if date else None,
                            "signed_cents": amount, "payment_identity": identity, "currency": "USD",
                            "complete": valid, "source": "python"})
@@ -168,6 +206,18 @@ def payment_history(session, days, order_id=None):
         if signature in seen:
             raise ValueError("Repeated transaction cursor")
         seen.add(signature)
+        if not order_id:
+            # Rows can be reordered within a page. Require newest-first page
+            # ranges and a wholly older page before stopping, keeping the full
+            # inclusive boundary. Order ledgers must instead reach their end.
+            dates = [date_value(value(t, 'completed_date')) for t in loaded]
+            if (any(d is None for d in dates) or
+                    (previous_oldest and dates and max(dates) > previous_oldest)):
+                raise ValueError("Unordered transaction history")
+            if dates:
+                previous_oldest = min(dates)
+                if max(dates) < cutoff:
+                    break
     else:
         raise ValueError("Transaction page bound")
     if not page.qualified:
