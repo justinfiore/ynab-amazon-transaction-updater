@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpServer
 import com.ynab.amazon.config.Configuration
 import com.ynab.amazon.model.*
+import ch.qos.logback.core.read.ListAppender
+import org.slf4j.LoggerFactory
 import spock.lang.Specification
 import spock.lang.TempDir
 
@@ -20,7 +22,10 @@ class AmazonEnrichment_IT extends Specification {
     boolean failReadback
     boolean failedRead
     boolean rejectWrite
+    final diagnostics = new ListAppender()
     def setup() {
+        diagnostics.start()
+        LoggerFactory.getLogger(AmazonEnrichment).addAppender(diagnostics)
         server = HttpServer.create(new InetSocketAddress('127.0.0.1',0),0)
         server.createContext('/v1/plans/plan') { ex ->
             String path = ex.requestURI.path - '/v1/plans/plan'
@@ -56,7 +61,11 @@ class AmazonEnrichment_IT extends Specification {
             state.mappings = ['amazon/plan/cable':['e'],'amazon/plan/pet':['pets']]; save(state)
         }
     }
-    def cleanup() { ynab?.close(); server?.stop(0) }
+    def cleanup() {
+        LoggerFactory.getLogger(AmazonEnrichment).detachAppender(diagnostics)
+        diagnostics.stop()
+        ynab?.close(); server?.stop(0)
+    }
 
     def 'purchase #sign writes exact item splits and restarts without replay after a lost response'() {
         given:
@@ -81,6 +90,7 @@ class AmazonEnrichment_IT extends Specification {
         writes[0].approved == false
         remote.tx.findAll { k,v -> !(k in ['memo','category_id','subtransactions']) } == baseline.findAll { k,v -> !(k in ['memo','category_id','subtransactions']) }
         remote.tx.memo.endsWith(AmazonFixture.URL)
+        diagnostics.list*.formattedMessage.any { it.contains('Amazon write readback failed:') && it.contains('durable intent remains pending') }
 
         when: 'opting out still permits read-back confirmation of an accepted write'
         config.amazonEnrichment = 'memo_only'
@@ -197,8 +207,34 @@ class AmazonEnrichment_IT extends Specification {
         [approved:true,category_id:'human'] | false | 'non_owned_category'
         [subtransactions:[[amount:-65000L,category_id:'e']]] | false | 'ineligible_parent'
         [cleared:'reconciled'] | false | 'ineligible_parent'
-        [amount:-65001L] | false | 'payment_evidence_required'
-        [:] | true | 'missing_payment_account_mapping'
+        [amount:-65001L] | false | 'no_eligible_match'
+        [:] | true | 'no_eligible_match'
+    }
+
+    def 'unmatched diagnostics distinguish #reason without disclosing transaction contents'() {
+        given:
+        def order = orderBased()
+        order.financialEvidence += evidenceChange
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction()) + change
+        if (outsideWindow) remote.tx.date = java.time.LocalDate.parse(order.orderDate).plusDays(15).toString()
+
+        when:
+        def result = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false)
+
+        then:
+        writes.empty
+        result.preview.any { it.reason == 'no_eligible_match' && reason in it.matching_reasons }
+        diagnostics.list*.formattedMessage.any { it.contains('Amazon decision:') && it.contains(reason) }
+        !diagnostics.list*.formattedMessage.join('\n').contains(order.orderId)
+        !diagnostics.list*.formattedMessage.join('\n').contains('Keep me')
+
+        where:
+        change                 | evidenceChange           | outsideWindow | reason
+        [amount:-64000L]        | [:]                      | false         | 'no_exact_order_amount'
+        [account_id:'other']    | [:]                      | false         | 'no_mapped_order_account'
+        [:]                    | [:]                      | true          | 'no_valid_order_date_within_14_days'
+        [:]                    | [currency:'EUR']         | false         | 'unsupported_order_currency'
+        [:]                    | [payment_identity:null]  | false         | 'no_usable_order_identity'
     }
 
     def 'approved uncategorized purchase is classified without changing its approval'() {
@@ -401,7 +437,7 @@ class AmazonEnrichment_IT extends Specification {
         shape << ['category','split']
     }
 
-    def 'a valid provider answer below the acceptance threshold remains a retryable memo fallback'() {
+    def 'a valid provider answer rejected for #rejection remains a retryable memo fallback'() {
         given:
         def order = orderBased()
         remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction())
@@ -411,12 +447,13 @@ class AmazonEnrichment_IT extends Specification {
         def key = ProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture-key'.toCharArray(),'amazon')
         config.amazonCategorization = RemoteItemClassifier.defaults('jev') + [policy_version:'amazon-choice-v1',
             consent:true,categories:[[id:'e'],[id:'pets']],credentials_file:key.toString()]
+        config.amazonCategorization.acceptance.margin = marginGate
         int calls = 0
         def classifier = new RemoteItemClassifier(config.amazonCategorization,{ endpoint,secret,body,limits ->
             calls++
             [status:200,body:json.writeValueAsString([model:'jev-1.14.0',usage:[input_tokens:100,output_tokens:0],
-                answers:[item_0:[type:'choice',choice:'Electronics',confidence:0.95,
-                    probabilities:['Electronics':0.7,'Pets':0.2,'Insufficient or ambiguous evidence':0.1]]]])]
+                answers:[item_0:[type:'choice',choice:'Electronics',confidence:confidence,
+                    probabilities:['Electronics':probability,'Pets':second,'Insufficient or ambiguous evidence':abstain]]]])]
         })
 
         when:
@@ -428,6 +465,10 @@ class AmazonEnrichment_IT extends Specification {
         result.preview[0].status == 'fallback'
         remote.tx.category_id == null
         !remote.tx.subtransactions
+        diagnostics.list*.formattedMessage.any { it.contains("reasons=[${rejection}]") && it.contains("probability=${probability}") }
+        !diagnostics.list*.formattedMessage.join('\n').contains('Electronics')
+        !diagnostics.list*.formattedMessage.join('\n').contains(order.orderId)
+        diagnostics.list*.formattedMessage.any { it.contains('Amazon write verified:') && it.contains('status=fallback') }
 
         when: 'an unchanged retry reuses the rejected classification without billing or rewriting'
         def retry = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false,[] as Set,classifier)
@@ -437,6 +478,12 @@ class AmazonEnrichment_IT extends Specification {
         writes.size() == 1
         retry.preview[0].reason == 'unchanged'
         retry.preview[0].allocation_reason == 'unresolved_categories'
+
+        where:
+        probability | second | abstain | confidence | marginGate | rejection
+        0.7         | 0.2    | 0.1     | 0.95       | 0.2        | 'probability_below_threshold'
+        0.9         | 0.05   | 0.05    | 0.7        | 0.2        | 'confidence_below_threshold'
+        0.85        | 0.1    | 0.05    | 0.95       | 0.8        | 'margin_below_threshold'
     }
 
     def 'manual #edit after a memo fallback is preserved even when automatic categories become available'() {
@@ -462,6 +509,7 @@ class AmazonEnrichment_IT extends Specification {
         result.updated == 0
         writes.empty
         remote.tx == before
+        diagnostics.list*.formattedMessage.any { it.contains('Amazon decision:') && it.contains('reason=parent_changed') }
 
         where:
         edit       | approved
@@ -826,6 +874,7 @@ class AmazonEnrichment_IT extends Specification {
         result.preview.any { it.transaction_id == 'tx' && it.reason == 'ambiguous_or_incomplete_payment' }
         !result.preview.any { it.transaction_id == 'legacy' }
         remote.legacy == legacyBefore
+        diagnostics.list*.formattedMessage.any { it.contains('reason=legacy_processed_exclusion') }
 
         when: 'the excluded parent no longer competes for this event'
         remote.legacy.amount = -10000L

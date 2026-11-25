@@ -13,6 +13,22 @@ proposed changes, not completed writes. Payload amounts are signed YNAB milliuni
 (1000 = 1 currency unit). Previews contain local transaction and purchase details;
 review logs before sharing them.
 
+Live runs also emit `Amazon decision` records for unmatched transactions,
+allocation fallbacks, existing completed allocations and ownership/safety skips.
+`matching_reasons` distinguishes exact-amount, mapped-account, currency and
+14-day date-window failures among available order candidates, as well as ties,
+competing transactions, previously claimed orders and unqualified evidence.
+These diagnostics describe the retrieved evidence, not orders outside the scan.
+Unresolved classification logs report numeric probability, confidence and margin
+against their thresholds, abstentions/conflicts and provider stage/HTTP status.
+`Amazon write verified` confirms readback; a planned status or fallback memo is
+not proof of categorization. Uncertain writes remain pending and are not replayed
+by logging. Progress counters survive an interrupted enrichment run and count
+verified updates separately from decision records (which are not unique matches).
+These diagnostic records use a stable 16-character SHA-256 reference of the JSON
+transaction ID, not raw IDs, item titles, order numbers, category labels or memos.
+Other existing debug output and dry-run previews can still contain private data.
+
 ## Independent setup
 
 Build the ordinary JVM distribution with `./gradlew installDist` (Java 25).

@@ -18,10 +18,12 @@ class AmazonEnrichment {
         if (!transactions) return stats
         boolean financial = config.amazonEnrichment == 'item_categories'
         if (financial && ynab.getPlanCurrency() != 'USD') {
+            LOG.warn('Amazon categorization blocked: unsupported_or_unknown_plan_currency')
             stats.preview << [reason:'unsupported_or_unknown_plan_currency']; return stats
         }
         Set accounts = ynab.getBudgetAccounts()
         if (financial && !accounts.containsAll(config.amazonPaymentAccounts.values())) {
+            LOG.warn('Amazon categorization blocked: invalid_payment_account')
             stats.preview << [reason:'invalid_payment_account']; return stats
         }
         Map categories = financial ? ItemClassificationService.categories(ynab.getCategoryCatalog(),config.amazonCategorization.categories as List) : [:]
@@ -30,7 +32,11 @@ class AmazonEnrichment {
             catch (Exception ignored) { LOG.warn('Amazon provider unavailable; unresolved allocations will use guarded fallback') }
         }
         if (classifier && (config.amazonCategorization.consent != true || classifier.policy != 'amazon-choice-v1')) classifier = null
+        try {
         new ProtectedJournal(config.amazonJournalFile).locked(dryRun) { Map state, Closure save ->
+            transactions.findAll { legacyIds.contains(it.id) && new TransactionMatcher().isPotentialAmazonTransaction(it) }.each { tx ->
+                LOG.info('Amazon decision: ref={} reason=legacy_processed_exclusion dry_run={}',ItemClassificationService.fingerprint(tx.id).take(16),dryRun)
+            }
             if (financial) learn(state,ynab)
             Map byOrder = [:]
             Set conflicts = [] as Set
@@ -62,6 +68,8 @@ class AmazonEnrichment {
             Set duplicated = events.countBy { it.key }.findAll { k,v -> v > 1 }.keySet()
             List<Map> pairs = []
             Map candidates = [:]
+            Map orderCandidates = [:]
+            List orderEvents = []
             // Excluded parents still compete for events; legacy IDs confer no event ownership.
             transactions.each { tx ->
                 def options = events.findAll { e -> matches(tx,e,accounts,config.amazonPaymentAccounts) }
@@ -69,8 +77,8 @@ class AmazonEnrichment {
                 candidates[tx.id] = options.findAll { dateDistance(tx,it) == closest }
             }
             if (financial) {
-                List orderEvents = byOrder.values().collect { orderEvent(it) }.findAll { it }
-                Map orderCandidates = transactions.collectEntries { tx ->
+                orderEvents = byOrder.values().collect { orderEvent(it) }.findAll { it }
+                orderCandidates = transactions.collectEntries { tx ->
                     def options = orderEvents.findAll { matches(tx,it,accounts,config.amazonPaymentAccounts) }
                     def closest = options.collect { dateDistance(tx,it) }.min()
                     [(tx.id):options.findAll { dateDistance(tx,it) == closest }]
@@ -136,12 +144,37 @@ class AmazonEnrichment {
                 }
             }
             if (financial) transactions.findAll { !legacyIds.contains(it.id) && !pairs.any { pair -> pair.tx.id == it.id } && new TransactionMatcher().isPotentialAmazonTransaction(it) }.each { tx ->
-                stats.preview << [transaction_id:tx.id,reason:events.any { !config.amazonPaymentAccounts[it.payment_identity] } ? 'missing_payment_account_mapping' : 'payment_evidence_required']
+                List reasons = []
+                List options = orderCandidates[tx.id] ?: []
+                if (!options) {
+                    List amountOptions = orderEvents.findAll { tx.amount != null && tx.amount == it.signed_cents * 10L }
+                    List accountOptions = amountOptions.findAll { accounts.contains(tx.account_id) && config.amazonPaymentAccounts[it.payment_identity] == tx.account_id }
+                    List currencyOptions = accountOptions.findAll { it.currency == 'USD' }
+                    reasons << (!orderEvents ? 'no_usable_order_identity' : !amountOptions ? 'no_exact_order_amount' : !accountOptions ? 'no_mapped_order_account' :
+                        !currencyOptions ? 'unsupported_order_currency' : 'no_valid_order_date_within_14_days')
+                }
+                else if (options.size() > 1) reasons << 'ambiguous_order_match'
+                else {
+                    Map event = options[0]
+                    if (event.competition_only) reasons << 'unqualified_order_evidence'
+                    if (conflicts.contains(event.order_id)) reasons << 'conflicting_order_sources'
+                    if (orderCandidates.values().count { it.any { it.order_id == event.order_id } } != 1) reasons << 'order_competing_bank_transactions'
+                    if (candidates[tx.id].any { it.order_id != event.order_id }) reasons << 'competing_payment_order'
+                    if (claimed(state,tx.id,event)) reasons << 'order_already_claimed'
+                    Map allocation = AmazonAllocation.plan(byOrder[event.order_id],event,events,[:])
+                    if (!allocation.eligible) reasons << allocation.reason
+                    Map previous = state.plans[config.ynabBudgetId + '/' + tx.id]
+                    if (previous?.trusted && previous.event?.source != 'order') reasons << 'existing_payment_association_unavailable'
+                }
+                if (!candidates[tx.id]) reasons << 'no_payment_amount_account_date_match'
+                stats.preview << [transaction_id:tx.id,reason:'no_eligible_match',matching_reasons:reasons.unique()]
             }
             pairs.each { pair ->
                 YNABTransaction tx = pair.tx
                 AmazonOrder order = pair.order
                 Map event = pair.event
+                LOG.info('Amazon match accepted: ref={} basis={} dry_run={}',ItemClassificationService.fingerprint(tx.id).take(16),
+                    event.order_only ? 'order_only' : 'payment',dryRun)
                 String key = config.ynabBudgetId + '/' + tx.id
                 Map old = state.plans[key]
                 Map evidence = event?.signed_cents > 0 ? event.refund_evidence ?: [:] : order.financialEvidence
@@ -215,6 +248,23 @@ class AmazonEnrichment {
                         }
                         Map resolved = ItemClassificationService.resolve(evidence.items.findAll { !originals.containsKey(it.itemId) } as List,categories,state,'amazon',config.ynabBudgetId,classifier,dryRun,save)
                         resolved.decisions.putAll(originals)
+                        resolved.decisions.values().eachWithIndex { decision,index ->
+                            if (decision.category_id) return
+                            List scores = (decision.scores?.values() ?: []).sort { a,b -> b <=> a }
+                            Map gates = config.amazonCategorization.acceptance ?: [:]
+                            List reasons = []
+                            if (decision.conflict) reasons << 'conflicting_approved_categories'
+                            if (scores && !decision.raw_category_id) reasons << 'provider_abstained'
+                            if (scores && scores[0] < gates.probability) reasons << 'probability_below_threshold'
+                            if (decision.confidence != null && decision.confidence < gates.confidence) reasons << 'confidence_below_threshold'
+                            if (scores.size() > 1 && scores[0] - scores[1] < gates.margin) reasons << 'margin_below_threshold'
+                            if (!reasons) reasons << (resolved.failed ? (dryRun ? 'uncached_inference_requires_live_run' : 'provider_inference_failed') :
+                                !classifier ? 'no_approved_mapping_or_enabled_provider' : 'category_not_in_active_shortlist')
+                            LOG.info('Amazon classification unresolved: ref={} item_index={} reasons={} probability={} confidence={} margin={} thresholds={} provider_stage={} provider_http_status={}',
+                                ItemClassificationService.fingerprint(tx.id).take(16),index,reasons,
+                                scores ? scores[0] : null,decision.confidence,scores.size() > 1 ? scores[0] - scores[1] : null,
+                                gates.subMap(['probability','confidence','margin']),classifier?.metrics?.failure_stage ?: classifier?.metrics?.stage,classifier?.metrics?.last_http_status)
+                        }
                         boolean unavailable = config.amazonCategorization.provider && !classifier && resolved.decisions.values().any { it.source == 'unresolved' }
                         if (resolved.failed || unavailable) plan = [eligible:false,reason:dryRun ? 'inference_required' : 'inference_unavailable']
                         else plan = AmazonAllocation.plan(order,event,events,resolved.decisions)
@@ -256,17 +306,41 @@ class AmazonEnrichment {
             }
             if (!dryRun && financial) save(state)
         }
+        } catch (Exception failure) {
+            LOG.warn('Amazon enrichment interrupted: exception_type={} verified_updates={}; durable intents retained',failure.class.simpleName,stats.updated)
+            throw failure
+        } finally {
+            // Log only bounded diagnostic fields, never previews containing memos, items or categories.
+            stats.preview.each { row ->
+                LOG.info('Amazon decision: ref={} reason={} status={} allocation_reason={} matching_reasons={} dry_run={}',
+                    row.transaction_id ? ItemClassificationService.fingerprint(row.transaction_id).take(16) : 'run',
+                    row.reason,row.status,row.allocation_reason,row.matching_reasons,dryRun)
+            }
+            LOG.info('Amazon enrichment progress: verified_updates={} decision_records={} dry_run={}',stats.updated,stats.preview.size(),dryRun)
+        }
         stats
     }
 
     private static void apply(Map entry, Map current, YNABService ynab, Map state, Closure save, Map stats) {
         // Save has already completed. A lost response is not permission to send again.
-        if (!GuardedTransactions.same(ynab.getTransaction(current.id),entry.baseline)) return
-        try { ynab.putTransaction(current.id,entry.changes) } catch (Exception ignored) { }
-        Map after = ynab.getTransaction(current.id)
-        if (!GuardedTransactions.same(after,entry.intent)) return
+        String ref = ItemClassificationService.fingerprint(current.id).take(16)
+        if (!GuardedTransactions.same(ynab.getTransaction(current.id),entry.baseline)) {
+            stats.preview << [transaction_id:current.id,reason:'parent_changed_before_write']; return
+        }
+        try { ynab.putTransaction(current.id,entry.changes) }
+        catch (Exception failure) { LOG.warn('Amazon write response uncertain: ref={} exception_type={}; checking durable intent, not replaying',ref,failure.class.simpleName) }
+        Map after
+        try { after = ynab.getTransaction(current.id) }
+        catch (Exception failure) {
+            LOG.warn('Amazon write readback failed: ref={} exception_type={}; durable intent remains pending',ref,failure.class.simpleName)
+            throw failure
+        }
+        if (!GuardedTransactions.same(after,entry.intent)) {
+            stats.preview << [transaction_id:current.id,reason:'write_not_confirmed']; return
+        }
         entry.result = after; entry.pending = false; entry.status = entry.target_status
         save(state); stats.updated++; stats.completed << current.id
+        LOG.info('Amazon write verified: ref={} status={}',ref,entry.status)
     }
 
     private boolean claimed(Map state, String transactionId, Map event) {
