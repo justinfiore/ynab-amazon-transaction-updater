@@ -7,7 +7,7 @@ import java.time.format.ResolverStyle
 
 /** All financial interpretation of the retrieval-only helper's source evidence. */
 class WalmartEvidenceNormalizer {
-    static WalmartOrder normalize(Map evidence) {
+    static WalmartOrder normalize(Map evidence, String configuredCurrency = 'USD') {
         Map detail = evidence.detail as Map
         Map raw = detail?.data?.order as Map
         Map pricing = raw?.priceDetails as Map
@@ -16,18 +16,23 @@ class WalmartEvidenceNormalizer {
         Set currencies = [] as Set
         Closure walk
         walk = { value ->
-            if (value instanceof Map) value.each { key,v -> if (key in ['currency','currencyCode']) currencies.add(v); else walk(v) }
+            if (value instanceof Map) value.each { key,v ->
+                if (key in ['currency','currencyCode']) {
+                    if (v != null) currencies.add(v)
+                } else walk(v)
+            }
             else if (value instanceof List) value.each { walk(it) }
         }
         walk(detail)
-        String currency = currencies == ['USD'] as Set ? 'USD' : null
+        String currency = (!currencies || currencies == ([configuredCurrency] as Set)) ? configuredCurrency : null
         long tip = pricing.driverTip ? money(pricing.driverTip.value) : 0L
         long total = pricing.totalWithTip ? money(pricing.totalWithTip.value) : Math.addExact(money(pricing.grandTotal.value),tip)
         if (total<=0 || tip<0) invalid()
         def order = new WalmartOrder(orderId:raw.id,orderDate:date,currency:currency,totalAmount:BigDecimal.valueOf(total,2),
-            orderUrl:"https://www.walmart.com/orders/details?orderId=${raw.id}",complete:true,items:[],charges:[],adjustments:[])
+            complete:true,items:[],charges:[],adjustments:[])
+        order.orderUrl = order.orderLink
         def incomplete = { String why -> order.complete=false; order.ineligibleReason=why }
-        if (!currency) incomplete('currency_unproven')
+        if (currency != 'USD') incomplete(currency ? 'unsupported_currency' : 'currency_unproven')
         def adjustment = { String kind, Object value ->
             long cents=money(value)
             if (cents<0) invalid()
@@ -36,16 +41,21 @@ class WalmartEvidenceNormalizer {
         if (pricing.taxTotal) adjustment('tax',pricing.taxTotal.value)
         if (pricing.driverTip) adjustment('tip',pricing.driverTip.value)
         (pricing.fees ?: []).each { adjustment('fee',it.value) }
-        if (pricing.savings && money(pricing.savings.value)!=0) incomplete('discount_basis_unproven')
+        boolean hasSavings = pricing.savings && money(pricing.savings.value)!=0
         Map items=[:]
+        Set<String> returnedDescriptions=[] as Set
         if (!(raw.groups_2101 instanceof List)) invalid()
         raw.groups_2101.each { group ->
             if (!(group.status?.statusType in ['DELIVERED','PICKED_UP'])) incomplete('unfulfilled_or_unsupported')
-            if (group.priceDetails?.savings && money(group.priceDetails.savings.value)!=0) incomplete('discount_basis_unproven')
+            if (group.priceDetails?.savings && money(group.priceDetails.savings.value)!=0) hasSavings=true
             def displayed=(group.items ?: []) + (group.categories ?: []).collectMany { it.items ?: [] } +
                 (group.subGroups ?: []).collectMany { sub -> (sub.categories ?: []).collectMany { it.items ?: [] } }
             displayed.each { item ->
-                if (!item.id || !item.productInfo?.name || item.productInfo.name.size()>1000 || item.returnId || !item.priceInfo?.linePrice || !(item.quantity instanceof Number)) invalid()
+                if (!item.id || !item.productInfo?.name || item.productInfo.name.size()>1000 || !item.priceInfo?.linePrice || !(item.quantity instanceof Number)) invalid()
+                if (item.returnId) {
+                    incomplete('returned_items')
+                    returnedDescriptions.add(item.productInfo.name)
+                }
                 BigDecimal quantity=new BigDecimal(item.quantity.toString())
                 if (quantity<=0) invalid()
                 long gross=money(item.priceInfo.linePrice.value)
@@ -56,6 +66,14 @@ class WalmartEvidenceNormalizer {
             }
         }
         order.items=items.keySet().sort().collect { new WalmartOrderItem(items[it]) }
+        if (hasSavings) {
+            // Savings may already be included in line prices or repeated at group/order level.
+            // Only the remaining reduction belongs to the default category, not exception items.
+            long itemTotal=(order.items.sum { it.grossCents } ?: 0) as long
+            long costs=(order.adjustments.sum { it.cents } ?: 0) as long
+            long discount=itemTotal+costs-total
+            if (discount>0) order.adjustments << [kind:'discount',cents:discount]
+        }
         def payments=evidence.ledger?.data?.getOrderLedger?.paymentMethodsLedgers
         if (!(payments instanceof List)) invalid()
         Map ordinals=[:].withDefault { 0 }
@@ -72,17 +90,25 @@ class WalmartEvidenceNormalizer {
                     catch (Exception ignored) { charged=LocalDate.parse(line.date,DateTimeFormatter.ofPattern('MMMM d, uuuu',Locale.US).withResolverStyle(ResolverStyle.STRICT)) }
                     if (!(line.rowLines instanceof List)) invalid()
                     line.rowLines.each { row ->
-                        if (row.lineType!='ORDER_CHARGE') { incomplete('refund_or_unsupported_ledger'); return }
+                        boolean refund=row.lineType=='ORDER_ADJUSTMENT_REFUND'
+                        if (refund) incomplete('refund_or_unsupported_ledger')
+                        else if (!(row.lineType in ['ORDER_CHARGE','ADDITIONAL_DRIVER_TIP'])) { incomplete('refund_or_unsupported_ledger'); return }
                         if (!(row.displayValues instanceof List) || row.displayValues.size()!=1 ||
-                            !(row.displayValues[0] ==~ /\$(?:0|[1-9]\d*|[1-9]\d{0,2}(?:,\d{3})+)\.\d{2}/)) invalid()
-                        long cents=money(new BigDecimal(row.displayValues[0].substring(1).replace(',','')))
-                        if (cents<=0) invalid()
+                            !(row.displayValues[0] ==~ /-?\$(?:0|[1-9]\d*|[1-9]\d{0,2}(?:,\d{3})+)\.\d{2}/)) invalid()
+                        long cents=money(new BigDecimal(row.displayValues[0].replace('$','').replace(',','')))
+                        if (refund ? cents>=0 : cents<=0) invalid()
                         String base="${raw.id}|${identity}|${charged}|${cents}"
                         ordinals[base]++
                         order.charges << [key:"${base}|${ordinals[base]}".toString(),date:charged.toString(),currency:currency,payment:identity,cents:cents]
+                        if (row.lineType=='ADDITIONAL_DRIVER_TIP') order.charges.last().additionalTip=true
                     }
                 }
             }
+        }
+        // The ledger does not identify which return an adjustment belongs to.
+        // Preserve the order's returned-product descriptions as context, not an item-level allocation.
+        order.charges.findAll { it.cents<0 }.each {
+            it.description=returnedDescriptions ? 'Returned items on order: '+returnedDescriptions.sort().join('; ') : 'Order adjustment refund'
         }
         if (!order.items || !order.charges) incomplete('missing_items_or_charges')
         order

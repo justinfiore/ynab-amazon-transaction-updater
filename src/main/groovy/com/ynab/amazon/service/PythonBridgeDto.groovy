@@ -22,6 +22,10 @@ class PythonBridgeOrder {
     String paymentMethodLast4
     Boolean cancelled
     List<PythonBridgeItem> items
+    @JsonProperty('financial_evidence')
+    Map financialEvidence
+    @JsonProperty('payment_events')
+    List<Map> paymentEvents
 }
 
 class PythonBridgeItem {

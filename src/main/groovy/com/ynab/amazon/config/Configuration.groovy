@@ -23,6 +23,12 @@ class Configuration {
     String amazonForwardFromAddress
     String amazonCsvFilePath
     String amazonOrderFetcher = AMAZON_FETCHER_EMAIL
+    String amazonEnrichment = 'memo_only'
+    String amazonJournalFile = 'amazon-journal.json'
+    Map amazonCategorization = [categories:[]]
+    Map<String,String> amazonPaymentAccounts = [:]
+    Boolean amazonTransactionEvidenceEnabled
+    boolean amazonRefundEmailEvidenceEnabled = false
     String amazonPythonExecutable
     String amazonPythonBridgeScript
     String amazonPythonConfigPath
@@ -38,6 +44,8 @@ class Configuration {
     String lastValidationError
     
     boolean walmartEnabled = false
+    String walmartCurrency = 'USD'
+    boolean walmartAllowApprovedUncategorized = false
     String walmartHelperExecutable
     String walmartSessionFile
     int walmartTimeoutSeconds = 300
@@ -89,6 +97,16 @@ class Configuration {
             this.amazonForwardFromAddress = config.amazon.forward_from_address
             this.amazonCsvFilePath = config.amazon.csv_file_path
             this.amazonOrderFetcher = config.amazon.order_fetcher ?: this.amazonOrderFetcher
+            this.amazonEnrichment = config.amazon?.enrichment ?: this.amazonEnrichment
+            this.amazonJournalFile = resolvePath(config.amazon?.journal_file) ?: this.amazonJournalFile
+            this.amazonCategorization = config.amazon?.categorization ?: this.amazonCategorization
+            this.amazonPaymentAccounts = config.amazon?.payment_accounts ?: [:]
+            def transactionEvidence = config.amazon?.transaction_evidence?.enabled
+            def refundEmail = config.amazon?.refund_email_evidence?.enabled
+            if ((transactionEvidence != null && !(transactionEvidence instanceof Boolean)) ||
+                (refundEmail != null && !(refundEmail instanceof Boolean))) throw new IllegalArgumentException('Amazon evidence enablement must be boolean')
+            this.amazonTransactionEvidenceEnabled = transactionEvidence
+            this.amazonRefundEmailEvidenceEnabled = refundEmail ?: false
             this.amazonPythonExecutable = resolvePath(config.amazon?.python?.executable)
             this.amazonPythonBridgeScript = resolvePath(config.amazon?.python?.bridge_script)
             this.amazonPythonConfigPath = resolvePath(config.amazon?.python?.config_path)
@@ -106,6 +124,10 @@ class Configuration {
             
             // Walmart Configuration
             this.walmartEnabled = (config.walmart?.enabled != null) ? config.walmart.enabled : this.walmartEnabled
+            this.walmartCurrency = config.walmart?.currency != null ? config.walmart.currency : this.walmartCurrency
+            def allowApproved = config.walmart?.allow_approved_uncategorized
+            if (allowApproved != null && !(allowApproved instanceof Boolean)) throw new IllegalArgumentException('walmart.allow_approved_uncategorized must be a boolean')
+            this.walmartAllowApprovedUncategorized = allowApproved ?: false
             this.walmartHelperExecutable = resolvePath(config.walmart?.helper_executable) ?: bundledWalmartHelper()
             this.walmartSessionFile = resolvePath(config.walmart?.session_file)
             this.walmartTimeoutSeconds = config.walmart?.timeout_seconds != null ? config.walmart.timeout_seconds : this.walmartTimeoutSeconds
@@ -164,6 +186,12 @@ class Configuration {
         boolean hasPythonConfig = amazonPythonExecutable && amazonPythonBridgeScript && amazonPythonConfigPath &&
             amazonPythonTimeoutSeconds > 0 && amazonPythonMaxOutputBytes > 0
 
+        if (!(amazonEnrichment in ['memo_only','item_categories'])) return invalidAmazon('amazon.enrichment must be memo_only or item_categories')
+        if (amazonEnrichment == 'item_categories' && !amazonCategorization.categories) return invalidAmazon('Amazon item_categories requires its own category shortlist, without a default')
+        if (amazonOrderFetcher != AMAZON_FETCHER_PYTHON && isAmazonTransactionEvidenceEnabled() && !hasPythonConfig) return invalidAmazon('Amazon transaction evidence requires Python runtime/session settings')
+        if (amazonRefundEmailEvidenceEnabled && !hasEmailConfig) return invalidAmazon('Supplemental refund email requires explicit IMAP credentials')
+        if (amazonPaymentAccounts.any { k,v -> !(k ==~ /python:[a-z0-9 -]+:[0-9]{4}/) || !(v ==~ /[A-Za-z0-9_-]{1,100}/) }) return invalidAmazon('Invalid confirmed Amazon payment identity/account mapping')
+
         if (amazonOrderFetcher == AMAZON_FETCHER_PYTHON && !hasPythonConfig) {
             if (!amazonPythonExecutable) return invalidAmazon('amazon.python.executable is required for Python fetching')
             if (!amazonPythonBridgeScript) return invalidAmazon('amazon.python.bridge_script is required for Python fetching')
@@ -177,6 +205,8 @@ class Configuration {
         }
         
         if (walmartEnabled) {
+            try { java.util.Currency.getInstance(walmartCurrency) }
+            catch (Exception ignored) { return invalidAmazon('walmart.currency must be an uppercase ISO 4217 currency code') }
             if (!walmartHelperExecutable || !new File(walmartHelperExecutable).canExecute()) return invalidAmazon('Walmart helper unavailable: install a matching -Pwalmart distribution or configure walmart.helper_executable')
             if (!walmartSessionFile) return invalidAmazon('walmart.session_file is required; import a protected browser capture first')
             if (walmartTimeoutSeconds <= 0 || walmartMaxOutputBytes <= 0 || walmartMaxPages < 1 || walmartMaxPages > 20) return invalidAmazon('Walmart process bounds must be positive; max_pages must be 1–20')
@@ -189,6 +219,10 @@ class Configuration {
     
     boolean isDryRun() {
         return dryRun
+    }
+
+    boolean isAmazonTransactionEvidenceEnabled() {
+        amazonTransactionEvidenceEnabled != null ? amazonTransactionEvidenceEnabled : amazonOrderFetcher == AMAZON_FETCHER_PYTHON
     }
 
     private static String bundledWalmartHelper() {

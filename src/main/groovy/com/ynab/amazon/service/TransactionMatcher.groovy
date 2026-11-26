@@ -44,9 +44,9 @@ class TransactionMatcher {
     /**
      * Find matches between YNAB transactions and Amazon orders
      */
-    List<TransactionMatch> findMatches(List<YNABTransaction> transactions, List<AmazonOrder> orders) {
+    List<TransactionMatch> findMatches(List<YNABTransaction> transactions, List<AmazonOrder> orders, boolean legacyCompletion = true) {
         List<TransactionMatch> matches = []
-        List<YNABTransaction> ynabTransactionsToMatch = transactions.findAll { !isAlreadyProcessed(it) && isPotentialAmazonTransaction(it) }
+        List<YNABTransaction> ynabTransactionsToMatch = transactions.findAll { (!legacyCompletion || !isAlreadyProcessed(it)) && isPotentialAmazonTransaction(it) }
         logger.info("Found ${ynabTransactionsToMatch.size()} transactions to match")
         ynabTransactionsToMatch.each { transaction ->
             
@@ -321,6 +321,7 @@ class TransactionMatcher {
         if (!order.items || order.items.isEmpty()) {
             String summary = order.isReturn ? "Amazon Return (Couldn't identify items)" :
                 (isSubscribeAndSave ? "S&S: Amazon Order (Couldn't identify items)" : "Amazon Order (Couldn't identify items)")
+            summary = '❌ ' + summary
             String existingMemo = AmazonAuthNotice.withoutNotice(transaction.memo)
             if (transaction.memo?.contains(AmazonAuthNotice.MESSAGE) && existingMemo && existingMemo != 'null') {
                 return "${existingMemo} | ${summary}".take(500)

@@ -7,6 +7,122 @@ import spock.lang.Unroll
 class WalmartContracts_UT extends Specification {
     def matcher = new TransactionMatcher()
 
+    @Unroll
+    def 'driver-tip combinations preserve ambiguity and source boundaries: #variant'() {
+        given:
+        def order=WalmartFixture.order()
+        def base=order.charges[0]+[key:'base',cents:4464L,date:'2026-11-15']
+        def tip=base+[key:'tip',cents:218L,date:'2026-11-16',additionalTip:true]
+        order.charges=[base,tip]
+        def tx=WalmartFixture.transactions()[0]
+        tx.amount=-46820L
+        tx.date='2026-11-17'
+        def txs=[tx]
+        def orders=[order]
+        Map accounts=[:]
+        if (variant=='two bases') order.charges << base+[key:'base2']
+        if (variant=='two tips') order.charges << tip+[key:'tip2']
+        if (variant=='different payment') tip.payment='other'
+        if (variant=='different currency') tip.currency='CAD'
+        if (variant=='earlier tip') tip.date='2026-11-14'
+        if (variant=='distant tip') tip.date='2026-11-30'
+        if (variant=='outside base date') tx.date='2026-11-30'
+        if (variant=='date boundary') tx.date='2026-11-29'
+        if (variant=='mapped elsewhere') accounts[base.payment]='elsewhere'
+        if (variant=='fractional cent') tx.amount--
+        if (variant=='separately posted base' || variant=='separately posted tip') {
+            txs << new YNABTransaction(id:'separate',date:tx.date,payee_name:'WALMART',account_id:tx.account_id,
+                amount:variant=='separately posted base' ? -44640L : -2180L)
+        }
+        if (variant=='two bank candidates') txs << new YNABTransaction(id:'duplicate',date:tx.date,amount:tx.amount,payee_name:'WALMART',account_id:tx.account_id)
+        if (variant=='competing order') {
+            def other=WalmartFixture.order(); other.orderId='other'
+            other.charges=[base+[key:'other',cents:4682L]]
+            orders << other
+        }
+
+        expect:
+        matcher.findWalmartMatches(txs,orders,accounts).findAll { it.ynabTransaction.id==tx.id }.size()==expected
+
+        where:
+        variant                  | expected
+        'unique'                 | 1
+        'date boundary'          | 1
+        'two bases'              | 0
+        'two tips'               | 0
+        'different payment'      | 0
+        'different currency'     | 0
+        'earlier tip'            | 0
+        'distant tip'            | 0
+        'outside base date'      | 0
+        'mapped elsewhere'       | 0
+        'fractional cent'        | 0
+        'separately posted base' | 0
+        'separately posted tip'  | 0
+        'two bank candidates'    | 0
+        'competing order'        | 0
+    }
+
+    def 'refunds match inflows independently of purchases with exact amounts dates accounts and ambiguity guards'() {
+        given:
+        def order=WalmartFixture.order()
+        order.charges=[order.charges[0],order.charges[0]+[key:'refund',date:'2026-11-09',cents:-1056L]]
+        def purchase=WalmartFixture.transactions()[0]
+        def refund=new YNABTransaction(id:'refund',date:'2026-11-11',amount:10560L,payee_name:'WALMART',account_id:'account',memo:'User refund note')
+
+        when:
+        def matches=matcher.findWalmartMatches([purchase,refund],[order])
+        def credit=matches.find { it.ynabTransaction.id=='refund' }
+
+        then:
+        matches.size()==2
+        credit.walmartCharge.cents==-1056L
+        credit.matchReason=='unique_final_refund'
+        credit.proposedMemo=='User refund note | Walmart refund 2026-11-09 | Refund $10.56 | #123 | https://www.walmart.com/orders/123'
+        !WalmartAllocation.plan(order,matches,'g',[:],['account'] as Set).eligible
+        matcher.findWalmartMatches([refund],[order],[(order.charges[0].payment):'elsewhere']).empty
+
+        when: 'a competing order with the same refund is ambiguous, while the unrelated purchase still matches'
+        def other=WalmartFixture.order(); other.orderId='other'
+        other.charges=[order.charges[1]+[key:'other-refund']]
+        def ambiguous=matcher.findWalmartMatches([purchase,refund],[order,other])
+
+        then:
+        ambiguous*.ynabTransaction*.id==['large']
+
+        when:
+        refund.amount=10561L
+
+        then:
+        matcher.findWalmartMatches([refund],[order]).empty
+
+        when:
+        refund.amount=-10560L
+
+        then:
+        matcher.findWalmartMatches([refund],[order]).empty
+
+        when:
+        refund.amount=10560L
+        refund.date='2026-11-24'
+
+        then:
+        matcher.findWalmartMatches([refund],[order]).empty
+
+        when:
+        refund.date='2026-11-23'
+        refund.memo=credit.proposedMemo
+
+        then:
+        matcher.findWalmartMatches([refund],[order])[0].proposedMemo==credit.proposedMemo
+
+        when:
+        refund.memo='x'*450
+
+        then:
+        matcher.findWalmartMatches([refund],[order])[0].proposedMemo==null
+    }
+
     def 'global matching refuses cross-order and oversubscribed ambiguity regardless of input order'() {
         given:
         def a = WalmartFixture.order()

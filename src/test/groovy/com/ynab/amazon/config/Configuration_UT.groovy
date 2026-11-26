@@ -298,6 +298,71 @@ app:
         
         expect: "default Walmart values should be used"
         configuration.walmartEnabled == false
+        configuration.walmartCurrency == 'USD'
+        !configuration.walmartAllowApprovedUncategorized
+    }
+
+    def 'approved uncategorized Walmart opt-in loads only explicit YAML booleans'() {
+        given:
+        File yaml=new File(tempDir,'approved-uncategorized.yml')
+        yaml.text='ynab: {api_key: fixture, budget_id: fixture}\namazon: {}\napp: {}\nwalmart: {}\n'
+        if (setting!=null) yaml.text=yaml.text.replace('walmart: {}',"walmart: {allow_approved_uncategorized: ${setting}}")
+        def configuration=new Configuration()
+
+        when:
+        configuration.loadConfiguration(yaml)
+
+        then:
+        configuration.walmartAllowApprovedUncategorized==enabled
+
+        where:
+        setting | enabled
+        null    | false
+        'false' | false
+        'true'  | true
+    }
+
+    def 'quoted Walmart approval opt-in is rejected instead of coercing false to true'() {
+        given:
+        File yaml=new File(tempDir,'invalid-approved-uncategorized.yml')
+        yaml.text="ynab: {api_key: fixture, budget_id: fixture}\namazon: {}\napp: {}\nwalmart: {allow_approved_uncategorized: 'false'}\n"
+
+        when:
+        new Configuration().loadConfiguration(yaml)
+
+        then:
+        thrown(IllegalStateException)
+    }
+
+    def 'loads the default or configured Walmart currency and validates its ISO code'() {
+        given:
+        File helper=new File(tempDir,'helper')
+        helper.text='#!/bin/sh\nexit 0\n'
+        helper.setExecutable(true)
+        File yaml=new File(tempDir,'currency.yml')
+        yaml.text="""ynab: {api_key: fixture, budget_id: fixture}
+amazon: {csv_file_path: orders.csv}
+app: {}
+walmart:
+  enabled: true
+  helper_executable: '${helper.absolutePath}'
+  session_file: '${new File(tempDir,'session.json').absolutePath}'
+"""+(currency==null ? '' : "  currency: '${currency}'\n")
+        def configuration=new Configuration()
+
+        when:
+        configuration.loadConfiguration(yaml)
+
+        then:
+        configuration.walmartCurrency==(currency==null ? 'USD' : currency)
+        configuration.isValid()==valid
+
+        where:
+        currency | valid
+        null     | true
+        'CAD'    | true
+        'usd'    | false
+        'XYZ'    | false
     }
     
     def "should pass validation when Walmart is disabled"() {

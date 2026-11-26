@@ -9,6 +9,17 @@ ynab:
 
 # Amazon Configuration
 amazon:
+  enrichment: "memo_only"  # Opt-in item_categories changes live budget balances even before approval
+  journal_file: "amazon-journal.json"  # Protected intent, ownership and item provenance; keep across runs
+  payment_accounts: {}  # Confirm with --amazon-payment-accounts; e.g. "python:visa:1234": "existing-account-id"
+  categorization:
+    categories: []  # Independent existing IDs; --amazon-categories selects them, with NO default
+    # --amazon-setup adds provider/model/bounds, protected credential reference and Amazon consent.
+    # No provider or paid inference is enabled by default. Never put a provider key in YAML.
+  # transaction_evidence:
+  #   enabled: false  # Default true ONLY in Python mode; explicit true elsewhere requires Python settings
+  refund_email_evidence:
+    enabled: false  # Python mode must explicitly opt into IMAP refund notices; never changes purchase source
   # Select exactly one automatic source: "email" (the default) or "python".
   order_fetcher: "email"
   # Email-based order fetching (recommended if you want automatic import):
@@ -36,6 +47,8 @@ amazon:
 # Walmart Configuration (optional)
 walmart:
   enabled: false  # Optional native Go source; no legacy browser fallback
+  currency: "USD"  # Default when source evidence omits currency; explicit conflicts still block matching
+  allow_approved_uncategorized: false  # Opt in to categorizing approved, unsplit transactions with no category; updates return to review
   # helper_executable: "/absolute/path/walmart-helper"  # Installed Walmart distribution discovers its bundled helper
   # session_file: "~/.config/ynab-updater/walmart-session.json"
   timeout_seconds: 300
@@ -50,8 +63,11 @@ walmart:
     categories: []  # [{id: "existing-id", description: "optional boundary"}]
     # --walmart-setup prompts for OpenAI Decisions or direct TypeSafe Jev, hidden key and consent.
     # No provider selected by default. Keys belong ONLY in protected provider records, not YAML.
-    # Setup adds exact model/policy, bounds, credential path and unqualified acceptance settings.
-    # Unqualified providers make no production calls; use separately authorized synthetic comparison.
+    # Setup adds exact model/policy, bounds, credential path and confidence thresholds.
+    # Enabled production inference needs no evaluation fingerprint; synthetic comparison is optional.
+    # max_requests: 50  # Per run, including retries and failed attempts.
+    # batch_size: 8     # Uncached items from multiple orders can share one request.
+    # Token usage is measured; there are no max_tokens/max_request_tokens budgets.
 
 # Application Configuration
 app:

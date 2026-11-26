@@ -39,23 +39,83 @@ class TransactionProcessor_UT extends Specification {
         mockConfig.getProcessedTransactionsFile() >> processedTransactionsFile.absolutePath
     }
     
-    def "notice write failures do not stop later transactions or mark any as processed"() {
+    def "notices are batched with approval and only saved IDs update local memos"() {
         given:
         def processor = new TransactionProcessor(mockConfig)
-        def transactions = ['throws', 'rejected', 'succeeds'].collect {
-            new YNABTransaction(id: it, memo: 'Original')
-        }
-        mockYnabService.updateTransactionMemo('throws', _) >> { throw new IOException('unavailable') }
-        mockYnabService.updateTransactionMemo('rejected', _) >> false
-        mockYnabService.updateTransactionMemo('succeeds', _) >> true
+        def service = Mock(YNABService)
+        def transactions = [new YNABTransaction(id: 'a', memo: 'Original', approved: 'true'),
+                            new YNABTransaction(id: 'b', memo: null, approved: 'false'),
+                            new YNABTransaction(id: 'c', memo: 'null', approved: null),
+                            new YNABTransaction(id: 'already', memo: AmazonAuthNotice.MESSAGE),
+                            new YNABTransaction(id: 'processed', memo: 'items: product')]
 
         when:
-        processor.addAmazonLoginNotices(transactions, mockYnabService, false)
+        processor.addAmazonLoginNotices(transactions, service, false)
 
         then:
-        transactions*.memo == ['Original', 'Original',
-            'Original | [ERROR: Amazon Login Required on ynab-amazon-transaction-updater]']
-        new TransactionProcessor(mockConfig).getUnprocessedTransactions(transactions)*.id == ['throws', 'rejected', 'succeeds']
+        1 * service.updateTransactionMemos([
+            [id: 'a', memo: "Original | ${AmazonAuthNotice.MESSAGE}".toString(), approved: true],
+            [id: 'b', memo: AmazonAuthNotice.MESSAGE, approved: false]
+        ]) >> (['a'] as Set)
+        0 * service.updateTransactionMemo(_, _)
+        transactions*.memo == ["Original | ${AmazonAuthNotice.MESSAGE}".toString(), null,
+                               'null', AmazonAuthNotice.MESSAGE, 'items: product']
+        processor.getUnprocessedTransactions(transactions)*.id == ['a', 'b', 'c', 'already']
+        new TransactionProcessor(mockConfig).getUnprocessedTransactions(transactions)*.id == ['a', 'b', 'c', 'already']
+    }
+
+    def "batch failure does not update memos or replay requests"() {
+        given:
+        def processor = new TransactionProcessor(mockConfig)
+        def service = Mock(YNABService)
+        def transactions = [new YNABTransaction(id: 'a', memo: 'Original', approved: 'true'), new YNABTransaction(id: 'b', approved: 'false')]
+
+        when:
+        processor.addAmazonLoginNotices(transactions, service, false)
+
+        then:
+        1 * service.updateTransactionMemos(_) >> { if (throwsFailure) throw new IOException('unavailable'); return [] as Set }
+        0 * service.updateTransactionMemo(_, _)
+        transactions*.memo == ['Original', null]
+        processor.getUnprocessedTransactions(transactions)*.id == ['a', 'b']
+
+        where:
+        throwsFailure << [false, true]
+    }
+
+    def "dry run and no eligible notices make no batch call"() {
+        given:
+        def processor = new TransactionProcessor(mockConfig)
+        def service = Mock(YNABService)
+        def transactions = [new YNABTransaction(id: 'a', memo: 'Original')]
+
+        when:
+        processor.addAmazonLoginNotices(transactions, service, true)
+        processor.addAmazonLoginNotices([new YNABTransaction(id: 'b', memo: AmazonAuthNotice.MESSAGE)], service, false)
+
+        then:
+        0 * service.updateTransactionMemos(_)
+        0 * service.updateTransactionMemo(_, _)
+        transactions[0].memo == 'Original'
+    }
+
+    def "notice respects 500 character memo limit"() {
+        given:
+        def processor = new TransactionProcessor(mockConfig) {
+            List<YNABTransaction> getUnprocessedTransactions(List<YNABTransaction> all) { all }
+        }
+        def service = Mock(YNABService)
+        int limit = 500 - 3 - AmazonAuthNotice.MESSAGE.length()
+        def transactions = [new YNABTransaction(id: 'fits', memo: 'x' * limit, approved: 'false'),
+                            new YNABTransaction(id: 'long', memo: 'x' * (limit + 1), approved: 'false')]
+
+        when:
+        processor.addAmazonLoginNotices(transactions, service, false)
+
+        then:
+        1 * service.updateTransactionMemos({ it.size() == 1 && it[0].id == 'fits' && it[0].memo.length() == 500 }) >> (['fits'] as Set)
+        transactions[0].memo.length() == 500
+        transactions[1].memo == 'x' * (limit + 1)
     }
 
     def "getUnprocessedTransactions should filter out processed transactions"() {
@@ -96,7 +156,7 @@ class TransactionProcessor_UT extends Specification {
         )
         
         and: "YNABService returns success"
-        mockYnabService.updateTransactionMemo("tx1", "Updated memo") >> true
+        mockYnabService.updateTransactionMemo("tx1", "🤖 Updated memo") >> true
         
         when: "updateTransactions is called in normal mode"
         def result = processor.updateTransactions([match], mockYnabService, false)
@@ -104,6 +164,24 @@ class TransactionProcessor_UT extends Specification {
         then: "transactions should be updated"
         result.updated == 1
         result.high_confidence == 1
+    }
+
+    def 'Amazon marker is idempotent and does not truncate a full memo'() {
+        given:
+        def processor = new TransactionProcessor(mockConfig)
+        def order = new AmazonOrder(orderId: 'order1')
+        def matches = [
+            new TransactionMatch(ynabTransaction: new YNABTransaction(id:'marked'), amazonOrder:order, proposedMemo:'🤖 Existing', confidenceScore:0.9),
+            new TransactionMatch(ynabTransaction: new YNABTransaction(id:'long'), amazonOrder:order, proposedMemo:'x' * 498, confidenceScore:0.9)
+        ]
+
+        when:
+        def result = processor.updateTransactions(matches, mockYnabService, false)
+
+        then:
+        1 * mockYnabService.updateTransactionMemo('marked', '🤖 Existing') >> true
+        0 * mockYnabService.updateTransactionMemo('long', _)
+        result.updated == 1
     }
     
     def "updateTransactions should not make API calls in dry run mode"() {
@@ -159,7 +237,7 @@ class TransactionProcessor_UT extends Specification {
         def config = new Configuration(walmartJournalFile: new File(tempFolder, 'walmart.json').path)
         def tx = new YNABTransaction(id: 'w1', date: '2026-11-20', amount: -70000, memo: 'User note', payee_name: 'WALMART')
         def order = new WalmartOrder(orderId: '123', orderDate: '2026-11-20', totalAmount: 100.00, currency: 'USD',
-            orderUrl: 'https://www.walmart.com/orders/details?orderId=123',
+            orderUrl: 'https://www.walmart.com/orders/123',
             charges: [[key:'c1',date:'2026-11-20',cents:7000L,currency:'USD',payment:'CREDITCARD:VISA:1234']])
         def matches = new TransactionMatcher().findWalmartMatches([tx], [order])
 
@@ -168,7 +246,7 @@ class TransactionProcessor_UT extends Specification {
 
         then:
         result.updated == 0
-        result.preview[0].operations[0].memo == 'User note | 2026-11-20 | Total $100.00 | #123 | https://www.walmart.com/orders/details?orderId=123'
+        result.preview[0].operations[0].memo == 'User note | 2026-11-20 | Total $100.00 | #123 | https://www.walmart.com/orders/123'
         !new File(config.walmartJournalFile).exists()
         1 * mockYnabService.getWalmartPlanCurrency() >> 'USD'
         0 * mockYnabService._

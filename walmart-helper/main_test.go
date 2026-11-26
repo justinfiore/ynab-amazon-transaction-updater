@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -39,11 +41,19 @@ func TestUnitNetworkGuard(t *testing.T) {
 	}
 }
 func TestUnitTransportFailures(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := os.Stderr
+	os.Stderr = writer
+	defer func() { os.Stderr = previous; writer.Close(); reader.Close() }()
 	for _, code := range []int{302, 401, 403, 456, 500} {
 		g := &guardedTransport{roundTrip(func(*http.Request) (*http.Response, error) {
 			return &http.Response{StatusCode: code, Body: io.NopCloser(strings.NewReader("cookie-secret address"))}, nil
 		}), map[string][]byte{}}
-		r, _ := http.NewRequest("GET", "https://www.walmart.com/orchestra/a", nil)
+		r, _ := http.NewRequest("GET", "https://www.walmart.com/orchestra/orders/graphql/getOrder/private-order?cookie=private-token", nil)
+		r.Header.Set("Cookie", "private-cookie")
 		if _, e := g.RoundTrip(r); e == nil || strings.Contains(e.Error(), "secret") {
 			t.Fatal("unsafe error")
 		}
@@ -55,6 +65,31 @@ func TestUnitTransportFailures(t *testing.T) {
 		r, _ := http.NewRequest("GET", "https://www.walmart.com/orchestra/a", nil)
 		if _, e := g.RoundTrip(r); e == nil {
 			t.Fatal("accepted invalid or oversized body")
+		}
+	}
+	for _, failure := range []error{context.DeadlineExceeded, errors.New("private-transport-secret")} {
+		g := &guardedTransport{roundTrip(func(*http.Request) (*http.Response, error) {
+			return nil, failure
+		}), map[string][]byte{}}
+		r, _ := http.NewRequest("GET", "https://www.walmart.com/orchestra/cph/graphql/PurchaseHistoryV2/private-order", nil)
+		if _, e := g.RoundTrip(r); e == nil {
+			t.Fatal("accepted transport failure")
+		}
+	}
+	writer.Close()
+	logged, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(logged)
+	for _, expected := range []string{"operation=getOrder failure=http_status http_status=403", "failure=invalid_json", "failure=body_limit", "operation=PurchaseHistoryV2 failure=timeout", "failure=transport_failed"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("missing diagnostic %s", expected)
+		}
+	}
+	for _, private := range []string{"private-", "secret", "https://", "address"} {
+		if strings.Contains(text, private) {
+			t.Fatal("private upstream data leaked into diagnostics")
 		}
 	}
 }

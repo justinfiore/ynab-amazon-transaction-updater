@@ -12,8 +12,7 @@ class WalmartProviders_UT extends Specification {
 
     Map settings(String provider) {
         Path key = WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),provider,('synthetic-key-'+provider).toCharArray())
-        Map config=WalmartRemoteClassifier.defaults(provider) + [credentials_file:key.toString(),acceptance:[qualified:true,evidence_id:'synthetic-fixture-only',probability:0.8,confidence:0.8,margin:0.2]]
-        config.acceptance.qualified_for=new WalmartRemoteClassifier(config).qualificationFingerprint(categories)
+        Map config=WalmartRemoteClassifier.defaults(provider) + [credentials_file:key.toString()]
         config
     }
 
@@ -48,6 +47,37 @@ class WalmartProviders_UT extends Specification {
         !sent[0][2].toString().contains('category_id')
         (provider=='openai' ? sent[0][2].questions[0].choices*.value : sent[0][2].questions.item_0.criteria.keySet()).containsAll(['Groceries','Pet food',WalmartRemoteClassifier.ABSTAIN])
         provider=='openai' ? !sent[0][2].containsKey('state') : !sent[0][2].containsKey('input')
+
+        where:
+        provider << ['openai','jev']
+    }
+
+    @Unroll
+    def '#provider measures large token usage without a token cap but stops before exceeding max_requests'() {
+        given:
+        int calls=0
+        def classifier=new WalmartRemoteClassifier(settings(provider)+[max_requests:2],{ a,b,c,d ->
+            calls++
+            Map response=envelope(provider)
+            response.usage=[input_tokens:500000L,output_tokens:250000L]
+            [status:200,body:WalmartRemoteClassifier.JSON.writeValueAsString(response)]
+        })
+
+        expect:
+        WalmartRemoteClassifier.defaults(provider).max_requests==50
+        !WalmartRemoteClassifier.defaults(provider).containsKey('max_tokens')
+        !WalmartRemoteClassifier.defaults(provider).containsKey('max_request_tokens')
+        classifier.classify(items,categories)['local-secret-id'].category_id=='p'
+        classifier.classify(items,categories)['local-secret-id'].category_id=='p'
+        classifier.metrics.input_tokens==1000000L
+        classifier.metrics.output_tokens==500000L
+
+        when:
+        classifier.classify(items,categories)
+
+        then:
+        thrown(IllegalStateException)
+        calls==2
 
         where:
         provider << ['openai','jev']
@@ -126,30 +156,27 @@ class WalmartProviders_UT extends Specification {
         [provider,fault] << [['openai','jev'],['non-finite','tie','hostile']].combinations()
     }
 
-    def 'unqualified production, invalid choices and input limits cause zero requests; unknown failed attempts consume run budget'() {
+    def 'production needs no evaluation approval and failed attempts stop replay while input limits prevent requests'() {
         given:
         int calls=0
-        Map config=settings('jev'); config.acceptance.qualified=false
-        def unqualified=new WalmartRemoteClassifier(config,{ a,b,c,d -> calls++; [status:401,body:'private server text'] })
+        Map config=settings('jev')
+        def classifier=new WalmartRemoteClassifier(config,{ a,b,c,d -> calls++; [status:401,body:'private server text'] })
 
         when:
-        unqualified.classify(items,categories)
-        then:
-        thrown(IllegalStateException)
-        calls==0
-
-        when:
-        unqualified.classify(items,categories,true)
+        classifier.classify(items,categories)
         then:
         def error=thrown(IllegalStateException)
         !error.toString().contains('private server text')
         calls==1
+        classifier.metrics.failure_stage=='http_status'
+        classifier.metrics.last_http_status==401
 
         when:
-        unqualified.classify(items,categories,true)
+        classifier.classify(items,categories)
         then:
         thrown(IllegalStateException)
         calls==1
+        classifier.metrics.failure_stage=='http_status'
 
         when:
         def tiny=new WalmartRemoteClassifier(settings('openai')+[max_input_bytes:8],{ a,b,c,d -> calls++; [:] })
@@ -186,7 +213,7 @@ class WalmartProviders_UT extends Specification {
         !Files.exists(second)
     }
 
-    def 'transient retry is bounded, counted and consumes token reservation; redirects and unknown outcomes never replay'() {
+    def 'transient retry is bounded and counts against the request cap; redirects and unknown outcomes never replay'() {
         given:
         int calls=0
         def retrying=new WalmartRemoteClassifier(settings('jev'),{ a,b,c,d ->
@@ -210,7 +237,7 @@ class WalmartProviders_UT extends Specification {
 
         when:
         int limited=0
-        def bounded=new WalmartRemoteClassifier(settings('jev')+[max_tokens:16384],{ a,b,c,d -> limited++; [status:503,retry_after:'0'] })
+        def bounded=new WalmartRemoteClassifier(settings('jev')+[max_requests:1],{ a,b,c,d -> limited++; [status:503,retry_after:'0'] })
         bounded.classify(items,categories)
         then:
         thrown(IllegalStateException)
@@ -261,7 +288,7 @@ class WalmartProviders_UT extends Specification {
     def 'OpenAI comparison stops after #failure and retains safe status and cache usage evidence'() {
         given:
         int requests=0
-        Map config=settings('openai')+[max_requests:10,max_tokens:163840,max_retries:0]
+        Map config=settings('openai')+[max_requests:10,max_retries:0]
         def classifier=new WalmartRemoteClassifier(config,{ endpoint,key,body,limits ->
             requests++
             Map response=envelope('openai')
@@ -292,7 +319,7 @@ class WalmartProviders_UT extends Specification {
     def 'explicit Jev-only comparison needs no OpenAI record and enforces its own consent and ten-request budget'() {
         given:
         File file=new File(directory,'comparison.yml')
-        Map jev=settings('jev')+[max_requests:10,max_tokens:163840,max_retries:0]
+        Map jev=settings('jev')+[max_requests:10,max_retries:0]
         file.text=new org.yaml.snakeyaml.Yaml().dump([providers:[jev:jev]])
         def previousIn=System.in
         def previousOut=System.out
@@ -324,7 +351,6 @@ class WalmartProviders_UT extends Specification {
         report.providers.jev.usage.retries==0
         report.providers.jev.splits.heldout.items==60
         !output.toString().contains('synthetic-key')
-        !jev.acceptance.qualified_for.empty
 
         cleanup:
         System.setIn(previousIn); System.setOut(previousOut)
@@ -336,7 +362,6 @@ class WalmartProviders_UT extends Specification {
         Map policy = WalmartRemoteClassifier.JSON.readValue(WalmartProviders_UT.getResource('/walmart-comparison/reference-policy.json').text, Map)
         Map catalog = policy.question.category.criteria.findAll { k, v -> k != 'ABSTAIN' }.collectEntries { k, v -> [(k): [id:k, name:k, description:v]] }
         Map config = settings(provider)
-        config.acceptance.qualified_for = new WalmartRemoteClassifier(config).qualificationFingerprint(catalog)
         String recorded = WalmartProviders_UT.getResource("/walmart-provider-responses/${fixture}").text
         Map envelope = WalmartRemoteClassifier.JSON.readValue(recorded, Map)
         Map expectedCriteria = new LinkedHashMap(policy.question.category.criteria.findAll { k, v -> k != 'ABSTAIN' })
@@ -391,7 +416,6 @@ class WalmartProviders_UT extends Specification {
         Map policy = WalmartRemoteClassifier.JSON.readValue(WalmartProviders_UT.getResource('/walmart-comparison/reference-policy.json').text, Map)
         Map catalog = policy.question.category.criteria.findAll { k, v -> k != 'ABSTAIN' }.collectEntries { k, v -> [(k): [id:k, name:k, description:v]] }
         Map config = settings('jev')
-        config.acceptance.qualified_for = new WalmartRemoteClassifier(config).qualificationFingerprint(catalog)
         Map recorded = WalmartRemoteClassifier.JSON.readValue(WalmartProviders_UT.getResource('/walmart-provider-responses/jev-gated-chicken-groceries.json').text, Map)
         // Recorded confidence is 0.71, which also fails the confidence gate. Raise only that field
         // so this case is rejected by probability 0.73 alone. The distribution stays the recorded one.

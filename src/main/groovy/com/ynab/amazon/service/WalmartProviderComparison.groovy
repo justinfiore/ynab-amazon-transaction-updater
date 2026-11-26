@@ -13,8 +13,8 @@ class WalmartProviderComparison {
         println "Synthetic comparison only. Selected providers ${providers.join(', ')} bill API usage and receive the same frozen titles and category policy."
         println 'TypeSafe does not train on inputs but does not promise default zero retention: https://typesafe.ai/legal/privacy-policy'
         println 'OpenAI data policy: https://platform.openai.com/docs/guides/your-data'
-        println 'Each configured provider has independent request/token bounds; unknown failed usage remains reserved. No account services, production cache or YNAB writes.'
-        println "Budgets: ${providers.collectEntries { p -> [(p):settings.providers?.get(p)?.findAll { k,v -> k in ['max_requests','max_tokens','max_request_tokens'] }] }}"
+        println 'Each configured provider has an independent request cap; retries and failed attempts count. Token usage is measured, not capped locally. No account services, production cache or YNAB writes.'
+        println "Budgets: ${providers.collectEntries { p -> [(p):settings.providers?.get(p)?.findAll { k,v -> k in ['max_requests','batch_size'] }] }}"
         String consent=providers.size()==2 ? 'PAY BOTH PROVIDERS' : 'PAY '+providers[0].toUpperCase(Locale.ROOT)+' ONLY'
         println "Authorize paid calls to ${providers.join(', ')} only? Type ${consent}; anything else cancels:"
         if (input.readLine() != consent) return
@@ -33,13 +33,11 @@ class WalmartProviderComparison {
         Map splits = ['calibration':rows('calibration.tsv'), 'heldout':rows('heldout.tsv')]
         Map report = [version:1, dataset_sha256:WalmartEnrichment.fingerprint(splits), policy:WalmartRemoteClassifier.POLICY,
             policy_sha256:WalmartEnrichment.fingerprint([categories,WalmartRemoteClassifier.INSTRUCTIONS]),
-            qualification:'NOT QUALIFIED: calibration and held-out reports are evidence for separate human acceptance, not automatic activation',
             prices:[date:'2026-11-22', currency:'USD', openai_input_per_million:0.10, jev_input_per_million:0.042,
                 caveat:'Base-rate estimates only; no cache discounts, premiums or account-specific billing. Actual billed cost unknown. Failed requests can bill; missing usage makes cost unknown.'], providers:[:]]
         classifiers.each { provider,classifier ->
             Map result = [model:classifier.route.model, policy:WalmartRemoteClassifier.POLICY, concurrency:1,
                 batch_size:classifier.config.batch_size, configured_acceptance:classifier.config.acceptance,
-                qualification_fingerprint:classifier.qualificationFingerprint(categories),
                 calibration_note:'Configured gates are not automatically tuned; do not tune against held-out labels.', splits:[:]]
             long start = System.nanoTime()
             boolean halted = false
@@ -56,7 +54,7 @@ class WalmartProviderComparison {
                     }
                     long tick = System.nanoTime()
                     try {
-                        predictions.putAll(classifier.classify(batch.collect { row -> new WalmartOrderItem(itemId:row.id,title:row.product) }, categories, true))
+                        predictions.putAll(classifier.classify(batch.collect { row -> new WalmartOrderItem(itemId:row.id,title:row.product) }, categories))
                     } catch (Exception ignored) { failed += batch.size(); halted = true }
                     double elapsed = (System.nanoTime()-tick) / 1000000D
                     batch.each { latencies << elapsed } // user-visible batch completion latency, not divided by batch size

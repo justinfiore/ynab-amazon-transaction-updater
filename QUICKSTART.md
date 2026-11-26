@@ -3,7 +3,7 @@
 ## Prerequisites
 - Java 25 installed
 - YNAB API key
-- YNAB Account ID
+- YNAB Budget ID
 - Amazon order history CSV export (or email credentials)
 - Optional: maintained, patched CPython >=3.11.5 for Amazon account-history fetching
 
@@ -24,7 +24,7 @@ key. There is no Docker/local-model/OAuth requirement.
 ### 2. Get Your YNAB Credentials
 1. Go to [YNAB Developer Settings](https://app.youneedabudget.com/settings/developer)
 2. Create a new API token
-3. Copy your YNAB Account ID from the URL when viewing your account
+3. Copy your YNAB Budget ID from the URL when viewing your budget
 
 ### 3. Export Amazon Orders
 **Note: Amazon's "Download order reports" feature is very difficult to find and may not be available in all accounts. Use one of the alternatives below.**
@@ -59,8 +59,9 @@ key. There is no Docker/local-model/OAuth requirement.
    ```yaml
    ynab:
      api_key: "your_actual_api_key"
-     account_id: "your_actual_account_id"
+     budget_id: "your_actual_budget_id"
    amazon:
+     enrichment: "memo_only"  # Default: metadata only, no category changes
      csv_file_path: "your_amazon_orders.csv"
    app:
      dry_run: true  # Start with true for testing
@@ -69,8 +70,11 @@ key. There is no Docker/local-model/OAuth requirement.
 ### Optional: Python Amazon History
 
 This is opt-in and uses the unofficial `amazon-orders` website parser. It
-supports English pages across Amazon regions, may need updates when Amazon changes, and does not
-recreate email refund or Subscribe & Save notification semantics.
+supports English pages across Amazon regions and may need updates when Amazon
+changes. Payment evidence defaults on in Python mode and can discover recent
+credits for older purchases, but does not supply structured per-refund item
+amounts or recreate Subscribe & Save synthetic deliveries. Financial layouts
+are qualified only by the offline fixtures described in [AMAZON.md](AMAZON.md).
 
 ```bash
 python3 -m venv .venv-amazon-orders
@@ -86,6 +90,25 @@ browser/CAPTCHA extensions. Use guarded login, not the stock upstream CLI. If
 password/OTP login cannot finish, use email/CSV rather than adding browser/solver
 plugins. Credentials and cookies must not enter this repository, YAML, or command
 arguments. See [authentication and isolation limits](SETUP.md#amazon-authentication-storage-lifetime-and-recovery).
+
+### Optional: Amazon Item Categories
+
+The basic setup remains `memo_only`. To opt into financial enrichment, follow
+[Amazon setup and safety](AMAZON.md): select an independent existing-category
+shortlist using `--amazon-categories` and confirm payment/account identities
+using `--amazon-payment-accounts`. There is no Amazon default category and no
+Walmart helper requirement. Optional `--amazon-setup` separately obtains provider
+consent and a protected key; it makes no paid probe and does not enable writes.
+
+Only then select `amazon.enrichment: item_categories`, keeping `app.dry_run: true`
+to review exact JSON payloads and skip reasons. Email/CSV order amounts alone do
+not authorize financial updates; supplemental Python payment evidence outside
+Python mode requires explicit opt-in and configured runtime/session settings.
+Refund splits need explicit event-specific item amounts, not original-order
+guesses. Eligible trusted matches without allocation evidence may receive
+`category_id: null` fallback. **Turning dry run off applies changes to live
+budget balances even while transactions remain unapproved.** Keep the protected
+Amazon journal across runs; legacy processed IDs do not authorize backfill.
 
 ### 5. Test and Run
 ```bash
@@ -105,7 +128,11 @@ arguments. See [authentication and isolation limits](SETUP.md#amazon-authenticat
 3. **Enable**: Set `dry_run: false` in config.yml
 4. **Run Again**: The app will actually update your YNAB transactions
 
-## Expected Output
+## Illustrative Memo-only Output
+
+Exact log wording and memos vary by available evidence. Financial-mode dry runs
+also print JSON previews with signed milliunits, explicit null categories and
+skip reasons; inspect those payloads, not just the transaction count.
 
 ```
 Starting YNAB Amazon Transaction Updater
@@ -129,7 +156,7 @@ YNAB Amazon Transaction Updater completed successfully
 - **"Java not found"**: Install Java 25 and add it to PATH
 - **"Config error"**: Check your `config.yml` format
 - **"No matches"**: Verify your CSV file format and dates
-- **"API errors"**: Check your YNAB API key and account ID
+- **"API errors"**: Check your YNAB API key and budget ID
 - **"Can't find Amazon export"**: Try the manual CSV creation option above
 
 ## Need Help?

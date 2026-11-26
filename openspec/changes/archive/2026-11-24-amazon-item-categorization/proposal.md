@@ -1,0 +1,42 @@
+## Why
+
+Amazon transactions currently receive item-summary memos but no category or split updates. Walmart already supports existing-category classification, item allocation, human review and retry-safe writes, but reusable classification and YNAB operations are coupled to Walmart classes. Extend that foundation rather than copying a second retailer-specific classifier.
+
+Amazon has no useful default category. Its shortlist must be configured independently of Walmart's, and every item must receive an explicit category decision or remain visibly uncategorized. Keep a compact item summary in the Amazon parent memo alongside the robot marker, date, full order total and mobile-compatible order link.
+
+## What Changes
+
+- Extract retailer-neutral item classification from `WalmartRemoteClassifier` and the mapping/cache orchestration in `WalmartEnrichment`. Use neutral item evidence and explicit retailer/plan/category-policy context; neither callers nor shared code may require Walmart models, configuration or fingerprint helpers.
+- Pull up provider credentials, category selection/validation and the existing guarded YNAB read/write primitives where both retailers need them. Keep Walmart retrieval, ledger matching, default-category/exception-first accounting and memo policy retailer-specific. Preserve Walmart configuration, credentials, journal recovery and observable behavior through the refactor.
+- Add opt-in `amazon.enrichment: item_categories`, defaulting to `memo_only`, with its own `amazon.categorization.categories`, provider selection/consent, acceptance settings and journal. Do not require or inherit a default category or Walmart shortlist. Selecting Amazon categories must not modify Walmart settings.
+- Classify all Amazon items using approved retailer-scoped product mappings before accepted provider results. Preserve abstentions/conflicts as uncategorized item lines; never fall back to Groceries, the parent category, Walmart's default or an invented review category.
+- Define sufficient allocation confidence as mandatory evidence gates, not an aggregate match score: complete source/payment coverage, verified currency and item amounts, unique exact-cent charge/account matching, explained adjustments, exact split totals and unchanged eligible parent state. Without allocation confidence, an eligible trustworthy match retains order metadata/link and explicitly writes `category_id: null`, with no splits. Preserve human-owned categories, approval and splits; ambiguous association permits no fallback. Default `memo_only` mode remains noncategorizing. Initial scope includes one external charge optionally supplemented by known gift-card funding, not guessed shipment/payment splits.
+- Expose the pinned `amazon-orders==6.0.0` library's existing order adjustments/completeness indicators and add bounded same-session transaction-history retrieval. Our bridge already fetches full details but drops these fields and never retrieves transactions. Distinguish order value, card charges, gift-card/reward funding and refunds; do not assume the upstream grand total always means full merchandise-plus-adjustments value.
+- Allocate tax, shipping and fees proportionally over net merchandise costs. Apply a discount to its item when explicit source evidence identifies it; otherwise allocate the known discount proportionally. Use deterministic largest-remainder cents, no double counting and no unexplained balancing lines. Missing item attribution alone does not prohibit allocation.
+- Fully gift-card-funded purchases need no YNAB transaction or write. For partial gift-card funding, reconcile the full order and known funding, classify all items and proportionally allocate only the remaining bank charge using adjusted full-order item costs. Preserve the bank amount, omit zero rows and create no gift-card category/offset transaction. Parent memos distinguish full order total, gift funding and amount charged.
+- Match refund inflows to distinct Amazon refund-credit occurrences using exact amount, completed date, order reference and payment/account evidence, including refunds for purchases outside the normal order lookback. Preserve multiple refunds per order rather than merging them under `RETURN-<order ID>`.
+- Categorize identified refunded items using trustworthy approved original-item categories before shared classification. Support a category-only write for one refunded item and positive-amount item splits for multi-item refund credits only when event-specific item amounts and adjustments explain that credit exactly. Otherwise eligible trustworthy matches retain refund metadata/link and explicitly set the parent category to null under guarded fallback. No default refund category or proportional spreading over unrelated purchased items.
+- Extend refund-email parsing to retain multiple items, identifiers, quantities and refund adjustments when actually present. Email mode uses its selected source; Python mode may explicitly opt into supplemental refund-email evidence without changing purchase-source selection or making IMAP mandatory. The library's cumulative refund total and credit-note metadata alone do not establish which items a particular credit refunded.
+- Generate parent memos such as `🤖 2026-11-20 | Total $65.00 USD | 2 items: USB-C cable, Dog food | https://www.amazon.com/your-orders/order-details?orderID=113-8849250-2919462`. Preserve existing user text, prioritize required metadata/link, shorten only generated item summaries and never use `/gp/css/summary/edit.html` or a shortener. Split rows include the item title, as Walmart exception rows do.
+- Reuse fresh-read eligibility, durable intent/read-back, unapproved review and provenance-based learning for Amazon. A memo or legacy processed-ID marker is not proof that categorization is complete; do not automatically migrate or rewrite previously processed transactions without trustworthy provenance.
+- Keep separate nonzero item rows for purchases and evidenced refunds even when categories agree. Defer multiple-external-charge purchase allocation; each independently trustworthy eligible matched charge still receives metadata/link and the guarded uncategorized fallback. Record these confirmed choices, stage the shared refactor before Amazon behavior changes, and verify offline without paid inference or real YNAB writes.
+
+## Capabilities
+
+### New Capabilities
+
+- `item-classification`: Retailer-neutral category decisions, isolated policies/cache/mappings, protected provider access and independent category onboarding.
+- `amazon-transaction-enrichment`: Compact linked parent memos, no-default item categorization, exact allocation, conservative matching, safe writes and review.
+
+### Modified Capabilities
+
+- `walmart-transaction-enrichment`: Require consumption of shared classification and neutral YNAB operations while preserving the existing Walmart-specific contract.
+- `amazon-order-fetching`: Retain allowlisted financial evidence already available in full details and retrieve bounded charge history without changing automatic-source selection or authentication behavior.
+
+Amazon purchase fetching remains selectable as today. Additive financial evidence and enhanced refund parsing must preserve current consumers and be checked against source fixtures; authentication and automatic purchase-source selection remain unchanged. Supplemental email evidence is explicit and optional.
+
+## Impact
+
+Primary implementation owners: `WalmartRemoteClassifier`, `WalmartEnrichment`, `WalmartAllocation.categories`, `WalmartProviderKeys`, `WalmartOnboarding`, `WalmartProviderComparison`, `YNABService`, `Configuration`, `AmazonOrder`, `AmazonService`, `TransactionMatcher`, `TransactionProcessor` and the main updater. Provider HTTP tests, Walmart allocation/recovery tests and Amazon fetcher/processor tests supply the regression baseline. Shared Amazon categorization must work in base JVM distributions without `-Pwalmart`, Go or the Walmart helper.
+
+This proposal changes no executable code or live configuration. Implementation will affect live budget balances even while updates remain unapproved. First-release exclusions: arbitrary multi-payment/shipment purchase allocation, ambiguous refund-item attribution, mixed-tender refunds, foreign exchange, category creation, automatic historical backfill, existing-split editing and new inference providers. See `design.md` for evidence, decisions and alternatives; all implementation tasks remain unchecked.

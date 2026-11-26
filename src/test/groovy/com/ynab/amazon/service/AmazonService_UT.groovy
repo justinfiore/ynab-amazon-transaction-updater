@@ -114,6 +114,32 @@ class AmazonService_UT extends Specification {
         csvFile.text.contains("123-4567890-1234567")
     }
     
+    def 'dormant supplemental runtime launches nothing and explicit opt-in supplies events without replacing purchase evidence'() {
+        given:
+        GroovyMock(PythonAmazonOrderFetcher,global:true)
+        def original = new AmazonOrder(orderId:'113-8849250-2919462',totalAmount:20G)
+        def purchaseSource = Stub(AmazonOrderFetcher) { fetchOrders() >> [original] }
+        def supplemental = Stub(PythonAmazonOrderFetcher) {
+            fetchOrders() >> [new AmazonOrder(orderId:original.orderId,totalAmount:999G,
+                financialEvidence:[complete:true],paymentEvents:[[key:'event']])]
+        }
+        def config = new Configuration(amazonPythonExecutable:'dormant-python',amazonPythonConfigPath:'dormant-session',
+            amazonTransactionEvidenceEnabled:enabled)
+
+        when:
+        def result = new AmazonService(config,purchaseSource).getOrders()
+
+        then:
+        (enabled ? 1 : 0) * new PythonAmazonOrderFetcher(config) >> supplemental
+        result.size() == 1
+        result[0].totalAmount == 20G
+        !result[0].financialEvidence
+        result[0].paymentEvents == (enabled ? [[key:'event']] : [])
+
+        where:
+        enabled << [false,true]
+    }
+
     // Helper method to create a test CSV file
     private void createTestCsvFile(File file) {
         file.text = """Order ID,Order Date,Title,Price,Quantity

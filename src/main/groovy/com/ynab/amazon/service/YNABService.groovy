@@ -23,14 +23,48 @@ class YNABService {
     private final Configuration config
     private final ObjectMapper objectMapper
     private final CloseableHttpClient httpClient
-    private final CloseableHttpClient walmartHttpClient
+    private final CloseableHttpClient guardedHttpClient
+    private boolean workflowCacheEnabled = false
+    private boolean rateLimited = false
+    private Map<String, Integer> requestCounts = [:].withDefault { 0 }
+    private List<Map> categoryCache
+    private Set<String> accountCache
+    private Map<String, Map> learningCache
     
     YNABService(Configuration config) {
         this.config = config
         this.objectMapper = new ObjectMapper()
-        this.httpClient = HttpClients.createDefault()
+        this.httpClient = HttpClients.custom().disableAutomaticRetries().disableRedirectHandling().build()
         // A lost PUT response has an unknown outcome; only journal/read-back may retry it.
-        this.walmartHttpClient = HttpClients.custom().disableAutomaticRetries().disableRedirectHandling().build()
+        this.guardedHttpClient = HttpClients.custom().disableAutomaticRetries().disableRedirectHandling().build()
+    }
+
+    void beginWorkflow() {
+        workflowCacheEnabled = true
+        categoryCache = null
+        accountCache = null
+        learningCache = null
+    }
+
+    private void countRequest(String name) {
+        if (rateLimited) throw new IllegalStateException('YNAB rate limit reached; defer remaining requests until the rolling window permits them')
+        requestCounts[name]++
+    }
+
+    private void checkStatus(int status) {
+        if (status == 429) {
+            rateLimited = true
+            logger.error('YNAB rate limit reached (429); stopping YNAB requests for this run. Try again after the rolling one-hour window permits requests.')
+        }
+        if (status != 200) throw new IllegalStateException("YNAB request failed with HTTP ${status}")
+    }
+
+    void logRequestCounts() {
+        logger.info('YNAB request attempts by endpoint: {}', new TreeMap(requestCounts))
+    }
+
+    void checkRateLimit() {
+        if (rateLimited) throw new IllegalStateException('YNAB rate limit reached; the workflow did not complete')
     }
     
     /**
@@ -49,14 +83,12 @@ class YNABService {
             
             logger.debug("Fetching transactions from YNAB: ${url}")
             
+            countRequest('GET transactions')
             def response = httpClient.execute(request)
+            checkStatus(response.getCode())
             def entity = response.getEntity()
             def responseBody = EntityUtils.toString(entity)
             
-            if (response.getCode() != 200) {
-                logger.error("Failed to fetch YNAB transactions. Status: ${response.getCode()}, Response: ${responseBody}")
-                return []
-            }
             logger.trace("YNAB Response Body: ${responseBody}")
             def jsonResponse = objectMapper.readTree(responseBody)
             def transactionsData = jsonResponse.get("data").get("transactions")
@@ -91,7 +123,7 @@ class YNABService {
             
         } catch (Exception e) {
             logger.error("Error fetching YNAB transactions", e)
-            return []
+            throw new IllegalStateException('Unable to fetch YNAB transactions', e)
         }
     }
     
@@ -117,14 +149,11 @@ class YNABService {
             
             logger.debug("Updating transaction ${transactionId} with memo: ${newMemo}")
             
+            countRequest('PATCH transaction')
             def response = httpClient.execute(request)
+            checkStatus(response.getCode())
             def entity = response.getEntity()
             def responseBody = EntityUtils.toString(entity)
-            
-            if (response.getCode() != 200) {
-                logger.error("Failed to update YNAB transaction. Status: ${response.getCode()}, Response: ${responseBody}")
-                return false
-            }
             
             logger.info("Successfully updated transaction ${transactionId}")
             return true
@@ -139,47 +168,97 @@ class YNABService {
      * Close HTTP client resources
      */
     Map getWalmartTransaction(String id) {
-        walmartRequest('GET', "/transactions/${pathId(id)}").data.transaction as Map
+        getTransaction(id)
+    }
+
+    Map getTransaction(String id) {
+        guardedRequest('GET', "/transactions/${pathId(id)}").data.transaction as Map
+    }
+
+    /** Full-plan snapshot for historical learning; write-boundary checks remain individual. */
+    Map<String, Map> getLearningTransactions() {
+        if (workflowCacheEnabled && learningCache != null) return learningCache
+        def transactions = guardedRequest('GET', '/transactions').data?.transactions
+        if (!(transactions instanceof List)) throw new IllegalStateException('Invalid YNAB transaction collection')
+        if (transactions.any { !(it instanceof Map) || !(it.id instanceof String) || !it.id } ||
+            transactions*.id.toSet().size() != transactions.size()) throw new IllegalStateException('Invalid YNAB transaction collection')
+        Map<String, Map> snapshot = transactions.collectEntries { Map transaction -> [(transaction.id): transaction] }
+        if (workflowCacheEnabled) learningCache = snapshot
+        snapshot
     }
 
     String getWalmartPlanCurrency() {
+        getPlanCurrency()
+    }
+
+    String getPlanCurrency() {
         try {
-            walmartRequest('GET', '').data?.plan?.currency_format?.iso_code as String
+            guardedRequest('GET', '/settings').data?.settings?.currency_format?.iso_code as String
         } catch (Exception ignored) {
-            logger.warn('YNAB plan currency unavailable; Walmart matching and updates are disabled')
+            logger.warn('YNAB plan currency unavailable; financial matching and updates are disabled')
             null
         }
     }
 
     List<Map> getWalmartCategories() {
-        def groups = walmartRequest('GET', '/categories').data.category_groups
-        groups.collectMany { group ->
+        getCategoryCatalog()
+    }
+
+    List<Map> getCategoryCatalog() {
+        if (workflowCacheEnabled && categoryCache != null) return categoryCache
+        def groups = guardedRequest('GET', '/categories').data.category_groups
+        List<Map> result = groups.collectMany { group ->
             group.categories.collect { category ->
                 category + [group_name: group.name, group_hidden: group.hidden, group_deleted: group.deleted,
                             group_internal: group.internal]
             }
         }
+        if (workflowCacheEnabled) categoryCache = result
+        result
     }
 
     Set<String> getWalmartBudgetAccounts() {
-        walmartRequest('GET', '/accounts').data.accounts.findAll { it.on_budget == true && !it.deleted && !it.closed }*.id as Set
+        getBudgetAccounts()
+    }
+
+    Set<String> getBudgetAccounts() {
+        if (workflowCacheEnabled && accountCache != null) return accountCache
+        Set<String> result = guardedRequest('GET', '/accounts').data.accounts.findAll { it.on_budget == true && !it.deleted && !it.closed }*.id as Set
+        if (workflowCacheEnabled) accountCache = result
+        result
     }
 
     void putWalmartTransaction(String id, Map changes) {
-        walmartRequest('PUT', "/transactions/${pathId(id)}", [transaction: changes])
+        putTransaction(id, changes)
     }
 
-    private Map walmartRequest(String method, String suffix, Map body = null) {
+    void putTransaction(String id, Map changes) {
+        learningCache = null // A failed or lost response may still have changed the server.
+        guardedRequest('PUT', "/transactions/${pathId(id)}", [transaction: changes])
+    }
+
+    Set<String> updateTransactionMemos(List<Map> updates) {
+        if (!updates) return [] as Set
+        learningCache = null
+        Map response = guardedRequest('PATCH', '/transactions', [transactions: updates])
+        def ids = response.data?.transaction_ids
+        if (!(ids instanceof List)) throw new IllegalStateException('Invalid YNAB batch response')
+        ids as Set<String>
+    }
+
+    private Map guardedRequest(String method, String suffix, Map body = null) {
         // Canonical current API uses /plans. Kept separate from Amazon's legacy API.
         String url = "${config.ynabBaseUrl}/plans/${pathId(config.ynabBudgetId)}${suffix}"
-        def request = method == 'GET' ? new HttpGet(url) : new HttpPut(url)
+        def request = method == 'GET' ? new HttpGet(url) : method == 'PATCH' ? new HttpPatch(url) : new HttpPut(url)
         request.setHeader('Authorization', "Bearer ${config.ynabApiKey}")
         request.setHeader('Content-Type', 'application/json')
         if (body != null) request.entity = new StringEntity(objectMapper.writeValueAsString(body), org.apache.hc.core5.http.ContentType.APPLICATION_JSON)
         request.config = org.apache.hc.client5.http.config.RequestConfig.custom()
             .setResponseTimeout(org.apache.hc.core5.util.Timeout.ofSeconds(30)).setRedirectsEnabled(false).build()
-        walmartHttpClient.execute(request).withCloseable { response ->
-            if (response.code != 200) throw new IllegalStateException('YNAB Walmart request failed')
+        String endpoint = suffix.startsWith('/transactions/') ? '/transactions/{id}' : suffix
+        countRequest("${method} ${endpoint}".toString())
+        guardedHttpClient.execute(request).withCloseable { response ->
+            checkStatus(response.code)
             String text = EntityUtils.toString(response.entity, 'UTF-8', 8388608)
             objectMapper.readValue(text, Map)
         }
@@ -193,7 +272,7 @@ class YNABService {
     void close() {
         try {
             httpClient.close()
-            walmartHttpClient.close()
+            guardedHttpClient.close()
         } catch (Exception e) {
             logger.warn("Error closing HTTP client", e)
         }

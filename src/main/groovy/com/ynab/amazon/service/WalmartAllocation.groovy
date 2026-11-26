@@ -8,23 +8,24 @@ class WalmartAllocation {
         if (!selected || selected.any { !it.id } || selected*.id.toSet().size() != selected.size() || !selected*.id.contains(defaultId)) {
             throw new IllegalStateException('Invalid Walmart category shortlist/default')
         }
-        def eligible = catalog.findAll { !it.deleted && !it.hidden && !it.internal && !it.group_internal && !it.group_hidden && !it.group_deleted }.collectEntries { [(it.id): it] }
-        if (selected.any { !eligible[it.id] }) throw new IllegalStateException('Walmart category is absent, hidden, deleted or special')
-        selected.collectEntries { [(it.id): [id: it.id, name: eligible[it.id].name, group_name: eligible[it.id].group_name, description: it.description ?: '']] }
+        ItemClassificationService.categories(catalog, selected)
     }
 
-    static Map plan(WalmartOrder order, List<TransactionMatch> matches, String defaultId, Map decisions, Set eligibleAccounts) {
+    static Map plan(WalmartOrder order, List<TransactionMatch> matches, String defaultId, Map decisions, Set eligibleAccounts, boolean allowApprovedUncategorized = false) {
         def skip = { String why -> [eligible: false, reason: why, operations: []] }
         if (!order.complete || order.currency != 'USD' || order.totalAmount <= 0) return skip(order.ineligibleReason ?: 'incomplete_order')
-        if (!order.charges || matches.size() != order.charges.size() || matches*.walmartCharge*.key.toSet() != order.charges*.key.toSet() ||
+        if (order.charges.any { it.cents<=0 }) return skip('refund_or_unsupported_ledger')
+        def covered = matches.collectMany { it.walmartCharge.components ?: [it.walmartCharge] }
+        if (!order.charges || covered.size() != order.charges.size() || covered*.key.toSet() != order.charges*.key.toSet() ||
             matches*.ynabTransaction*.id.toSet().size() != matches.size()) return skip('missing_or_ambiguous_payment')
-        if (matches.any { !it.proposedMemo || !eligible(it.ynabTransaction, eligibleAccounts) }) return skip('ineligible_parent')
+        if (matches.any { !it.proposedMemo || !eligible(it.ynabTransaction, eligibleAccounts, false, allowApprovedUncategorized) }) return skip('ineligible_parent')
         long total = order.totalAmount.movePointRight(2).longValueExact()
         long chargeTotal = order.charges.sum { (long) it.cents } as long
         if (order.items.any { it.grossCents == null || it.grossCents < 0 }) return skip('unknown_item_basis')
         long itemTotal = (order.items.sum { it.grossCents } ?: 0) as long
         long adjustments = (order.adjustments.sum { it.kind == 'discount' ? -(long)it.cents : (long)it.cents } ?: 0) as long
         if (chargeTotal != total || itemTotal + adjustments != total) return skip('unreconciled_costs')
+        if (matches.any { !it.proposedMemo.startsWith('🤖 ') && it.proposedMemo.length() > 497 }) return skip('category_marker_memo_too_long')
         def exceptions = order.items.findAll { decisions[it.itemId]?.category_id != defaultId && it.grossCents > 0 }.sort { it.itemId }
         long exceptionTotal = (exceptions.sum { it.grossCents } ?: 0) as long
         if (exceptionTotal > total) return skip('negative_default')
@@ -41,19 +42,34 @@ class WalmartAllocation {
                 if (!amount) return
                 def item = pending.item
                 lines << [item_id: item.itemId, product_id: item.productId, cents: amount,
-                          category_id: decisions[item.itemId]?.category_id, memo: item.title.take(500)]
+                          category_id: decisions[item.itemId]?.category_id, memo: decisions[item.itemId]?.category_id ? marked(item.title.take(497)) : item.title.take(500)]
                 capacity -= amount
                 pending.left -= amount
             }
-            if (capacity > 0) lines << [cents: capacity, category_id: defaultId, memo: 'Default Walmart Category']
+            if (capacity > 0) lines << [cents: capacity, category_id: defaultId, memo: marked('Default Walmart Category')]
             operations << [transaction_id: match.ynabTransaction.id, charge_key: match.walmartCharge.key,
-                           memo: match.proposedMemo, lines: lines]
+                           memo: lines.size() == 1 && lines[0].category_id ? marked(match.proposedMemo) : match.proposedMemo, lines: lines]
         }
         [eligible: true, operations: operations, decisions: decisions]
     }
 
-    static boolean eligible(YNABTransaction tx, Set accounts) {
-        tx.getApproved() == 'false' && tx.getDeleted() == 'false' && tx.amount != null && tx.amount < 0 && tx.amount % 10 == 0 &&
+    static Map refundPlan(TransactionMatch match, String defaultId, Map decisions, Set accounts, boolean allowApprovedUncategorized = false) {
+        if (!match.proposedMemo || !eligible(match.ynabTransaction, accounts, true, allowApprovedUncategorized)) return [eligible:false, reason:'refund_metadata_only']
+        if (!match.proposedMemo.startsWith('🤖 ') && match.proposedMemo.length() > 497) return [eligible:false, reason:'category_marker_memo_too_long']
+        Map refund=match.walmartCharge
+        [eligible:true, reason:'refund_category', operations:[[transaction_id:match.ynabTransaction.id, charge_key:refund.key,
+            memo:marked(match.proposedMemo), lines:[[cents:-((long)refund.cents), category_id:decisions[refund.key]?.category_id ?: defaultId]]]]]
+    }
+
+    private static String marked(String memo) {
+        if (memo.startsWith('🤖 ')) return memo
+        if (memo.length() > 497) throw new IllegalStateException('Walmart category marker exceeds memo limit')
+        '🤖 ' + memo
+    }
+
+    static boolean eligible(YNABTransaction tx, Set accounts, boolean refund = false, boolean allowApprovedUncategorized = false) {
+        (tx.getApproved() == 'false' || (allowApprovedUncategorized && tx.getApproved() == 'true' && tx.category_id == null)) &&
+            tx.getDeleted() == 'false' && tx.amount != null && (refund ? tx.amount > 0 : tx.amount < 0) && tx.amount % 10 == 0 &&
             !tx.isTransfer() && tx.getCleared() in ['cleared', 'uncleared'] && !tx.subtransactions && accounts.contains(tx.account_id)
     }
 

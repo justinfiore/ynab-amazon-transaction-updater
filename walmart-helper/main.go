@@ -138,30 +138,64 @@ type guardedTransport struct {
 	bodies map[string][]byte
 }
 
+// Only fixed operation/error labels and numeric status codes may leave this boundary.
+// Never log upstream errors, URLs, headers, or response bodies.
+func diagnostic(operation, failure string, status int) {
+	fmt.Fprintf(os.Stderr, "walmart_helper operation=%s failure=%s http_status=%d\n", operation, failure, status)
+}
+
 func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	operation := "unknown"
+	for _, candidate := range []string{"PurchaseHistoryV2", "getOrder", "getOrderLedger"} {
+		if strings.Contains(r.URL.Path, "/"+candidate+"/") {
+			operation = candidate
+			break
+		}
+	}
 	if r.URL.Scheme != "https" || r.URL.Host != "www.walmart.com" || r.URL.User != nil ||
 		!strings.HasPrefix(r.URL.Path, "/orchestra/") || r.Method != "GET" {
+		diagnostic(operation, "destination_rejected", 0)
 		return nil, invalid
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	response, err := g.base.RoundTrip(r.Clone(ctx))
 	if err != nil {
+		failure := "transport_failed"
+		if errors.Is(err, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded {
+			failure = "timeout"
+		}
+		diagnostic(operation, failure, 0)
 		return nil, errors.New("request_failed")
 	}
 	defer response.Body.Close()
 	if response.StatusCode != 200 {
+		diagnostic(operation, "http_status", response.StatusCode)
 		return nil, errors.New("session_or_request_failed")
 	}
 	b, err := io.ReadAll(io.LimitReader(response.Body, maxBytes+1))
-	if err != nil || len(b) > maxBytes || !json.Valid(b) {
+	if err != nil {
+		diagnostic(operation, "body_read_failed", response.StatusCode)
+		return nil, invalid
+	}
+	if len(b) > maxBytes {
+		diagnostic(operation, "body_limit", response.StatusCode)
+		return nil, invalid
+	}
+	if !json.Valid(b) {
+		diagnostic(operation, "invalid_json", response.StatusCode)
 		return nil, invalid
 	}
 	var root struct {
 		Errors []json.RawMessage `json:"errors"`
 		Data   json.RawMessage   `json:"data"`
 	}
-	if json.Unmarshal(b, &root) != nil || len(root.Errors) != 0 {
+	if json.Unmarshal(b, &root) != nil {
+		diagnostic(operation, "invalid_schema", response.StatusCode)
+		return nil, invalid
+	}
+	if len(root.Errors) != 0 {
+		diagnostic(operation, "graphql_errors", response.StatusCode)
 		return nil, invalid
 	}
 	if strings.Contains(r.URL.Path, "/PurchaseHistoryV2/") {
@@ -177,10 +211,12 @@ func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 		if json.Unmarshal(b, &envelope) != nil || envelope.Data == nil || envelope.Data.History == nil ||
 			envelope.Data.History.Groups == nil || envelope.Data.History.Page == nil || len(envelope.Data.History.Page.Next) == 0 {
+			diagnostic(operation, "history_schema", response.StatusCode)
 			return nil, errors.New("history_failed")
 		}
 		var cursor string
 		if json.Unmarshal(envelope.Data.History.Page.Next, &cursor) != nil {
+			diagnostic(operation, "history_schema", response.StatusCode)
 			return nil, errors.New("history_failed")
 		}
 	}
@@ -213,6 +249,7 @@ func run(r Request) (Envelope, error) {
 		return result, invalid
 	}
 	if err = protectedSession(r.Session); err != nil {
+		diagnostic("session", "session_unavailable", 0)
 		return result, err
 	}
 	transport := &guardedTransport{http.DefaultTransport.(*http.Transport).Clone(), map[string][]byte{}}
@@ -220,6 +257,7 @@ func run(r Request) (Envelope, error) {
 	http.DefaultTransport = transport
 	client, err := walmart.NewWalmartClient(walmart.ClientConfig{CookieFile: r.Session, MaxRetries: -1})
 	if err != nil {
+		diagnostic("client", "initialization_failed", 0)
 		return result, invalid
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
@@ -230,6 +268,7 @@ func run(r Request) (Envelope, error) {
 	for page := 0; page < r.Pages; page++ {
 		history, e := client.GetPurchaseHistory(ctx, walmart.PurchaseHistoryRequest{Cursor: cursor, Limit: 20, MinTimestamp: &min})
 		if e != nil {
+			diagnostic("PurchaseHistoryV2", "client_failed", 0)
 			return result, errors.New("history_failed")
 		}
 		for _, summary := range history.Data.OrderHistoryV2.OrderGroups {
@@ -242,13 +281,16 @@ func run(r Request) (Envelope, error) {
 			}
 			transport.bodies = map[string][]byte{}
 			if _, e = client.GetOrderWithGroup(ctx, summary.OrderID, summary.GroupID, false); e != nil {
+				diagnostic("getOrder", "client_failed", 0)
 				return result, errors.New("details_failed")
 			}
 			if _, e = client.GetOrderLedger(ctx, summary.OrderID); e != nil {
+				diagnostic("getOrderLedger", "client_failed", 0)
 				return result, errors.New("ledger_failed")
 			}
 			order, e := evidence(transport.body("getOrder"), transport.body("getOrderLedger"))
 			if e != nil {
+				diagnostic("evidence", "invalid_schema", 0)
 				return result, e
 			}
 			result.Orders = append(result.Orders, order)
@@ -258,6 +300,7 @@ func run(r Request) (Envelope, error) {
 			return result, nil
 		}
 	}
+	diagnostic("PurchaseHistoryV2", "pagination_limit", 0)
 	return result, errors.New("pagination_limit")
 }
 func main() {
