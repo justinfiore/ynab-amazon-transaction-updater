@@ -204,12 +204,20 @@ class WalmartEnrichment {
 
     private void learn(Map state, YNABService ynab) {
         Map observations = [:].withDefault { [] }
-        state.plans.findAll { key, value -> key.startsWith(config.ynabBudgetId + '/') }.values().each { entry ->
+        def plans = state.plans.findAll { key, value -> key.startsWith(config.ynabBudgetId + '/') }.values()
+        boolean hasResults = plans.any { entry ->
+            (entry.plan.operations ?: []).any { op ->
+                def saved = entry.operations[op.transaction_id]
+                saved?.allocation && saved.result
+            }
+        }
+        Map transactions = hasResults ? ynab.getLearningTransactions() : [:]
+        plans.each { entry ->
             Map fragments = [:].withDefault { [] }
             (entry.plan.operations ?: []).each { op ->
                 String id=op.transaction_id
                 Map saved=entry.operations[id] ?: [lines:op.lines ?: []]
-                Map current = saved.allocation && saved.result ? ynab.getWalmartTransaction(id) : null
+                Map current = saved.allocation && saved.result ? transactions[id] : null
                 def originalRows = saved.result ? (saved.result.subtransactions ?: [saved.result]) : []
                 def currentRows = current ? (current.subtransactions ?: [current]) : []
                 boolean intact = current?.approved == true && !current.deleted &&

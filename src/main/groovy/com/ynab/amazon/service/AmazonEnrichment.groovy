@@ -422,9 +422,11 @@ class AmazonEnrichment {
     private void learn(Map state, YNABService ynab) {
         Map observations = [:].withDefault { [] }
         Map originals = [:].withDefault { [] }
-        state.plans.findAll { k,v -> k.startsWith(config.ynabBudgetId + '/') && v.result &&
-            (v.status in ['category','split'] || (v.status == 'fallback' && v.result.subtransactions)) }.each { key,entry ->
-            Map current = ynab.getTransaction(entry.result.id)
+        Map plans = state.plans.findAll { k,v -> k.startsWith(config.ynabBudgetId + '/') && v.result &&
+            (v.status in ['category','split'] || (v.status == 'fallback' && v.result.subtransactions)) }
+        Map transactions = plans ? ynab.getLearningTransactions() : [:]
+        plans.each { key,entry ->
+            Map current = transactions[entry.result.id]
             Map before = entry.result
             boolean intact = current?.approved == true && !current.deleted &&
                 ['id','amount','date','account_id','payee_id','payee_name','memo','import_id','cleared','flag_color'].every { current[it] == before[it] }

@@ -229,7 +229,11 @@ class YNABAmazonTransactionUpdater_UT extends Specification {
                 writes[id] << changes.memo
                 transactions.find { it.id == id }.memo = changes.memo
             }
-            updateTransactionMemo(_, _) >> { String id, String memo -> writes[id] << memo; true }
+            updateTransactionMemos(_) >> { args ->
+                List<Map> updates = args[0]
+                updates.each { update -> writes[update.id] << update.memo }
+                updates*.id as Set
+            }
         }
 
         when:

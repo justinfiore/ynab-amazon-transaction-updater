@@ -24,6 +24,7 @@ class WalmartService_IT extends Specification {
     boolean pendingReadback
     boolean rejectSmall
     boolean stopBeforeSmallIntent
+    int learningReads
     List<Map> categoryGroups
     String planCurrency = 'USD'
 
@@ -46,6 +47,7 @@ class WalmartService_IT extends Specification {
             }
             else if (suffix == '/categories') body = [data:[category_groups:categoryGroups]]
             else if (suffix == '/accounts') body = [data:[accounts:[[id:'account',on_budget:true,deleted:false,closed:false]]]]
+            else if (suffix == '/transactions') { learningReads++; body = [data:[transactions:remote.values() as List]] }
             else {
                 String id = suffix.tokenize('/').last()
                 if (stopBeforeSmallIntent && exchange.requestMethod=='GET' && id=='small' && writes.size()==1) {
@@ -972,6 +974,7 @@ class WalmartService_IT extends Specification {
         txs.each { remote[it.id]=WalmartFixture.remote(it) }
         def matches=new TransactionMatcher().findWalmartMatches(txs,[order])
         new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
+        assert learningReads == 0
         remote.large.approved=true
         remote.small.approved=true
         remote.small.subtransactions[0].category_id='h'
@@ -983,6 +986,7 @@ class WalmartService_IT extends Specification {
         new TransactionProcessor(config).processWalmartMatches(matches,ynab,false)
 
         then:
+        learningReads == 2
         new WalmartJournal(config.walmartJournalFile).locked(true) { state, save -> !state.mappings['plan/food'] }
     }
 
