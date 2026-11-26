@@ -5,8 +5,8 @@
 # printf 'amazon-orders==6.0.0\namazon-auth==1.1.0\nsoupsieve==4.1.3\n' | uv pip compile - --python-version 3.11.5 --universal --only-binary :all: --emit-build-options --generate-hashes --no-header --no-annotate
 # Keep Soup Sieve >=4: older Python patch releases otherwise resolve vulnerable 2.x.
 # No browser/CAPTCHA extras: do not install amazon-orders[browser] over this lock.
-# Browser login is intentionally outside this base lock; a separately audited,
-# hash-locked browser environment with maintained Playwright is required if enabled.
+# Optional manual --browser-login has a separate environment and hash lock:
+# requirements-amazon-browser.txt. Unattended fetching never enables it.
 # Never use Playwright <1.55.1 (browser installer vulnerability).
 # uv includes source hashes too; --only-binary below forbids source builds.
 --only-binary :all:

@@ -9,7 +9,7 @@ import sys
 import types
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 SPEC = importlib.util.spec_from_file_location("bridge", "scripts/amazon_orders_bridge.py")
 bridge = importlib.util.module_from_spec(SPEC)
@@ -427,8 +427,9 @@ class BridgeTests(unittest.TestCase):
         overrides = [{key: "hostile.Payload"} for key in ("constants_class", "selectors_class", "order_class", "output_class")]
         overrides += [{"auth_forms_classes": ["hostile.Payload"]}, {"language_package": "hostile"}, {"bs4_parser": "lxml"}]
         for override in overrides:
-            for source in ("file", "environment"):
-                with self.subTest(override=override, source=source), tempfile.TemporaryDirectory() as directory:
+            for source, arguments in [(source, args) for source in ("file", "environment")
+                                      for args in ([], ["--login"], ["--browser-login"])]:
+                with self.subTest(override=override, source=source, arguments=arguments), tempfile.TemporaryDirectory() as directory:
                     marker = os.path.join(directory, "executed")
                     with open(os.path.join(directory, "hostile.py"), "w") as plugin:
                         plugin.write(f"open({marker!r}, 'w').write('executed')\nclass Payload: pass\n")
@@ -437,13 +438,143 @@ class BridgeTests(unittest.TestCase):
                         json.dump(override if source == "file" else {}, config)
                     env = {"AMAZON_" + key.upper(): json.dumps(val) for key, val in override.items()} if source == "environment" else {}
                     output, errors = io.StringIO(), io.StringIO()
+                    versions = {"amazon-orders": "6.0.0", "amazon-auth": "1.1.0", "playwright": "1.65.2", "greenlet": "3.5.6"}
                     with patch.dict(os.environ, env, clear=True), patch.object(sys, "path", [directory, *sys.path]), \
+                            patch.object(sys.stdin, "isatty", return_value=True), \
+                            patch.object(bridge.importlib.metadata, "version", side_effect=versions.__getitem__), \
                             patch("requests.adapters.HTTPAdapter.send") as network, \
                             redirect_stdout(output), redirect_stderr(errors):
-                        code = bridge.main(["--config-path", config_path])
+                        code = bridge.main(["--config-path", config_path, *arguments])
                     self.assertEqual((1, ""), (code, output.getvalue()))
                     self.assertFalse(os.path.exists(marker))
                     network.assert_not_called()
+
+    @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install the reviewed requirements lock")
+    def test_manual_browser_login_refreshes_session_without_enabling_unattended_browsers(self):
+        from amazonorders.orders import AmazonOrders
+        from requests import Response
+
+        greeting = '<span id="nav-link-accountList-nav-line-1">Hello, Fixture</span>'
+        cases = [("ACIC", [], None, 3), ("JS", ["--login"], None, 3),
+                 ("ACIC", ["--browser-login"], None, 0), ("JS", ["--browser-login"], None, 0),
+                 ("ACIC", ["--browser-login"], "https://collector.invalid/steal", 1),
+                 ("ACIC", ["--browser-login"], "https://www.amazon.com.evil.invalid/steal", 1),
+                 ("ACIC", ["--browser-login"], "http://www.amazon.com/steal", 1),
+                 ("ACIC", ["--browser-login"], "https://www.amazon.com:8443/steal", 1),
+                 ("ACIC", ["--browser-login"], "redirect", 1)]
+        for challenge, arguments, blocked, expected in cases:
+            with self.subTest(challenge=challenge, arguments=arguments, blocked=blocked), tempfile.TemporaryDirectory() as directory:
+                config_path = os.path.join(directory, "config.yml")
+                cookie_path = os.path.join(directory, "cookies.json")
+                with open(config_path, "w") as config:
+                    json.dump({"cookie_jar_path": cookie_path, "max_auth_attempts": 2}, config)
+                sent = []
+
+                def network(adapter, request, **kwargs):
+                    sent.append(request)
+                    result = Response()
+                    result.status_code, result.url, result.request = 200, request.url, request
+                    if "fixture-session=refreshed" in request.headers.get("Cookie", ""):
+                        html = greeting
+                    elif "/ap/signin" in request.url:
+                        result.url = "https://www.amazon.com/ax/aaut/verify/ap/challenge"
+                        html = ('<div id="aa-challenge-page-captcha-container"></div>' if challenge == "ACIC"
+                                else "verify that you're not a robot. Enable JavaScript")
+                    else:
+                        html = "Fixture home"
+                    result._content = html.encode()
+                    return result
+
+                # Only the external browser engine is simulated: use real pinned
+                # auth forms, bridge HTTP guard, cookie persistence and CLI paths.
+                context, page, browser = MagicMock(), MagicMock(), MagicMock()
+                browser.new_context.return_value = context
+                context.new_page.return_value = page
+                page.url = "https://www.amazon.com/refreshed"
+                context.cookies.return_value = [{"name": "fixture-session", "value": "refreshed",
+                                                "domain": "www.amazon.com", "path": "/", "secure": True}]
+                handlers = {}
+                context.route.side_effect = lambda pattern, handler: handlers.update(http=handler)
+                context.route_web_socket.side_effect = lambda pattern, handler: handlers.update(socket=handler)
+
+                def navigate(url):
+                    route = MagicMock()
+                    route.request.url = url if blocked in (None, "redirect") else blocked
+                    route.fetch.return_value.status = 302 if blocked == "redirect" else 200
+                    route.abort.side_effect = ValueError("Fixture blocked request")
+                    handlers["http"](route)
+                    # Check the egress contract, not an unguarded browser redirect.
+                    self.assertEqual(0, route.fetch.call_args.kwargs["max_redirects"])
+                    socket = MagicMock()
+                    handlers["socket"](socket)
+                    self.assertTrue(socket.close.called)
+
+                page.goto.side_effect = navigate
+                page.wait_for_url.side_effect = lambda predicate: self.assertTrue(predicate(page.url))
+                engine = MagicMock()
+                engine.__enter__.return_value.chromium.launch.return_value = browser
+                api = types.ModuleType("playwright.sync_api")
+                def start_driver():
+                    self.assertFalse(set(env) & set(os.environ))
+                    return engine
+                api.sync_playwright = MagicMock(side_effect=start_driver)
+                api.TimeoutError = TimeoutError
+                playwright = types.ModuleType("playwright")
+                playwright.__spec__ = importlib.util.spec_from_loader("playwright", loader=None)
+                modules = {"playwright": playwright, "playwright.sync_api": api}
+                output, errors = io.StringIO(), io.StringIO()
+                env = {"AMAZON_PASSWORD": "fixture-password", "YNAB_API_KEY": "fixture-ynab",
+                       "HTTPS_PROXY": "http://proxy.invalid", "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH": "/hostile",
+                       "PLAYWRIGHT_NODEJS_PATH": "/hostile-node", "NODE_OPTIONS": "--require=/hostile",
+                       "NODE_TLS_REJECT_UNAUTHORIZED": "0", "NODE_EXTRA_CA_CERTS": "/hostile-ca"}
+                versions = {"amazon-orders": "6.0.0", "amazon-auth": "1.1.0", "playwright": "1.65.2", "greenlet": "3.5.6"}
+                with patch.dict(os.environ, env, clear=True), patch.dict(sys.modules, modules), \
+                        patch.object(bridge.importlib.metadata, "version", side_effect=versions.__getitem__), \
+                        patch.object(sys.stdin, "isatty", return_value=True), \
+                        patch("requests.adapters.HTTPAdapter.send", autospec=True, side_effect=network), \
+                        patch.object(AmazonOrders, "_build_orders_async", new_callable=AsyncMock, return_value=([], None, None, None)), \
+                        patch("builtins.input", return_value="fixture@example.invalid"), \
+                        patch.object(bridge.getpass, "getpass", return_value="fixture-password"), \
+                        redirect_stdout(output), redirect_stderr(errors):
+                    code = bridge.main(["--config-path", config_path, *arguments])
+                    self.assertEqual(expected, code, errors.getvalue())
+                    self.assertEqual(env, dict(os.environ))
+                    if code == 0:
+                        self.assertIn("Amazon session saved", output.getvalue())
+                        self.assertTrue(os.path.exists(cookie_path))
+                        if os.name == "posix":
+                            self.assertEqual(0o600, os.stat(cookie_path).st_mode & 0o777)
+                        options = engine.__enter__.return_value.chromium.launch.call_args.kwargs
+                        self.assertTrue(options["chromium_sandbox"])
+                        self.assertFalse(set(env) & set(options["env"]))
+                        self.assertEqual("block", browser.new_context.call_args.kwargs["service_workers"])
+                        output.seek(0)
+                        output.truncate()
+                        # Scheduled fetching must reuse the saved cookie without
+                        # starting a browser or asking for credentials.
+                        api.sync_playwright.side_effect = AssertionError("unattended browser")
+                        code = bridge.main(["--config-path", config_path])
+                        self.assertEqual(0, code, errors.getvalue())
+                        self.assertEqual([], json.loads(output.getvalue())["orders"])
+                        self.assertIn("fixture-session=refreshed", sent[-1].headers.get("Cookie", ""))
+                    else:
+                        self.assertEqual("", output.getvalue())
+                    if "--browser-login" not in arguments:
+                        api.sync_playwright.assert_not_called()
+                self.assertNotIn("fixture-password", output.getvalue() + errors.getvalue())
+                self.assertNotIn("fixture-ynab", output.getvalue() + errors.getvalue())
+
+    def test_browser_login_requires_terminal_and_reviewed_dependencies_before_session_access(self):
+        for terminal, browser_version in [(False, "1.65.2"), (True, "1.54.0")]:
+            output, errors = io.StringIO(), io.StringIO()
+            versions = {"amazon-orders": "6.0.0", "amazon-auth": "1.1.0", "playwright": browser_version}
+            with self.subTest(terminal=terminal, version=browser_version), \
+                    patch.object(sys.stdin, "isatty", return_value=terminal), \
+                    patch.object(bridge.importlib.metadata, "version", side_effect=versions.__getitem__), \
+                    patch.object(bridge, "create_session", side_effect=AssertionError("session accessed")), \
+                    redirect_stdout(output), redirect_stderr(errors):
+                self.assertEqual(1, bridge.main(["--config-path", "unused.yml", "--browser-login"]))
+                self.assertEqual("", output.getvalue())
 
     @unittest.skipUnless(importlib.util.find_spec("amazonorders"), "install the reviewed requirements lock")
     def test_real_detail_layout_reconciles_adjustments_and_funding_but_rejects_unknowns(self):
