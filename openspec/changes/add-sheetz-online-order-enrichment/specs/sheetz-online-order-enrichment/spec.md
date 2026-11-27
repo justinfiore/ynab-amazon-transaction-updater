@@ -83,6 +83,11 @@ With category writes enabled, the updater SHALL assign the full outflow for a un
 
 After a successful, validated fetch, the updater SHALL treat eligible unapproved Sheetz outflows with zero candidates as presumed non-fuel/non-online. With memo writes enabled it SHALL add `🤖❓ No matching Sheetz online or fuel purchase found` once, preserving user text and the memo limit. With category writes enabled it SHALL use the existing category ID configured as `sheetz.unmatched_default_category_id`, or explicitly send `category_id: null` if unset. It SHALL NOT use a code default.
 
+#### Scenario: A recent outflow has no matching receipt
+
+- **WHEN** a successful, validated fetch yields zero candidates for an eligible unapproved outflow whose three-day matching window is still open
+- **THEN** the updater applies the configured fallback in the same run without waiting for the window to close
+
 #### Scenario: YNAB prefilled a category and no default is configured
 
 - **WHEN** an unchanged, unsplit transaction qualifies for the fallback and category writes are enabled
