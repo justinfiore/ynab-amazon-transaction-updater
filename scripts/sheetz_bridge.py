@@ -15,11 +15,14 @@ from urllib.parse import urlparse
 
 URL = 'https://orderz.sheetz.com/mbff/v1/receipt/api/filtered-receipts?orderType=ANYWHERE&orderType=RETAIL_FUEL'
 LIMIT = 8 * 1024 * 1024
+DIAGNOSTIC_PATH_SEGMENTS = frozenset(('api', 'auth', 'authentication', 'authorize', 'identity', 'login',
+                                      'oauth', 'session', 'signin', 'token', 'user', 'users', 'v1', 'v2'))
 
 
 class BridgeError(ValueError):
-    def __init__(self, code):
+    def __init__(self, code, diagnostic=None):
         self.code = code
+        self.diagnostic = diagnostic
 
 
 def trusted_origin(url):
@@ -65,17 +68,61 @@ def valid(token):
         return False
 
 
-def handle_cookie_dialog(page):
+def handle_cookie_dialog(page, counts):
     # The consent dialog can arrive after the form is visible. Playwright checks
     # this handler during actionability waits without retrying form submissions.
     decline = page.get_by_role('dialog').get_by_role('button', name='DO NOT ACCEPT', exact=True)
-    page.add_locator_handler(decline, lambda button: button.click())
+    def dismiss(button):
+        button.click()
+        counts['dismissals'] = min(counts['dismissals'] + 1, 999)
+    page.add_locator_handler(decline, dismiss)
+
+
+def failure_event(response):
+    """Describe a failed request without logging arbitrary path segments or secrets."""
+    try:
+        request = response.request
+        parsed = urlparse(response.url)
+        host = parsed.hostname or ''
+        origin = 'orders' if host == 'orders.sheetz.com' else 'orderz' if host == 'orderz.sheetz.com' else 'sheetz' if host.endswith('.sheetz.com') else 'other'
+        method = request.method if request.method in ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS') else 'OTHER'
+        kind = request.resource_type if request.resource_type in ('xhr', 'fetch', 'document') else 'other'
+        segments = [part.lower() if part.lower() in DIAGNOSTIC_PATH_SEGMENTS else 'redacted'
+                    for part in parsed.path.split('/') if part][:8]
+        path = '/'.join(segments) or 'root'
+        return f'{response.status}:{method}:{kind}:{origin}:{path}'
+    except Exception:
+        return None
+
+
+def result_diagnostic(page, network):
+    # Only fixed flags and allowlisted request metadata leave the browser.
+    try:
+        state = page.evaluate('''() => {
+            const visible = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+            const text = document.body?.innerText || '';
+            return {
+                password: [...document.querySelectorAll('input[type=password]')].some(visible),
+                alert: [...document.querySelectorAll('[role=alert]')].some(visible),
+                challenge: /captcha|verification code/i.test(text)
+            };
+        }''')
+        flags = [trusted_origin(page.url), state['password'], state['alert'], state['challenge'],
+                 network['http4xx'], network['http5xx'], network['failed'],
+                 network['xhr400'], network['xhr401'], network['xhr403'], network['xhr404'], network['xhr429']]
+        flags_text = ' '.join(f'{name}={str(bool(value)).lower()}' for name, value in zip(
+            ('trusted_origin', 'password_visible', 'alert_visible', 'challenge_text', 'http4xx', 'http5xx', 'request_failed',
+             'xhr400', 'xhr401', 'xhr403', 'xhr404', 'xhr429'), flags))
+        return flags_text + ' events=' + (','.join(network['events']) or 'none')
+    except Exception:
+        return None
 
 
 def sign_in(credentials):
     from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
     stage = 'signin_browser'
+    counts = {'dismissals': 0}
     with sync_playwright() as playwright:
         # Use the full Chromium build in headless mode, not the separate headless shell.
         browser = playwright.chromium.launch(channel='chromium', headless=True)
@@ -86,7 +133,7 @@ def sign_in(credentials):
             finally:
                 probe.close()
             page = browser.new_page(user_agent=user_agent, locale='en-US')
-            handle_cookie_dialog(page)
+            handle_cookie_dialog(page, counts)
             page.route('**/*', lambda route: guard_navigation(route, page.main_frame))
             page.set_default_timeout(15000)
             stage = 'signin_page'
@@ -112,6 +159,22 @@ def sign_in(credentials):
             password.wait_for(state='visible')
             check()
             password.fill(credentials['password'])
+            network = dict.fromkeys(('http4xx', 'http5xx', 'failed', 'xhr400', 'xhr401', 'xhr403', 'xhr404', 'xhr429'), False)
+            network['events'] = []
+            def observe_response(response):
+                if 400 <= response.status <= 599 and len(network['events']) < 8:
+                    event = failure_event(response)
+                    if event:
+                        network['events'].append(event)
+                if 400 <= response.status < 500:
+                    network['http4xx'] = True
+                    key = f'xhr{response.status}'
+                    if response.request.resource_type in ('xhr', 'fetch') and key in network:
+                        network[key] = True
+                elif response.status >= 500:
+                    network['http5xx'] = True
+            page.on('response', observe_response)
+            page.on('requestfailed', lambda _: network.update(failed=True))
             stage = 'signin_password_submit'
             page.locator('form').filter(has=password).locator('button[type=submit]').click()
             stage = 'signin_result'
@@ -122,8 +185,10 @@ def sign_in(credentials):
                 raise BridgeError('signin_token')
             return token
         except PlaywrightTimeout:
-            raise BridgeError(stage + '_timeout') from None
+            diagnostic = result_diagnostic(page, network) if stage == 'signin_result' else None
+            raise BridgeError(stage + '_timeout', diagnostic) from None
         finally:
+            print(f"sheetz_cookie_dismissals={counts['dismissals']}", file=sys.stderr)
             browser.close()
 
 
@@ -197,7 +262,7 @@ if __name__ == '__main__':
     try:
         run(json.load(sys.stdin))
     except BridgeError as error:
-        print(error.code, file=sys.stderr)
+        print(error.code + (' ' + error.diagnostic if error.diagnostic else ''), file=sys.stderr)
         sys.exit(1)
     except Exception:
         print('bridge_error', file=sys.stderr)

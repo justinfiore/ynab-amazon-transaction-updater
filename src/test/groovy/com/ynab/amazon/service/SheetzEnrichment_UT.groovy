@@ -17,6 +17,16 @@ class SheetzEnrichment_UT extends Specification {
          flag_color:null, transfer_account_id:null, subtransactions:[]]
     }
 
+    def 'source permits only fixed safe timeout diagnostics'() {
+        given:
+        def diagnostic = 'signin_result_timeout trusted_origin=true password_visible=true alert_visible=false challenge_text=false http4xx=true http5xx=false request_failed=false xhr400=false xhr401=true xhr403=false xhr404=false xhr429=false events=401:POST:fetch:orders:auth/redacted'
+        expect:
+        SheetzSource.safeError(diagnostic, 'FAILED') == diagnostic
+        SheetzSource.safeError(diagnostic + ' secret', 'FAILED') == 'FAILED'
+        SheetzSource.safeError(diagnostic.replace('redacted', 'private-password'), 'FAILED') == 'FAILED'
+        SheetzSource.safeError('signin_result_timeout', 'FAILED') == 'signin_result_timeout'
+    }
+
     def 'exact cents and inclusive date boundary with shared ambiguity'() {
         given:
         def online = SheetzEnrichment.normalizeResponse([orders:[record()]]).orders

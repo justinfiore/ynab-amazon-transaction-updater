@@ -125,13 +125,42 @@ class BridgeTest(unittest.TestCase):
         page = Mock()
         dialog = page.get_by_role.return_value
         decline = dialog.get_by_role.return_value
-        bridge.handle_cookie_dialog(page)
+        counts = {'dismissals': 0}
+        bridge.handle_cookie_dialog(page, counts)
         page.get_by_role.assert_called_once_with('dialog')
         dialog.get_by_role.assert_called_once_with('button', name='DO NOT ACCEPT', exact=True)
         locator, handler = page.add_locator_handler.call_args.args
         self.assertIs(locator, decline)
         handler(decline)
-        decline.click.assert_called_once_with()
+        handler(decline)
+        self.assertEqual(decline.click.call_count, 2)
+        self.assertEqual(counts['dismissals'], 2)
+        decline.click.side_effect = RuntimeError('blocked')
+        with self.assertRaises(RuntimeError):
+            handler(decline)
+        self.assertEqual(counts['dismissals'], 2)
+
+    def test_result_timeout_diagnostics_contain_only_boolean_flags(self):
+        page = Mock()
+        page.url = 'https://orders.sheetz.com/auth?private=secret'
+        page.evaluate.return_value = {'password': True, 'alert': False, 'challenge': True}
+        diagnostic = bridge.result_diagnostic(page, {'http4xx': True, 'http5xx': False, 'failed': False,
+                                                      'xhr400': True, 'xhr401': False, 'xhr403': False,
+                                                      'xhr404': False, 'xhr429': False, 'events': ['401:POST:fetch:orders:auth/redacted']})
+        self.assertEqual(diagnostic, 'trusted_origin=true password_visible=true alert_visible=false '
+                         'challenge_text=true http4xx=true http5xx=false request_failed=false '
+                         'xhr400=true xhr401=false xhr403=false xhr404=false xhr429=false events=401:POST:fetch:orders:auth/redacted')
+        self.assertNotIn('secret', diagnostic)
+        page.evaluate.side_effect = RuntimeError('sensitive error')
+        self.assertIsNone(bridge.result_diagnostic(page, {}))
+
+    def test_failure_event_redacts_credentials_and_untrusted_path_segments(self):
+        response = Mock()
+        response.status = 401
+        response.url = 'https://orders.sheetz.com/auth/private-password?password=private-password'
+        response.request.method = 'POST'
+        response.request.resource_type = 'fetch'
+        self.assertEqual(bridge.failure_event(response), '401:POST:fetch:orders:auth/redacted')
 
     def test_sign_in_submits_password_form_once(self):
         api = types.ModuleType('playwright.sync_api')
