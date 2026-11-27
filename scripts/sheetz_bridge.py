@@ -65,14 +65,28 @@ def valid(token):
         return False
 
 
+def handle_cookie_dialog(page):
+    # The consent dialog can arrive after the form is visible. Playwright checks
+    # this handler during actionability waits without retrying form submissions.
+    decline = page.get_by_role('dialog').get_by_role('button', name='DO NOT ACCEPT', exact=True)
+    page.add_locator_handler(decline, lambda button: button.click())
+
+
 def sign_in(credentials):
     from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
     stage = 'signin_browser'
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
+        # Use the full Chromium build in headless mode, not the separate headless shell.
+        browser = playwright.chromium.launch(channel='chromium', headless=True)
         try:
-            page = browser.new_page()
+            probe = browser.new_page()
+            try:
+                user_agent = probe.evaluate('navigator.userAgent').replace('HeadlessChrome/', 'Chrome/')
+            finally:
+                probe.close()
+            page = browser.new_page(user_agent=user_agent, locale='en-US')
+            handle_cookie_dialog(page)
             page.route('**/*', lambda route: guard_navigation(route, page.main_frame))
             page.set_default_timeout(15000)
             stage = 'signin_page'
@@ -90,6 +104,7 @@ def sign_in(credentials):
             username.wait_for(state='visible')
             check()
             username.fill(credentials['username'])
+            stage = 'signin_username_submit'
             page.get_by_role('button', name='SIGN IN / REGISTER').click()
             check()
             stage = 'signin_password'
@@ -97,7 +112,8 @@ def sign_in(credentials):
             password.wait_for(state='visible')
             check()
             password.fill(credentials['password'])
-            page.get_by_role('button', name='SIGN IN', exact=True).click()
+            stage = 'signin_password_submit'
+            page.locator('form').filter(has=password).locator('button[type=submit]').click()
             stage = 'signin_result'
             page.wait_for_function("() => !!sessionStorage.getItem('authToken')", timeout=20000)
             check()

@@ -9,7 +9,8 @@ import org.slf4j.LoggerFactory
 class SheetzSource {
     private static final LOG = LoggerFactory.getLogger(SheetzSource)
     private static final Set SAFE_ERRORS = ['signin_page_http', 'signin_redirect', 'signin_challenge', 'signin_token',
-        'signin_page_timeout', 'signin_username_timeout', 'signin_password_timeout', 'signin_result_timeout',
+        'signin_page_timeout', 'signin_username_timeout', 'signin_username_submit_timeout', 'signin_password_timeout',
+        'signin_password_submit_timeout', 'signin_result_timeout',
         'receipt_401', 'receipt_403', 'receipt_http', 'receipt_invalid', 'credential_token_alias', 'bridge_error'] as Set
 
     static Map fetch(Configuration config) {

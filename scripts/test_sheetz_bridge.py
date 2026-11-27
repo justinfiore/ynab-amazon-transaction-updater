@@ -7,8 +7,9 @@ import os
 from pathlib import Path
 import tempfile
 import time
+import types
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import sheetz_bridge as bridge
 
@@ -101,6 +102,57 @@ class BridgeTest(unittest.TestCase):
         route.continue_.assert_not_called()
         self.assertFalse(bridge.trusted_origin('https://orders.sheetz.com:444/auth'))
         self.assertTrue(bridge.trusted_origin('https://orders.sheetz.com/auth'))
+
+    def test_sign_in_uses_full_headless_chromium_and_browser_version_user_agent(self):
+        api = types.ModuleType('playwright.sync_api')
+        api.TimeoutError = type('PlaywrightTimeout', (Exception,), {})
+        manager = MagicMock()
+        api.sync_playwright = Mock(return_value=manager)
+        browser = manager.__enter__.return_value.chromium.launch.return_value
+        probe, page = Mock(), Mock()
+        probe.evaluate.return_value = 'Mozilla/5.0 HeadlessChrome/159.0.0.0 Safari/537.36'
+        browser.new_page.side_effect = [probe, page]
+        page.goto.return_value.status = 404
+        with patch.dict('sys.modules', {'playwright': types.ModuleType('playwright'), 'playwright.sync_api': api}):
+            with self.assertRaises(bridge.BridgeError) as error:
+                bridge.sign_in({'username': 'synthetic', 'password': 'synthetic'})
+        self.assertEqual(error.exception.code, 'signin_page_http')
+        manager.__enter__.return_value.chromium.launch.assert_called_once_with(channel='chromium', headless=True)
+        browser.new_page.assert_any_call(user_agent='Mozilla/5.0 Chrome/159.0.0.0 Safari/537.36', locale='en-US')
+        page.get_by_role.assert_called_once_with('dialog')
+
+    def test_cookie_handler_only_declines_the_named_consent_button(self):
+        page = Mock()
+        dialog = page.get_by_role.return_value
+        decline = dialog.get_by_role.return_value
+        bridge.handle_cookie_dialog(page)
+        page.get_by_role.assert_called_once_with('dialog')
+        dialog.get_by_role.assert_called_once_with('button', name='DO NOT ACCEPT', exact=True)
+        locator, handler = page.add_locator_handler.call_args.args
+        self.assertIs(locator, decline)
+        handler(decline)
+        decline.click.assert_called_once_with()
+
+    def test_sign_in_submits_password_form_once(self):
+        api = types.ModuleType('playwright.sync_api')
+        api.TimeoutError = type('PlaywrightTimeout', (Exception,), {})
+        manager = MagicMock()
+        api.sync_playwright = Mock(return_value=manager)
+        browser = manager.__enter__.return_value.chromium.launch.return_value
+        probe, page = MagicMock(), MagicMock()
+        browser.new_page.side_effect = [probe, page]
+        probe.evaluate.return_value = 'HeadlessChrome/1'
+        page.url = 'https://orders.sheetz.com/auth'
+        page.goto.return_value.status = 200
+        page.get_by_text.return_value.count.return_value = 0
+        page.evaluate.return_value = self.good
+        password = page.get_by_label.return_value
+        with patch.dict('sys.modules', {'playwright': types.ModuleType('playwright'), 'playwright.sync_api': api}):
+            self.assertEqual(bridge.sign_in({'username': 'synthetic', 'password': 'synthetic'}), self.good)
+        form = page.locator.return_value.filter
+        form.assert_called_once_with(has=password)
+        form.return_value.locator.assert_called_once_with('button[type=submit]')
+        form.return_value.locator.return_value.click.assert_called_once_with()
 
     def test_credential_and_token_aliases_never_reach_sign_in(self):
         directory_alias = self.root / 'alias'
