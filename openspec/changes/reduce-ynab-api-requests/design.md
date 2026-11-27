@@ -4,6 +4,8 @@ The [YNAB developer guide](https://api.ynab.com/#rate-limiting) documents 200 re
 
 ## Current inventory and decisions
 
+If the published contract and offline tests leave category clearing or split semantics uncertain, verify those operations in a disposable YNAB plan. Obtain separate approval before making any live test writes; never use the real budget for these checks. Until verified, keep those operations on the guarded individual-write path.
+
 Production YNAB transport is in `YNABService`. This is the pre-Sheetz inventory; refresh it against the shipped implementation and enumerate exact call counts before optimizing.
 
 | Current call | Consumers and action |
