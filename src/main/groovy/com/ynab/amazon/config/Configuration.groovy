@@ -56,6 +56,17 @@ class Configuration {
     String walmartJournalFile = 'walmart-journal.json'
     Map<String, String> walmartPaymentAccounts = [:]
     Map walmartCategorization = [categories: []]
+
+    boolean sheetzEnabled = false
+    boolean sheetzMemoWrites = false
+    boolean sheetzCategoryWrites = false
+    String sheetzPythonExecutable
+    String sheetzBridgeScript = 'scripts/sheetz_bridge.py'
+    String sheetzCredentialsFile
+    String sheetzTokenFile
+    String sheetzGasolineDefaultCategoryId
+    String sheetzUnmatchedDefaultCategoryId
+    List<String> sheetzAccounts = []
     
     Configuration() {
         // Do not auto-load from file by default to keep tests deterministic.
@@ -138,6 +149,22 @@ class Configuration {
             this.walmartJournalFile = resolvePath(config.walmart?.journal_file) ?: this.walmartJournalFile
             this.walmartPaymentAccounts = config.walmart?.payment_accounts ?: [:]
             this.walmartCategorization = config.walmart?.categorization ?: this.walmartCategorization
+
+            ['enabled', 'memo_writes', 'category_writes'].each { key ->
+                def value = config.sheetz?.get(key)
+                if (value != null && !(value instanceof Boolean)) throw new IllegalArgumentException("sheetz.${key} must be boolean")
+            }
+            this.sheetzEnabled = config.sheetz?.enabled ?: false
+            this.sheetzMemoWrites = config.sheetz?.memo_writes ?: false
+            this.sheetzCategoryWrites = config.sheetz?.category_writes ?: false
+            this.sheetzPythonExecutable = resolvePath(config.sheetz?.python_executable)
+            this.sheetzBridgeScript = resolvePath(config.sheetz?.bridge_script) ?: this.sheetzBridgeScript
+            this.sheetzCredentialsFile = resolvePath(config.sheetz?.credentials_file)
+            this.sheetzTokenFile = resolvePath(config.sheetz?.token_file)
+            this.sheetzGasolineDefaultCategoryId = config.sheetz?.gasoline_default_category_id
+            this.sheetzUnmatchedDefaultCategoryId = config.sheetz?.unmatched_default_category_id
+            if (config.sheetz?.accounts != null && !(config.sheetz.accounts instanceof List)) throw new IllegalArgumentException('sheetz.accounts must be a list')
+            this.sheetzAccounts = config.sheetz?.accounts ?: []
             
             // Configure SimpleLogger - must be set before any logger instances are created
             System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", this.logLevel)

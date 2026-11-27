@@ -70,11 +70,13 @@ class YNABService {
     /**
      * Fetch all transactions for the configured account
      */
-    List<YNABTransaction> getTransactions() {
+    List<YNABTransaction> getTransactions() { getTransactions(config.lookBackDays) }
+
+    List<YNABTransaction> getTransactions(int lookBackDays) {
         try {
-            def lookBackDate = LocalDate.now().minusDays(config.lookBackDays)
+            def lookBackDate = LocalDate.now().minusDays(lookBackDays)
             String sinceDate = lookBackDate.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
-            logger.info("Looking back ${config.lookBackDays} days for YNAB transactions (since ${sinceDate})")
+            logger.info("Looking back ${lookBackDays} days for YNAB transactions (since ${sinceDate})")
             String url = "${config.ynabBaseUrl}/budgets/${config.ynabBudgetId}/transactions?since_date=${sinceDate}"
             
             HttpGet request = new HttpGet(url)
@@ -99,7 +101,7 @@ class YNABService {
                 transaction.id = transactionJson.get("id")?.asText()
                 transaction.date = transactionJson.get("date")?.asText()
                 transaction.amount = transactionJson.get("amount")?.asLong()
-                transaction.memo = transactionJson.get("memo")?.asText()
+                transaction.memo = transactionJson.get('memo')?.isNull() ? null : transactionJson.get('memo')?.asText()
                 transaction.payee_name = transactionJson.get("payee_name")?.asText()
                 transaction.payee_id = transactionJson.get('payee_id')?.isNull() ? null : transactionJson.get('payee_id')?.asText()
                 transaction.flag_color = transactionJson.get('flag_color')?.isNull() ? null : transactionJson.get('flag_color')?.asText()

@@ -12,3 +12,7 @@
 - [ ] 2.4 Include verified fuel records in the same match candidates as online orders. Add `sheetz.gasoline_default_category_id` to YAML configuration and the example config, and categorize matched fuel without classifier calls or splits.
 - [ ] 2.5 Verify disabled, expired-session, date-boundary, ambiguous-match, memo link fallback and guarded-write behavior offline, including fuel versus online-order ambiguity and missing or invalid gasoline categories. Ensure Amazon and Walmart behavior is unchanged.
 - [ ] 2.6 Add `sheetz.unmatched_default_category_id` to YAML and the example config. Implement the guarded unmatched memo, configured category assignment and explicit category clearing. Verify approved, split, failed-fetch and ambiguous cases receive no fallback writes.
+
+## Implementation gate
+
+Online item classification and splits remain disabled until task 1.2 independently qualifies item, combo and adjustment arithmetic; task 2.3 remains open. History depth and store scope remain unknown. Malformed items are logged and omitted while usable receipts are retained; if a receipt cannot be matched due to invalid identity, date or amount, the partial feed is preview-only and no unmatched fallback is proposed. Session restoration and receipt formats have only synthetic offline coverage in this implementation; live qualification and the remaining end-to-end checks must be completed before closing the affected tasks.

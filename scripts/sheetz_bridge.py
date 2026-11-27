@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""Read-only Sheetz receipt bridge. Paths arrive on stdin; secrets never appear in arguments."""
+import base64
+from decimal import Decimal
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from urllib.parse import urlparse
+
+URL = 'https://orderz.sheetz.com/mbff/v1/receipt/api/filtered-receipts?orderType=ANYWHERE&orderType=RETAIL_FUEL'
+LIMIT = 8 * 1024 * 1024
+
+
+class BridgeError(ValueError):
+    def __init__(self, code):
+        self.code = code
+
+
+def trusted_origin(url):
+    try:
+        parsed = urlparse(url)
+        return (parsed.scheme == 'https' and parsed.hostname == 'orders.sheetz.com' and
+                parsed.port in (None, 443) and parsed.username is None and parsed.password is None)
+    except ValueError:
+        return False
+
+
+def guard_navigation(route, main_frame):
+    request = route.request
+    if request.is_navigation_request() and request.frame == main_frame and not trusted_origin(request.url):
+        route.abort()
+    else:
+        route.continue_()
+
+
+def distinct_paths(settings):
+    credentials = Path(settings['credentials_file']).expanduser()
+    token = Path(settings['token_file']).expanduser()
+    if credentials.resolve() == token.resolve() or (credentials.exists() and token.exists() and os.path.samefile(credentials, token)):
+        raise BridgeError('credential_token_alias')
+    return token.resolve()
+
+
+def protected(path):
+    path = Path(path).expanduser()
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
+        raise ValueError('unsafe protected file')
+    if info.st_size > 65536:
+        raise ValueError('protected file too large')
+    return path.read_text(encoding='utf-8')
+
+
+def valid(token):
+    try:
+        part = token.removeprefix('Bearer ').split('.')[1]
+        return json.loads(base64.urlsafe_b64decode(part + '=' * (-len(part) % 4)))['exp'] > time.time() + 30
+    except (ValueError, TypeError, KeyError, IndexError):
+        return False
+
+
+def sign_in(credentials):
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+
+    stage = 'signin_browser'
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.route('**/*', lambda route: guard_navigation(route, page.main_frame))
+            page.set_default_timeout(15000)
+            stage = 'signin_page'
+            response = page.goto('https://orders.sheetz.com/auth?destination=/order/history', wait_until='domcontentloaded')
+            if response and response.status >= 400:
+                raise BridgeError('signin_page_http')
+            def check():
+                if not trusted_origin(page.url):
+                    raise BridgeError('signin_redirect')
+                if page.get_by_text('captcha', exact=False).count() or page.get_by_text('verification code', exact=False).count():
+                    raise BridgeError('signin_challenge')
+            check()
+            stage = 'signin_username'
+            username = page.get_by_role('textbox', name='Email or Mobile Number')
+            username.wait_for(state='visible')
+            check()
+            username.fill(credentials['username'])
+            page.get_by_role('button', name='SIGN IN / REGISTER').click()
+            check()
+            stage = 'signin_password'
+            password = page.get_by_label('Password', exact=True)
+            password.wait_for(state='visible')
+            check()
+            password.fill(credentials['password'])
+            page.get_by_role('button', name='SIGN IN', exact=True).click()
+            stage = 'signin_result'
+            page.wait_for_function("() => !!sessionStorage.getItem('authToken')", timeout=20000)
+            check()
+            token = page.evaluate("() => sessionStorage.getItem('authToken')")
+            if not valid(token):
+                raise BridgeError('signin_token')
+            return token
+        except PlaywrightTimeout:
+            raise BridgeError(stage + '_timeout') from None
+        finally:
+            browser.close()
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def fetch(token):
+    header = token if token.startswith('Bearer ') else 'Bearer ' + token
+    request = urllib.request.Request(URL, headers={'Authorization': header, 'Accept': 'application/json'})
+    try:
+        with urllib.request.build_opener(NoRedirect).open(request, timeout=30) as response:
+            body = response.read(LIMIT + 1)
+            if len(body) > LIMIT:
+                raise ValueError('response too large')
+            return response.status, json.loads(body, parse_float=Decimal)
+    except urllib.error.HTTPError as error:
+        return error.code, None
+
+
+def run(settings):
+    token_path = distinct_paths(settings)
+    try:
+        token = protected(settings['token_file']).strip()
+    except FileNotFoundError:
+        token = ''
+    attempted = False
+    if not valid(token):
+        token = sign_in(json.loads(protected(settings['credentials_file'])))
+        attempted = True
+    status, data = fetch(token)
+    if status == 401 and not attempted:
+        token = sign_in(json.loads(protected(settings['credentials_file'])))
+        attempted = True
+        status, data = fetch(token)
+    if status != 200:
+        raise BridgeError('receipt_401' if status == 401 else 'receipt_403' if status == 403 else 'receipt_http')
+    if not isinstance(data, dict) or not isinstance(data.get('orders'), list):
+        raise BridgeError('receipt_invalid')
+    # Never emit credentials or account/payment details into the parent process.
+    result = []
+    for order in data['orders']:
+        if not isinstance(order, dict):
+            result.append(None)
+            continue
+        items = order.get('items')
+        result.append({key: order.get(key) for key in ('orderType', 'orderNumber', 'orderTime', 'pickupTime', 'orderTotal')} | {
+            'items': [{key: item.get(key) if isinstance(item.get(key), str) else None
+                       for key in ('description', 'receiptText')} if isinstance(item, dict) else None
+                      for item in items] if isinstance(items, list) else None
+        })
+        if isinstance(result[-1]['orderTotal'], Decimal):
+            result[-1]['orderTotal'] = str(result[-1]['orderTotal'])
+    if attempted:
+        path = distinct_paths(settings)
+        if path != token_path:
+            raise BridgeError('credential_token_alias')
+        fd, temporary = tempfile.mkstemp(prefix='.sheetz-token-', dir=path.parent)
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as output:
+                output.write(token)
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+    print(json.dumps({'orders': result}, separators=(',', ':'), default=lambda _: None))
+
+
+if __name__ == '__main__':
+    try:
+        run(json.load(sys.stdin))
+    except BridgeError as error:
+        print(error.code, file=sys.stderr)
+        sys.exit(1)
+    except Exception:
+        print('bridge_error', file=sys.stderr)
+        sys.exit(1)
