@@ -1,0 +1,28 @@
+## API evidence
+
+The [YNAB developer guide](https://api.ynab.com/#rate-limiting) documents 200 requests per token per rolling hour, 429 on exhaustion, and delta support for plan transaction collections via `last_knowledge_of_server`. The [endpoint reference](https://api.ynab.com/v1) documents `PATCH /plans/{plan_id}/transactions` for updating multiple existing transactions by ID, including nullable category fields and subtransactions in the request schema. The endpoint page shows 209 while the downloadable [OpenAPI YAML](https://api.ynab.com/papi/open_api_spec.yaml) shows 200. Current code only accepts 200. Verify endpoint-specific status and response semantics, batch bounds, null clearing, split creation and partial failures before enabling each operation type. Do not assume atomic success, a vendor batch limit, or conditional writes. Use a conservative bounded chunk size; perform any live contract check only with separately authorized disposable data.
+
+## Current inventory and decisions
+
+Production YNAB transport is in `YNABService`. This is the pre-Sheetz inventory; refresh it against the shipped implementation and enumerate exact call counts before optimizing.
+
+| Current call | Consumers and action |
+| --- | --- |
+| `GET /budgets/{plan}/transactions?since_date=…` | Initial sync candidate discovery. Share one plan-scoped snapshot and move to the documented `/plans` route after parity checks. Narrow the date window only if every retailer retains required coverage. |
+| `GET /plans/{plan}/transactions` | Historical category learning. Already workflow-cached and invalidated on writes. Share complete coverage across consumers; avoid redundant reloads via verified updates or a delta when correct. A recent list alone is not sufficient for older journal entries. |
+| `GET /plans/{plan}/transactions/{id}` | Walmart and Amazon recovery, preflight and read-back; include equivalent Sheetz paths after it ships. Replace repeated reads for multiple IDs only when a fresh collection/delta covers them with equivalent transaction and split fields. Retain point reads for sparse or uncovered IDs and uncertain outcomes. |
+| `GET /plans/{plan}/settings` | Currency checks, including repeated Walmart checks. Reuse one successful result per run; keep fail-closed currency checks. |
+| `GET /plans/{plan}/categories`, `GET /plans/{plan}/accounts` | Financial policies, learning context and onboarding. Preserve existing run-local sharing; avoid reads for disabled/inapplicable paths. Keep deliberate fresh revalidation after interactive selection, including Sheetz configuration if applicable. |
+| `PUT /plans/{plan}/transactions/{id}` | Guarded memo/category/split writes. Group eligible same-plan writes by bounded chunk after fresh validation, using PATCH only for verified mutation types. Retain the existing guarded PUT path for unsupported shapes. |
+| `PATCH /plans/{plan}/transactions` | Existing Amazon login-notice batch. Bring it under the same response validation, chunking and accounting; do not send a stale approval value for a memo-only update. |
+| `PATCH /budgets/{plan}/transactions/{id}` | Legacy `TransactionProcessor.updateTransactions` helper; no production caller found in the baseline. Confirm reachability after Sheetz; remove the unused route or route live callers through shared transport. |
+
+## Guarded batching
+
+Plan updates before any write; combine independent operations for a plan without changing retailer order-dependent behavior. Do not silently resolve conflicting operations on the same transaction. Freshly validate every candidate as close to dispatch as practical, then durably journal each mutation before sending its chunk. Omit untouched fields; distinguish absent category from explicit null. Confirm each ID against returned transaction details only if those details prove the expected state to the same standard as existing read-back; otherwise use a fresh shared read or targeted GET. IDs alone are insufficient. Validate amounts, categories, memo, approval and split identity according to the existing contract. After a timeout, malformed/partial response or other uncertain result, reconcile intended vs current state per transaction before retrying any unresolved work. Do not fan out an uncertain batch into individual writes. A fresh read is not an atomic compare-and-set; keep chunks bounded and retain narrower paths where required.
+
+Within a run, delta requests may refresh a known collection snapshot; they save payload, not inherently calls. Scope snapshots by plan and coverage, apply deletions, never advance the read cursor from a write response alone, and fall back to verified reads if the cursor, schema or coverage is uncertain. Do not add a persistent cache across runs in this change.
+
+## Request budget and proof
+
+Count actual outbound attempts by normalized endpoint and operation class, including onboarding and errors. Keep the existing stop-on-429 behavior across all paths. If YNAB supplies useful quota headers, use them to avoid starting a chunk without room for required verification, without assuming the entire token quota belongs to this app. Defer instead of sleeping or retrying in a loop; journal any in-flight outcomes for later reconciliation. Compare cold, no-op, single-write, multiretailer burst, onboarding, recovery and rate-limited runs against the post-Sheetz baseline with a fake YNAB server. As an illustrative dispatch-only count, 20 guarded PUTs become two PATCHes at a chunk size of 10; count preflight and confirmation too before claiming a total savings. Require fewer total calls for representative multi-write runs, no extra calls in normal no-op and single-write fixtures, and equivalent YNAB and journal outcomes.
