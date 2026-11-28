@@ -10,10 +10,13 @@ import org.apache.hc.client5.http.config.ConnectionConfig
 import org.apache.hc.core5.http.io.entity.StringEntity
 import org.apache.hc.core5.http.ContentType
 import org.apache.hc.core5.util.Timeout
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import java.util.concurrent.*
 
 /** Two fixed wire contracts. The remote service receives text, never financial authority. */
 class RemoteItemClassifier {
+    private static final Logger LOG = LoggerFactory.getLogger(RemoteItemClassifier)
     static final Map ROUTES = [openai:[endpoint:'https://api.openai.com/v1/decisions', model:'gpt-6-luna'],
         jev:[endpoint:'https://api.typesafe.ai/v1/systemone', model:'jev-1.14.0']].asImmutable()
     static final String POLICY = 'walmart-choice-v1'
@@ -131,6 +134,12 @@ class RemoteItemClassifier {
                 validated[item.itemId] = [category_id:accepted ? choices[answer.choice].id : null,
                     raw_category_id:choices[answer.choice].id, source:config.provider, model:route.model, policy:policy,
                     confidence:answer.confidence, scores:probabilities, scope:scope(categories)]
+            }
+            if (LOG.isDebugEnabled()) batch.each { item ->
+                Map decision = validated[item.itemId]
+                LOG.debug('Decision API result: {}', JSON.writeValueAsString([provider:config.provider, model:route.model,
+                    item:item.title, choice:decision.scores.max { it.value }.key, confidence:decision.confidence,
+                    probabilities:decision.scores, accepted:decision.category_id != null]))
             }
             decisions.putAll(validated) // a malformed batch never returns partial decisions
         }

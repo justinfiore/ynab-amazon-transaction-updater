@@ -1,6 +1,10 @@
 package com.ynab.amazon.service
 
 import com.ynab.amazon.model.WalmartOrderItem
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.core.read.ListAppender
+import org.slf4j.LoggerFactory
 import spock.lang.*
 import java.nio.file.*
 import java.nio.file.attribute.PosixFilePermissions
@@ -48,6 +52,38 @@ class WalmartProviders_UT extends Specification {
         (provider=='openai' ? sent[0][2].questions[0].choices*.value : sent[0][2].questions.item_0.criteria.keySet()).containsAll(['Groceries','Pet food',WalmartRemoteClassifier.ABSTAIN])
         provider=='openai' ? !sent[0][2].containsKey('state') : !sent[0][2].containsKey('input')
 
+        where:
+        provider << ['openai','jev']
+    }
+
+    @Unroll
+    def '#provider logs validated decision details at debug without credentials'() {
+        given:
+        Logger logger = (Logger) LoggerFactory.getLogger(RemoteItemClassifier)
+        def originalLevel = logger.level
+        def appender = new ListAppender()
+        appender.start()
+        logger.addAppender(appender)
+        logger.level = Level.DEBUG
+        def classifier = new WalmartRemoteClassifier(settings(provider), { a,b,c,d ->
+            [status:200, body:WalmartRemoteClassifier.JSON.writeValueAsString(envelope(provider))]
+        })
+        when:
+        classifier.classify(items, categories)
+        then:
+        def message = appender.list.find { it.formattedMessage.startsWith('Decision API result: ') }.formattedMessage
+        def result = WalmartRemoteClassifier.JSON.readValue(message.substring('Decision API result: '.size()), Map)
+        result.provider == provider
+        result.item == items[0].title
+        result.choice == 'Pet food'
+        result.confidence == 0.91
+        result.probabilities['Pet food'] == 0.95
+        result.accepted
+        !message.contains('synthetic-key')
+        cleanup:
+        logger.detachAppender(appender)
+        logger.level = originalLevel
+        appender.stop()
         where:
         provider << ['openai','jev']
     }
