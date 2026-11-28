@@ -30,7 +30,7 @@ class WalmartProviders_UT extends Specification {
     def 'only confirmed provider funding failures propagate a funding reason and stop retries'() {
         given:
         int calls = 0
-        def classifier = new WalmartRemoteClassifier(settings(provider), { a,b,c,d ->
+        def classifier = new RemoteItemClassifier(settings(provider), { a,b,c,d ->
             calls++; [status:status, retry_after:'0', body:body]
         })
         def state = [mappings:[:], inferred:[:]]

@@ -255,10 +255,10 @@ class WalmartService_IT extends Specification {
         def tx = new YNABTransaction(id:'refund',date:'2026-11-23',amount:5000L,payee_name:'WALMART',payee_id:'payee',
             account_id:'account',memo:'User note',approved:'false',cleared:'cleared',deleted:'false')
         remote.refund = WalmartFixture.remote(tx)
-        Path key = WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture'.toCharArray())
-        config.walmartCategorization = WalmartRemoteClassifier.defaults('jev') + [credentials_file:key.toString(),categories:[[id:'g'],[id:'h']]]
-        def failed = new WalmartRemoteClassifier(config.walmartCategorization,{ a,b,c,d -> [status:402,body:'insufficient credits'] })
-        def matcher = new TransactionMatcher()
+        Path key = ProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture'.toCharArray())
+        config.walmartCategorization = RemoteItemClassifier.defaults('jev') + [credentials_file:key.toString(),categories:[[id:'g'],[id:'h']]]
+        def failed = new RemoteItemClassifier(config.walmartCategorization,{ a,b,c,d -> [status:402,body:'insufficient credits'] })
+        def matcher = new AmazonTransactionMatcher()
         failReadback = originalLostReadback
         boolean originalInterrupted = false
         try { new WalmartEnrichment(config).process(matcher.findWalmartMatches([tx],[order]),ynab,false,failed) }
@@ -267,11 +267,11 @@ class WalmartService_IT extends Specification {
         Map fundedBaseline = new LinkedHashMap(remote.refund)
         assert fundedBaseline.category_id == 'g' && fundedBaseline.memo.contains('[ERROR: Jev')
         int calls = 0
-        def recovered = new WalmartRemoteClassifier(config.walmartCategorization,{ a,b,c,d ->
+        def recovered = new RemoteItemClassifier(config.walmartCategorization,{ a,b,c,d ->
             calls++
-            [status:200,body:json.writeValueAsString([model:WalmartRemoteClassifier.ROUTES.jev.model,
+            [status:200,body:json.writeValueAsString([model:RemoteItemClassifier.ROUTES.jev.model,
                 answers:[item_0:[type:'choice',choice:'Household',confidence:0.95,
-                    probabilities:['Groceries':0.02,'Household':0.96,(WalmartRemoteClassifier.ABSTAIN):0.02]]],
+                    probabilities:['Groceries':0.02,'Household':0.96,(RemoteItemClassifier.ABSTAIN):0.02]]],
                 usage:[input_tokens:100,output_tokens:0]])]
         })
         tx.memo = remote.refund.memo
@@ -521,14 +521,14 @@ class WalmartService_IT extends Specification {
 
     def 'Walmart funding notices survive retries and are removed after mappings recover'() {
         given:
-        Path key = WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture-key'.toCharArray())
-        config.walmartCategorization = WalmartRemoteClassifier.defaults('jev') + [credentials_file:key.toString(),categories:[[id:'g'],[id:'h']]]
+        Path key = ProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture-key'.toCharArray())
+        config.walmartCategorization = RemoteItemClassifier.defaults('jev') + [credentials_file:key.toString(),categories:[[id:'g'],[id:'h']]]
         int calls = 0
-        def classifier = new WalmartRemoteClassifier(config.walmartCategorization,{ a,b,c,d -> calls++; [status:402,body:'private error'] })
+        def classifier = new RemoteItemClassifier(config.walmartCategorization,{ a,b,c,d -> calls++; [status:402,body:'private error'] })
         def order = WalmartFixture.order()
         def txs = WalmartFixture.transactions()
         txs.each { remote[it.id] = WalmartFixture.remote(it) }
-        def matches = new TransactionMatcher().findWalmartMatches(txs,[order])
+        def matches = new AmazonTransactionMatcher().findWalmartMatches(txs,[order])
 
         when:
         new WalmartEnrichment(config).process(matches,ynab,false,classifier)
@@ -549,7 +549,7 @@ class WalmartService_IT extends Specification {
             order.items.each { state.mappings['plan/' + it.productId] = ['g'] }; save(state)
         }
         txs.each { it.memo = remote[it.id].memo }
-        matches = new TransactionMatcher().findWalmartMatches(txs,[order])
+        matches = new AmazonTransactionMatcher().findWalmartMatches(txs,[order])
         new WalmartEnrichment(config).process(matches,ynab,false,classifier)
 
         then:
