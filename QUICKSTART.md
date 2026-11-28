@@ -7,7 +7,7 @@
 - Amazon order history CSV export (or email credentials)
 - Optional: maintained, patched CPython >=3.11.5 for Amazon account-history fetching
 
-Leave `walmart.enabled: false` for the basic Amazon setup. Optional Walmart
+Leave `retailers.walmart.enabled: false` for the basic Amazon setup. Optional Walmart
 requires a `-Pwalmart` native helper and protected session; see [WALMART.md](WALMART.md).
 Removed browser guest/login paths have no fallback. Optional paid OpenAI
 Decisions/TypeSafe Jev inference requires separate key onboarding and consent;
@@ -57,13 +57,16 @@ key. There is no Docker/local-model/OAuth requirement.
 1. Copy `config.example.yml` to `config.yml`
 2. Edit `config.yml` with your actual values:
    ```yaml
-   ynab:
-     api_key: "your_actual_api_key"
-     budget_id: "your_actual_budget_id"
-   amazon:
-     enrichment: "memo_only"  # Default: metadata only, no category changes
-     csv_file_path: "your_amazon_orders.csv"
-   app:
+   schema_version: 2
+   budget:
+     ynab:
+       api_key: "your_actual_api_key"
+       budget_id: "your_actual_budget_id"
+   retailers:
+     amazon:
+       enrichment: "memo_only"  # Default: metadata only, no category changes
+       csv_file_path: "your_amazon_orders.csv"
+   runtime:
      dry_run: true  # Start with true for testing
     ```
 
@@ -83,7 +86,7 @@ python3 -m venv .venv-amazon-orders
 .venv-amazon-orders/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight
 ```
 
-Then set `amazon.order_fetcher: "python"` and the commented `amazon.python`
+Then set `retailers.amazon.order_fetcher: "python"` and the commented `retailers.amazon.python`
 paths from `config.example.yml`. Keep `dry_run: true` for the first updater run.
 Start with a fresh virtual environment; the lock requires wheels and excludes
 browser/CAPTCHA extensions. Use guarded login, not the stock upstream CLI. If
@@ -100,7 +103,7 @@ using `--amazon-payment-accounts`. There is no Amazon default category and no
 Walmart helper requirement. Optional `--amazon-setup` separately obtains provider
 consent and a protected key; it makes no paid probe and does not enable writes.
 
-Only then select `amazon.enrichment: item_categories`, keeping `app.dry_run: true`
+Only then select `retailers.amazon.enrichment: item_categories`, keeping `runtime.dry_run: true`
 to review exact JSON payloads and skip reasons. Email/CSV order amounts alone do
 not authorize financial updates; supplemental Python payment evidence outside
 Python mode requires explicit opt-in and configured runtime/session settings.
@@ -135,7 +138,7 @@ also print JSON previews with signed milliunits, explicit null categories and
 skip reasons; inspect those payloads, not just the transaction count.
 
 ```
-Starting YNAB Amazon Transaction Updater
+Starting Budget Assistant for YNAB
 Configuration loaded successfully
 Fetching transactions from YNAB...
 Found 150 YNAB transactions
@@ -148,7 +151,7 @@ Found 8 potential matches
 DRY RUN MODE - No changes will be made
 Would update transaction: abc123 with memo: Wireless Bluetooth Headphones
 Would update transaction: def456 with memo: 3 items: Kindle Paperwhite, USB-C Cable, Phone Case...
-YNAB Amazon Transaction Updater completed successfully
+Budget Assistant for YNAB completed successfully
 ```
 
 ## Troubleshooting
@@ -162,5 +165,5 @@ YNAB Amazon Transaction Updater completed successfully
 ## Need Help?
 
 - See `SETUP.md` for detailed instructions
-- Run `groovy test_setup.groovy` to diagnose issues
+- Run `./gradlew installDist`, then `java -cp 'build/install/ynab-budget-assistant/lib/*' groovy.ui.GroovyMain test_setup.groovy` to diagnose issues
 - Check the logs for specific error messages

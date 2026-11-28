@@ -12,7 +12,7 @@
     </root>
 
     <!-- Example of setting specific logger levels -->
-    <!--<logger name="com.ynab.amazon" level="${LOG_LEVEL:-DEBUG}" />-->
+    <!--<logger name="com.ynab.budgetassistant" level="${LOG_LEVEL:-DEBUG}" />-->
     
     <!-- Reduce noise from other libraries -->
     <logger name="org.apache.hc" level="WARN" />

@@ -1,95 +1,98 @@
-# Example configuration file for YNAB Transaction Updater
+# Example configuration file for Budget Assistant for YNAB
 # Copy this file to config.yml and update with your actual values
 
 # YNAB Configuration
-ynab:
-  api_key: "your_actual_ynab_api_key_here"  # Get from https://app.youneedabudget.com/settings/developer
-  budget_id: "your_actual_ynab_budget_id_here"    # Found in YNAB URL when viewing budget or using the API
-  base_url: "https://api.ynab.com/v1"
+schema_version: 2
+budget:
+  ynab:
+    api_key: "your_actual_ynab_api_key_here"  # Get from https://app.youneedabudget.com/settings/developer
+    budget_id: "your_actual_ynab_budget_id_here"    # Found in YNAB URL when viewing budget or using the API
+    base_url: "https://api.ynab.com/v1"
 
 # Amazon Configuration
-amazon:
-  enrichment: "memo_only"  # Opt-in item_categories changes live budget balances even before approval
-  journal_file: "amazon-journal.json"  # Protected intent, ownership and item provenance; keep across runs
-  payment_accounts: {}  # Confirm with --amazon-payment-accounts; e.g. "python:visa:1234": "existing-account-id"
-  categorization:
-    categories: []  # Independent existing IDs; --amazon-categories selects them, with NO default
-    # --amazon-setup adds provider/model/bounds, protected credential reference and Amazon consent.
-    # No provider or paid inference is enabled by default. Never put a provider key in YAML.
-  # transaction_evidence:
-  #   enabled: false  # Default true ONLY in Python mode; explicit true elsewhere requires Python settings
-  refund_email_evidence:
-    enabled: false  # Python mode must explicitly opt into IMAP refund notices; never changes purchase source
-  # Select exactly one automatic source: "email" (the default) or "python".
-  order_fetcher: "email"
-  # Email-based order fetching (recommended if you want automatic import):
-  # Note: Email fetching now automatically includes Subscribe & Save delivery notifications
-  email: "your_amazon_email@example.com"  # Your Amazon email address (IMAP, e.g. Gmail)
-  email_password: "your_amazon_email_app_password"  # App password for your Amazon email (use an app password, not your main password)
-  # Optional: If Subscribe & Save emails are forwarded from another account
-  # forward_from_address: "some.email@example.com"  # Email address that forwards S&S emails to your inbox
-  # IMAP Configuration (optional, defaults to Gmail)
-  # imap_host: "imap.gmail.com"  # IMAP server hostname (default: imap.gmail.com)
-  # imap_port: 993  # IMAP server port (default: 993)
-  # Optional and additive: CSV orders are appended after the selected automatic source.
-  # For CSV-only use, leave email blank and retain order_fetcher: "email".
-  csv_file_path: "amazon_orders.csv"  # Your exported Amazon order history CSV file
-  # Optional maintained Python >=3.11.5 history source with the hash-locked requirements.
-  # Do not put Amazon credentials here. Browser/CAPTCHA extensions are disabled.
-  # python:
-  #   executable: ".venv-amazon-orders/bin/python"
-  #   bridge_script: "scripts/amazon_orders_bridge.py"
-  #   config_path: "~/.config/amazonorders/config.yml"
-  #   include_household_orders: true  # Default: include all Household orders visible to this account; false for own orders only
-  #   timeout_seconds: 300
-  #   max_output_bytes: 10485760
+retailers:
+  amazon:
+    enrichment: "memo_only"  # Opt-in item_categories changes live budget balances even before approval
+    journal_file: "amazon-journal.json"  # Protected intent, ownership and item provenance; keep across runs
+    payment_accounts: {}  # Confirm with --amazon-payment-accounts; e.g. "python:visa:1234": "existing-account-id"
+    categorization:
+      categories: []  # Independent existing IDs; --amazon-categories selects them, with NO default
+      # --amazon-setup adds provider/model/bounds, protected credential reference and Amazon consent.
+      # No provider or paid inference is enabled by default. Never put a provider key in YAML.
+    # transaction_evidence:
+    #   enabled: false  # Default true ONLY in Python mode; explicit true elsewhere requires Python settings
+    refund_email_evidence:
+      enabled: false  # Python mode must explicitly opt into IMAP refund notices; never changes purchase source
+    # Select exactly one automatic source: "email" (the default) or "python".
+    order_fetcher: "email"
+    # Email-based order fetching (recommended if you want automatic import):
+    # Note: Email fetching now automatically includes Subscribe & Save delivery notifications
+    email: "your_amazon_email@example.com"  # Your Amazon email address (IMAP, e.g. Gmail)
+    email_password: "your_amazon_email_app_password"  # App password for your Amazon email (use an app password, not your main password)
+    # Optional: If Subscribe & Save emails are forwarded from another account
+    # forward_from_address: "some.email@example.com"  # Email address that forwards S&S emails to your inbox
+    # IMAP Configuration (optional, defaults to Gmail)
+    # imap_host: "imap.gmail.com"  # IMAP server hostname (default: imap.gmail.com)
+    # imap_port: 993  # IMAP server port (default: 993)
+    # Optional and additive: CSV orders are appended after the selected automatic source.
+    # For CSV-only use, leave email blank and retain order_fetcher: "email".
+    csv_file_path: "amazon_orders.csv"  # Your exported Amazon order history CSV file
+    # Optional maintained Python >=3.11.5 history source with the hash-locked requirements.
+    # Do not put Amazon credentials here. Browser/CAPTCHA extensions are disabled.
+    # python:
+    #   executable: ".venv-amazon-orders/bin/python"
+    #   bridge_script: "scripts/amazon_orders_bridge.py"
+    #   config_path: "~/.config/amazonorders/config.yml"
+    #   include_household_orders: true  # Default: include all Household orders visible to this account; false for own orders only
+    #   timeout_seconds: 300
+    #   max_output_bytes: 10485760
 
 # Walmart Configuration (optional)
-walmart:
-  enabled: false  # Optional native Go source; no legacy browser fallback
-  currency: "USD"  # Default when source evidence omits currency; explicit conflicts still block matching
-  allow_approved_uncategorized: false  # Opt in to categorizing approved, unsplit transactions with no category; updates return to review
-  # helper_executable: "/absolute/path/walmart-helper"  # Installed Walmart distribution discovers its bundled helper
-  # session_file: "~/.config/ynab-updater/walmart-session.json"
-  timeout_seconds: 300
-  max_output_bytes: 8388608
-  max_pages: 10  # 1-20, fail closed on incomplete pagination
-  enrichment: "link_only"  # Explicit exception_first changes real YNAB balances, still unapproved
-  journal_file: "walmart-journal.json"
-  payment_accounts: {}  # e.g. "CREDITCARD:VISA:1234": "existing-ynab-account-id"
-  # Run --walmart-categories to select existing categories by number; never creates categories.
-  # default_category_id: "existing-id"
-  categorization:
-    categories: []  # [{id: "existing-id", description: "optional boundary"}]
-    # --walmart-setup prompts for OpenAI Decisions or direct TypeSafe Jev, hidden key and consent.
-    # No provider selected by default. Keys belong ONLY in protected provider records, not YAML.
-    # Setup adds exact model/policy, bounds, credential path and confidence thresholds.
-    # Enabled production inference needs no evaluation fingerprint; synthetic comparison is optional.
-    # max_requests: 50  # Per run, including retries and failed attempts.
-    # batch_size: 8     # Uncached items from multiple orders can share one request.
-    # Token usage is measured; there are no max_tokens/max_request_tokens budgets.
+  walmart:
+    enabled: false  # Optional native Go source; no legacy browser fallback
+    currency: "USD"  # Default when source evidence omits currency; explicit conflicts still block matching
+    allow_approved_uncategorized: false  # Opt in to categorizing approved, unsplit transactions with no category; updates return to review
+    # helper_executable: "/absolute/path/walmart-helper"  # Installed Walmart distribution discovers its bundled helper
+    # session_file: "~/.config/ynab-updater/walmart-session.json"
+    timeout_seconds: 300
+    max_output_bytes: 8388608
+    max_pages: 10  # 1-20, fail closed on incomplete pagination
+    enrichment: "link_only"  # Explicit exception_first changes real YNAB balances, still unapproved
+    journal_file: "walmart-journal.json"
+    payment_accounts: {}  # e.g. "CREDITCARD:VISA:1234": "existing-ynab-account-id"
+    # Run --walmart-categories to select existing categories by number; never creates categories.
+    # default_category_id: "existing-id"
+    categorization:
+      categories: []  # [{id: "existing-id", description: "optional boundary"}]
+      # --walmart-setup prompts for OpenAI Decisions or direct TypeSafe Jev, hidden key and consent.
+      # No provider selected by default. Keys belong ONLY in protected provider records, not YAML.
+      # Setup adds exact model/policy, bounds, credential path and confidence thresholds.
+      # Enabled production inference needs no evaluation fingerprint; synthetic comparison is optional.
+      # max_requests: 50  # Per run, including retries and failed attempts.
+      # batch_size: 8     # Uncached items from multiple orders can share one request.
+      # Token usage is measured; there are no max_tokens/max_request_tokens budgets.
 
 # Sheetz Configuration (optional; history and store coverage are not established)
-sheetz:
-  enabled: false
-  memo_writes: false
-  category_writes: false  # Unmatched charges may have a prefilled category explicitly cleared.
-  allow_approved_uncategorized: false  # Preserve approval; never modify approved categorized or split transactions.
-  accounts: []  # Existing on-budget YNAB account IDs to consider
-  # python_executable: ".venv-amazon-orders/bin/python"  # Install requirements-amazon-browser.txt
-  # bridge_script: "scripts/sheetz_bridge.py"
-  # credentials_file: "~/.config/ynab-updater/sheetz-credentials.json"  # Mode 0600; JSON with username and password
-  # token_file: "~/.config/ynab-updater/sheetz-token"  # Mode 0600, created after successful sign-in
-  # gasoline_default_category_id: "existing-gasoline-category-id"
-  # unmatched_default_category_id: "existing-category-id"  # Omit to explicitly clear unmatched categories
-  categorization:
-    categories: []  # Independent existing category IDs, e.g. [{id: "existing-id"}]
-    consent: false  # Opt in before sending Sheetz item titles to a configured classifier.
-    # Copy provider, model, policy_version: amazon-choice-v1, limits, acceptance, and credentials_file
-    # from an existing Amazon classifier configuration. Provider keys must remain in protected files.
+  sheetz:
+    enabled: false
+    memo_writes: false
+    category_writes: false  # Unmatched charges may have a prefilled category explicitly cleared.
+    allow_approved_uncategorized: false  # Preserve approval; never modify approved categorized or split transactions.
+    accounts: []  # Existing on-budget YNAB account IDs to consider
+    # python_executable: ".venv-amazon-orders/bin/python"  # Install requirements-amazon-browser.txt
+    # bridge_script: "scripts/sheetz_bridge.py"
+    # credentials_file: "~/.config/ynab-updater/sheetz-credentials.json"  # Mode 0600; JSON with username and password
+    # token_file: "~/.config/ynab-updater/sheetz-token"  # Mode 0600, created after successful sign-in
+    # gasoline_default_category_id: "existing-gasoline-category-id"
+    # unmatched_default_category_id: "existing-category-id"  # Omit to explicitly clear unmatched categories
+    categorization:
+      categories: []  # Independent existing category IDs, e.g. [{id: "existing-id"}]
+      consent: false  # Opt in before sending Sheetz item titles to a configured classifier.
+      # Copy provider, model, policy_version: amazon-choice-v1, limits, acceptance, and credentials_file
+      # from an existing Amazon classifier configuration. Provider keys must remain in protected files.
 
 # Application Configuration
-app:
+runtime:
   look_back_days: 30  # Number of days to look back for transactions
   processed_transactions_file: "processed_transactions.json"  # Tracks which transactions have been processed
   log_level: "INFO"  # Options: DEBUG, INFO, WARN, ERROR
@@ -97,32 +100,14 @@ app:
 
 # ---
 # Property documentation:
-# amazon.email: Email address to fetch Amazon order confirmations from (IMAP required)
+# retailers.amazon.email: Email address to fetch Amazon order confirmations from (IMAP required)
 #               Automatically includes Subscribe & Save delivery notifications
-# amazon.email_password: App password for the above email (never use your main password)
-# amazon.forward_from_address: Optional - Email address you forward S&S emails from (if applicable)
-# amazon.imap_host: IMAP server hostname (optional, default: imap.gmail.com)
-# amazon.imap_port: IMAP server port (optional, default: 993)
-# amazon.csv_file_path: Path to your Amazon order CSV file (used as fallback)
-# amazon.order_fetcher: "email" (default) or "python"; CSV remains additive in either mode
-# amazon.python.*: Optional bridge paths/bounds. Sessions and cookies stay in the upstream config.
-# walmart.enabled: Keep false until protected native-helper session provisioning; see WALMART.md.
+# retailers.amazon.email_password: App password for the above email (never use your main password)
+# retailers.amazon.forward_from_address: Optional - Email address you forward S&S emails from (if applicable)
+# retailers.amazon.imap_host: IMAP server hostname (optional, default: imap.gmail.com)
+# retailers.amazon.imap_port: IMAP server port (optional, default: 993)
+# retailers.amazon.csv_file_path: Path to your Amazon order CSV file (used as fallback)
+# retailers.amazon.order_fetcher: "email" (default) or "python"; CSV remains additive in either mode
+# retailers.amazon.python.*: Optional bridge paths/bounds. Sessions and cookies stay in the upstream config.
+# retailers.walmart.enabled: Keep false until protected native-helper session provisioning; see WALMART.md.
 # The nonworking browser guest/login sources were removed without backwards compatibility.
-
-# Example of what your actual config.yml should look like:
-# ynab:
-#   api_key: "sk_prod_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-#   account_id: "12345678-1234-1234-1234-123456789012"
-#   base_url: "https://api.ynab.com/v1"
-# 
-# amazon:
-#   email: "your.email@example.com"
-#   csv_file_path: "my_amazon_orders.csv"
-# 
-# walmart:
-#   enabled: false  # Optional native source, disabled by default
-# 
-# app:
-#   processed_transactions_file: "processed_transactions.json"
-#   log_level: "INFO"
-#   dry_run: false

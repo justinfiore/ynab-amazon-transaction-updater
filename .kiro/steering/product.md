@@ -1,12 +1,12 @@
 # Product Overview
 
-YNAB Transaction Updater is a Groovy application that automatically enhances YNAB (You Need A Budget) transactions by matching them with retailer order details and updating transaction memos with product summaries. Supports Amazon and Walmart orders.
+Budget Assistant for YNAB is a Groovy application that matches YNAB transactions with Amazon, Walmart and Sheetz purchases, with separately guarded categorization. Costco and Sam's Club support is planned, not implemented.
 
 ## Core Functionality
 
 - Fetches transactions from YNAB API within a configurable lookback period
 - Reads Amazon order data from CSV exports or email parsing
-- Fetches Walmart order data using browser automation
+- Fetches Walmart order data using the opt-in native helper and a protected session
 - Uses intelligent matching algorithms to correlate YNAB transactions with retailer orders
 - Updates transaction memos with meaningful product descriptions
 - Tracks processed transactions to prevent duplicates
@@ -20,7 +20,7 @@ YNAB Transaction Updater is a Groovy application that automatically enhances YNA
   - Walmart Multi-Transaction: Weighted scoring (amount 50%, date proximity 30%, payee consistency 20%)
 - **Multiple Data Sources**: 
   - Amazon: CSV file input and email parsing
-  - Walmart: Browser automation with Playwright
+  - Walmart: Optional native helper and protected session
 - **Multi-Transaction Support**: Handles Walmart orders split into multiple charges
 - **Safety First**: Dry-run mode, transaction tracking, and confidence-based filtering
 - **Configurable**: YAML-based configuration with sensible defaults

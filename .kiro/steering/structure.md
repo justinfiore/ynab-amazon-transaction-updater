@@ -4,8 +4,8 @@
 
 ```
 src/
-├── main/groovy/com/ynab/amazon/          # Main application code
-│   ├── YNABAmazonTransactionUpdater.groovy  # Main entry point
+├── main/groovy/com/ynab/budgetassistant/          # Main application code
+│   ├── BudgetAssistant.groovy  # Main entry point
 │   ├── config/
 │   │   └── Configuration.groovy          # YAML config loader and validation
 │   ├── model/                           # Data models
@@ -15,12 +15,12 @@ src/
 │   └── service/                         # Business logic services
 │       ├── YNABService.groovy           # YNAB API integration
 │       ├── AmazonService.groovy         # Amazon data parsing (CSV/email)
-│       ├── TransactionMatcher.groovy    # Matching algorithm
+│       ├── AmazonTransactionMatcher.groovy    # Matching algorithm
 │       └── TransactionProcessor.groovy  # Transaction update logic
 ├── main/resources/
 │   └── logback.xml                      # Logging configuration
-└── test/groovy/com/ynab/amazon/         # Test mirror structure
-    ├── YNABAmazonTransactionUpdater_UT.groovy
+└── test/groovy/com/ynab/budgetassistant/         # Test mirror structure
+    ├── BudgetAssistant_UT.groovy
     ├── config/Configuration_UT.groovy
     ├── model/                           # Model tests
     └── service/                         # Service tests
@@ -28,15 +28,15 @@ src/
 
 ## Package Organization
 
-- **`com.ynab.amazon`**: Root package containing main application class
-- **`com.ynab.amazon.config`**: Configuration management
-- **`com.ynab.amazon.model`**: Data transfer objects and domain models
-- **`com.ynab.amazon.service`**: Business logic and external integrations
+- **`com.ynab.budgetassistant`**: Root package containing main application class
+- **`com.ynab.budgetassistant.config`**: Configuration management
+- **`com.ynab.budgetassistant.model`**: Data transfer objects and domain models
+- **`com.ynab.budgetassistant.service`**: Business logic and external integrations
 
 ## Naming Conventions
 
 ### Classes
-- **Main classes**: Descriptive names (e.g., `YNABAmazonTransactionUpdater`)
+- **Main classes**: Descriptive names (e.g., `BudgetAssistant`)
 - **Services**: `[Domain]Service` pattern (e.g., `YNABService`, `AmazonService`)
 - **Models**: Simple domain names (e.g., `YNABTransaction`, `AmazonOrder`)
 - **Configuration**: `Configuration` for main config class

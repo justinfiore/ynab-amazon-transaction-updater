@@ -1,4 +1,4 @@
-module github.com/justinfiore/ynab-amazon-transaction-updater/walmart-helper
+module github.com/justinfiore/ynab-budget-assistant/walmart-helper
 
 go 1.27.4
 

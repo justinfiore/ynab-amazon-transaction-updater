@@ -1,9 +1,9 @@
 # Amazon enrichment: setup and safety
 
-Amazon defaults to `amazon.enrichment: memo_only`. This updates summaries and
+Amazon defaults to `retailers.amazon.enrichment: memo_only`. This updates summaries and
 links, not categories. The optional `item_categories` mode writes categories or
 item splits into the **live budget**, affecting available balances immediately
-even when a transaction is approved. Existing approval is preserved. Keep `app.dry_run: true` until
+even when a transaction is approved. Existing approval is preserved. Keep `runtime.dry_run: true` until
 you have reviewed the exact preview. No live account or paid inference is needed
 to run the repository's offline acceptance tests.
 
@@ -58,16 +58,16 @@ Approved local item mappings are used before inference. No provider is required
 for visible uncategorized itemization. Dry runs use mappings/cache only and mark
 necessary uncached inference as `inference_required`.
 
-After setup, opt in explicitly to `amazon.enrichment: item_categories`. Maintain
-the independent `amazon.categorization.categories`, `amazon.payment_accounts`
-and `amazon.journal_file` settings. Do not copy Walmart's default or mappings.
-Mappings are plan-specific: changing `ynab.budget_id` requires reconfirmation.
+After setup, opt in explicitly to `retailers.amazon.enrichment: item_categories`. Maintain
+the independent `retailers.amazon.categorization.categories`, `retailers.amazon.payment_accounts`
+and `retailers.amazon.journal_file` settings. Do not copy Walmart's default or mappings.
+Mappings are plan-specific: changing `budget.ynab.budget_id` requires reconfirmation.
 
 ## Evidence and source limits
 
 The selected purchase source remains email or Python, with additive CSV as
 before. Payment evidence defaults on in Python mode, off in email/CSV mode.
-`amazon.transaction_evidence.enabled: true` elsewhere is an explicit opt-in to
+`retailers.amazon.transaction_evidence.enabled: true` elsewhere is an explicit opt-in to
 launch the configured Python bridge/session; dormant paths alone launch nothing.
 The Python runtime/session settings and reviewed hash-locked dependencies are
 documented in [README](README.md). Email/CSV prices and order totals alone cannot
@@ -75,7 +75,7 @@ authorize allocation or category-clearing fallback. Supplemental transaction
 events do not replace the selected purchase source or bless its defaulted amounts.
 
 Python is usable without IMAP. Optional
-`amazon.refund_email_evidence.enabled: true` explicitly opts Python mode into
+`retailers.amazon.refund_email_evidence.enabled: true` explicitly opts Python mode into
 the configured mailbox for refund-item evidence, default false. Email mode uses
 its existing mailbox parser without requiring Python unless payment evidence is
 explicitly enabled. An unavailable optional source fails closed with a bounded

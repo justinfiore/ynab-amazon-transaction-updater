@@ -1,4 +1,4 @@
-# Setup Guide for YNAB Transaction Updater
+# Setup Guide for Budget Assistant for YNAB
 
 ## Prerequisites
 
@@ -56,19 +56,18 @@ separately or download wrapper files by hand. Verify it with:
 
 1. Edit `config.yml` and update with your actual values:
    ```yaml
-   ynab:
-     api_key: "YOUR_ACTUAL_YNAB_API_KEY"
-     budget_id: "YOUR_ACTUAL_YNAB_BUDGET_ID"
-     base_url: "https://api.ynab.com/v1"
-
-   amazon:
-     enrichment: "memo_only"  # Metadata only; category writes require separate opt-in
-     csv_file_path: "your_amazon_orders.csv"
-
-   walmart:
-     enabled: false  # Optional native helper; see WALMART.md before enabling
-
-   app:
+   schema_version: 2
+   budget:
+     ynab:
+       api_key: "YOUR_ACTUAL_YNAB_API_KEY"
+       budget_id: "YOUR_ACTUAL_YNAB_BUDGET_ID"
+   retailers:
+     amazon:
+       enrichment: "memo_only"
+       csv_file_path: "your_amazon_orders.csv"
+     walmart:
+       enabled: false
+   runtime:
      dry_run: true  # Set to false when ready
    ```
 
@@ -85,7 +84,7 @@ inference key; no local-model runtime, Docker or OAuth route is required.
 ### Optional: Amazon Item Categorization
 
 Follow [Amazon setup and safety](AMAZON.md) before changing the default
-`amazon.enrichment: memo_only`. Amazon uses the shared classifier but has its
+`retailers.amazon.enrichment: memo_only`. Amazon uses the shared classifier but has its
 own category shortlist, payment/account mappings, consent and protected journal;
 it has no default category and needs no Walmart configuration or Go helper.
 The installed launcher's `--amazon-categories` and `--amazon-payment-accounts`
@@ -94,14 +93,14 @@ commands configure existing IDs without enabling financial writes. Optional
 without a paid probe; `--amazon-disconnect` removes that reference while retaining
 a credential still referenced by Walmart in the same config.
 
-Select `amazon.enrichment: item_categories` explicitly only after setup. Keep
-`app.dry_run: true` and inspect exact category/split/null-fallback JSON previews.
+Select `retailers.amazon.enrichment: item_categories` explicitly only after setup. Keep
+`runtime.dry_run: true` and inspect exact category/split/null-fallback JSON previews.
 Email/CSV purchase values alone are insufficient: transaction evidence requires
 the Python runtime/session, defaults on only in Python mode, and must be explicitly
 enabled elsewhere. Supplemental refund email in Python mode is independently
 opt-in; missing per-event item amounts never become guessed refund splits.
 **Non-dry-run financial updates change available balances immediately, even
-though they remain unapproved.** Preserve `amazon.journal_file` across runs for
+though they remain unapproved.** Preserve `retailers.amazon.journal_file` across runs for
 intent/read-back recovery and human-edit protection. Do not clear it or the legacy
 processed-ID file to force historical backfill. See [AMAZON.md](AMAZON.md) for
 accounting, conservative fallback, source limits and mode-switch recovery.
@@ -121,7 +120,7 @@ python3 -m venv .venv-amazon-orders
 ```
 
 Use the equivalent `Scripts\\python.exe` paths on Windows. Configure
-`amazon.order_fetcher: "python"` and all `amazon.python` paths from
+`retailers.amazon.order_fetcher: "python"` and all `retailers.amazon.python` paths from
 `config.example.yml`; set a positive timeout and output bound. The upstream
 config/cookies should be owner-readable only. Its supported `AMAZON_USERNAME`,
 `AMAZON_PASSWORD`, and optional `AMAZON_OTP_SECRET_KEY` environment variables
@@ -170,7 +169,7 @@ With `amazon-orders==6.0.0`, the defaults are:
   use `~/.config/amazonorders/accounts/<account>/` (for example,
   `accounts/spouse/cookies.json` for amazon.com).
 - An explicit upstream `cookie_jar_path` overrides the cookie location. Changing
-  only `amazon.python.config_path` does **not** relocate the default cookie jar.
+  only `retailers.amazon.python.config_path` does **not** relocate the default cookie jar.
 
 Protect both config and cookie files with owner-only access. Cookies grant access
 to your account: do not commit them, put them in issue reports, or store them in
@@ -209,13 +208,13 @@ For a recognized authentication failure, unprocessed Amazon expenses that were
 not successfully augmented receive this exact memo notice:
 
 ```text
-[ERROR: Amazon Login Required on ynab-amazon-transaction-updater]
+[ERROR: Amazon Login Required on ynab-budget-assistant]
 ```
 
 An existing memo is preserved and the notice appended once with ` | `, for example:
 
 ```text
-Personal purchase | [ERROR: Amazon Login Required on ynab-amazon-transaction-updater]
+Personal purchase | [ERROR: Amazon Login Required on ynab-budget-assistant]
 ```
 
 Already-processed transactions, transfers, deleted transactions, refunds, other
@@ -282,8 +281,9 @@ not guaranteed for every Amazon challenge.
 # Run the application
 .\gradlew.bat run
 
-# Or run the JAR directly
-java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
+# Or build and run the installed launcher
+.\gradlew.bat installDist
+.\build\install\ynab-budget-assistant\bin\ynab-budget-assistant.bat
 ```
 
 #### Unix/Linux/macOS:
@@ -294,8 +294,9 @@ java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
 # Run the application
 ./gradlew run
 
-# Or run the JAR directly
-java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
+# Or build and run the installed launcher
+./gradlew installDist
+build/install/ynab-budget-assistant/bin/ynab-budget-assistant
 ```
 
 ## Alternative: Using Docker
@@ -307,17 +308,17 @@ FROM eclipse-temurin:25-jre
 
 WORKDIR /app
 
-COPY build/libs/YNABAmazonTransactionUpdater-1.0.0.jar app.jar
+COPY build/install/ynab-budget-assistant/ /app/
 COPY config.yml .
 COPY your_amazon_orders.csv .
 
-CMD ["java", "-jar", "app.jar"]
+CMD ["/app/bin/ynab-budget-assistant"]
 ```
 
 Then build and run:
 ```bash
 # Build the application first
-./gradlew build
+./gradlew installDist
 
 # Build Docker image
 docker build -t ynab-amazon-updater .

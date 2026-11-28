@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Deprecated transition alias; configuration and state are owned by the canonical launcher.
+directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$directory/ynab-budget-assistant" "$@"
