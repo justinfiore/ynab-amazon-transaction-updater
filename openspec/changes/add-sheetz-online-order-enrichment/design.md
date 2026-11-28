@@ -1,0 +1,31 @@
+## Context
+
+The signed-in Sheetz website exposes recent online orders through a private JSON endpoint. The Android app's **More → My Purchase History** screen shows a broader feed, including explicitly labeled fuel purchases with order numbers, timestamps, totals and fuel grades. The web endpoint returned the pickup order from the screenshot but not the same-day fuel purchase. The mobile route returned that fuel purchase using the same web session's Bearer token.
+
+## Decisions
+
+### Treat the web session as short-lived
+
+Two observed web access tokens advertised 1,803 seconds between JWT `iat` and `exp`. Using the older token after expiry returned 401, and the site redirected to sign-in rather than silently renewing it. A fresh sign-in returned an `authorizationToken`, stored under `sessionStorage.authToken`; the authenticated order-history request then returned 200. No separate refresh token was found in the login response, local storage or session storage, and the orders origin reported no IndexedDB databases. This does not rule out another renewal flow, cookie-based mechanism or mobile authentication behavior.
+
+Reuse an unexpired token, checking its expiry before retrieval. If absent, expired or rejected with 401, attempt one fresh sign-in per run through the normal Sheetz website using securely supplied credentials. Use Playwright with standard Chromium and ordinary sign-in interactions if a browser is needed. After sign-in, obtain the Bearer token from `sessionStorage.authToken` on the Sheetz orders origin and retry read-only retrieval once. This is reauthentication, not a refresh-token flow. Stop and report an actionable error on MFA, CAPTCHA, access blocks, rejected credentials or a second 401; skip Sheetz writes but continue Amazon and Walmart.
+
+YAML may reference a protected credential source, but must not contain credential values. Do not pass secrets via process arguments or capture them in browser traces, recordings, logs or fixtures. Successful web retrieval used the Bearer token and a `storeNumber` query parameter; cookies alone were insufficient. Store scope and history depth are still open.
+
+### Qualify fuel retrieval separately from fuel categorization
+
+Static analysis of Android app `8.45.0.2072677049` traced the screen through `GetPurchaseHistoryWorker` to `ReceiptsApi.getFilteredReceiptsCall`: `GET https://orderz.sheetz.com/mbff/v1/receipt/api/filtered-receipts` (with a **z** in `orderz`). It takes repeated `orderType` parameters and returns `{ orders: [...] }`. The Fuel chip maps to `RETAIL_FUEL`; Commercial Diesel (`COMMERCIAL_FUEL`) and Pump & Pay (`PUMP_AND_PAY`) have separate types. The observed list call has no date or pagination parameters.
+
+Normally, tapping **View Receipt** renders the selected list record; it does not necessarily make a detail request. Some flows use a receipt-by-ID operation, but do not assume that `orderNumber` is a `receiptId` or that the API URL is a user-facing receipt link.
+
+The anonymous request returned 401. A read-only `orderType=RETAIL_FUEL` request with a fresh web Bearer token and `Accept: application/json`, without cookies or app-specific headers, returned 200 and 27 orders. All 27 had `orderType: RETAIL_FUEL`, `orderNumber`, `orderTime` and `orderTotal`; the screenshot fuel purchase matched by order number and total. Reuse the normal web session for this route. History depth, field formats across accounts, and other fuel types were not verified. See the [APK investigation](https://ampcode.com/artifacts/sheetz-receipt-api-investigation-97255ac2-4488-4009-93f6-b46065deb7dc) for the source trace.
+
+An authenticated request with all nine Android purchase types returned 8 `ANYWHERE` and 27 `RETAIL_FUEL` records, all with items and including both known screenshot purchases. No other types were observed, and the user's recent register purchases did not appear in either UI. Fetch the two verified types in one request using repeated `orderType` parameters; retain the website for sign-in and memo navigation, not as a second purchase source.
+
+### Match once, then choose the enrichment path by purchase type
+
+Normalize online orders and fuel records into one candidate set. Match eligible Sheetz outflows by exact cents and local purchase date within ±3 calendar days, inclusive, skipping ambiguous links across both purchase types. No separate payment API is required. Use shared item classification for online items. Approximate item shares by distributing the matched order total, including tax and discounts, in proportion to the extended item prices; deterministic largest-remainder rounding ensures exact cents. Treat a combo represented as one source item as one item. Skip allocation if an item price or classification is unavailable. With category writes enabled, categorize a verified fuel-only match directly to the existing target-plan category configured as `sheetz.gasoline_default_category_id` (Gasoline for this plan), without a classifier call or split. Preserve user-owned categories, approval and splits using the existing YNAB write safeguards.
+
+Use Amazon-style memos with the date, total, shortened item or fuel description and an order link if verified. The web detail route depends on navigation state and does not open the order in a fresh signed-in tab. For online orders, fall back to the order number and the web purchase-history link. Do not imply that the web history page can display a fuel receipt unless verified.
+
+For an eligible unapproved outflow with zero candidates after a successful, validated fetch, use `🤖❓ No matching Sheetz online or fuel purchase found` as the generated memo. Preserve user text and replace or reuse the generated notice on reruns. This is an operational assumption, not receipt evidence. A fetch failure, malformed response, or ambiguous match is not a zero-candidate result. When category writes are enabled, send the configured existing YNAB category ID or explicit `category_id: null` if the setting is omitted. This unapproved-only exception can override a prefilled parent category: do not assume the existing category's provenance can be determined. Recheck approval and unchanged state before writing; never write to splits or approve the transaction. Do not mark the fallback as a completed receipt match.

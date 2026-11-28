@@ -85,6 +85,7 @@ class YNABService_UT extends Specification {
         result[0].id == "tx1"
         result[0].amount == 25990
         result[0].memo == "Test memo"
+        result[1].memo == null
     }
     
     def "updateTransactionMemo should update transaction memos"() {

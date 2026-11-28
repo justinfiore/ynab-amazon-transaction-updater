@@ -120,13 +120,13 @@ class CategoryOnboarding {
             if (Files.isSymbolicLink(file) || !Arrays.equals(before,Files.readAllBytes(file))) throw new IllegalStateException('Configuration changed; retry')
             config[retailer].categorization=[categories:selected.categories ?: []]
             ProtectedJournal.atomic(file,new Yaml().dump(config).getBytes('UTF-8'))
-            boolean referenced = ['walmart','amazon'].any {
+            boolean referenced = ['walmart','amazon','sheetz'].any {
                 def reference = config[it]?.categorization?.credentials_file
                 reference && Paths.get(reference.toString()).toAbsolutePath().normalize() == Paths.get(selected.credentials_file.toString()).toAbsolutePath().normalize()
             }
             if (!referenced) ProviderKeys.disconnect(selected.credentials_file.toString(),selected.provider.toString())
         }
-        println 'Retailer connection removed; keys referenced by the other retailer were retained. Revoke remote access in the provider console.'
+        println 'Retailer connection removed; keys referenced by other retailers were retained. Revoke remote access in the provider console.'
     }
 
     static boolean selectAmazonPaymentAccount(Path file, YNABService ynab, BufferedReader input, PrintWriter output) {

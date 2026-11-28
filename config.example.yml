@@ -69,6 +69,24 @@ walmart:
     # batch_size: 8     # Uncached items from multiple orders can share one request.
     # Token usage is measured; there are no max_tokens/max_request_tokens budgets.
 
+# Sheetz Configuration (optional; history and store coverage are not established)
+sheetz:
+  enabled: false
+  memo_writes: false
+  category_writes: false  # Unmatched charges may have a prefilled category explicitly cleared.
+  accounts: []  # Existing on-budget YNAB account IDs to consider
+  # python_executable: ".venv-amazon-orders/bin/python"  # Install requirements-amazon-browser.txt
+  # bridge_script: "scripts/sheetz_bridge.py"
+  # credentials_file: "~/.config/ynab-updater/sheetz-credentials.json"  # Mode 0600; JSON with username and password
+  # token_file: "~/.config/ynab-updater/sheetz-token"  # Mode 0600, created after successful sign-in
+  # gasoline_default_category_id: "existing-gasoline-category-id"
+  # unmatched_default_category_id: "existing-category-id"  # Omit to explicitly clear unmatched categories
+  categorization:
+    categories: []  # Independent existing category IDs, e.g. [{id: "existing-id"}]
+    consent: false  # Opt in before sending Sheetz item titles to a configured classifier.
+    # Copy provider, model, policy_version: amazon-choice-v1, limits, acceptance, and credentials_file
+    # from an existing Amazon classifier configuration. Provider keys must remain in protected files.
+
 # Application Configuration
 app:
   look_back_days: 30  # Number of days to look back for transactions

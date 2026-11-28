@@ -185,6 +185,33 @@ class YNABAmazonTransactionUpdater {
             processor.addAmazonLoginNotices(pendingAmazonTransactions, ynabService, config.isDryRun())
         }
 
+        if (config.sheetzEnabled) {
+            try {
+                if (ynabService.getPlanCurrency() != 'USD') throw new IllegalStateException('Sheetz requires a USD plan')
+                Set accounts = ynabService.getBudgetAccounts().intersect(config.sheetzAccounts as Set) as Set
+                if (!accounts || accounts.size() != config.sheetzAccounts.size()) throw new IllegalStateException('Sheetz accounts are not eligible')
+                def feed = com.ynab.amazon.service.SheetzSource.fetch(config)
+                if (feed.incomplete) logger.warn('Sheetz receipt matching is incomplete; showing preview only, with no writes or unmatched fallback')
+                boolean previewOnly = config.isDryRun() || feed.incomplete
+                // Competitors may be six days before the first target: ±3 days on both sides of a receipt.
+                def candidates = ynabService.getTransactions(config.lookBackDays + 6)
+                def result = com.ynab.amazon.service.SheetzEnrichment.process(candidates, feed.orders, ynabService, accounts,
+                    previewOnly, config.sheetzMemoWrites || previewOnly, config.sheetzCategoryWrites || previewOnly,
+                    config.sheetzGasolineDefaultCategoryId, config.sheetzUnmatchedDefaultCategoryId, !feed.incomplete,
+                    ynabTransactions*.id as Set, config.sheetzCategorization, config.ynabBudgetId)
+                result.preview.each { preview ->
+                    logger.info('Sheetz preview: transaction={} reason={} fields={}',
+                        preview.transaction_id, preview.reason, (preview.changes ?: [:]).keySet())
+                }
+                result.failures.each { failure ->
+                    logger.warn('Sheetz write not confirmed: transaction={} reason={}', failure.transaction_id, failure.reason)
+                }
+                logger.info('Sheetz updated {} transactions', result.updated)
+            } catch (Exception ignored) {
+                logger.warn('Sheetz processing stopped safely; check source, session and configuration. Other retailers continue.')
+            }
+        }
+
         // Match and process Walmart orders if enabled
         if (config.walmartEnabled && walmartService != null && !walmartOrders.isEmpty()) {
             logger.info("Matching transactions with Walmart orders...")
