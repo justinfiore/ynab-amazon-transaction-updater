@@ -231,12 +231,13 @@ class AmazonEnrichment {
                 if (financial && !ownedIncompleteSplit && current.category_id != null && (current.approved == true || !(old?.result && old.status == 'memo_only' && old.owned_category))) {
                     stats.preview << [transaction_id:tx.id,reason:'non_owned_category']; return
                 }
-                String userText = old?.user_text != null ? old.user_text : AmazonAuthNotice.withoutNotice(current.memo)?.with { it == 'null' ? '' : it } ?: ''
+                String userText = old?.user_text != null ? old.user_text : ClassificationFundingNotice.withoutNotice(AmazonAuthNotice.withoutNotice(current.memo)?.with { it == 'null' ? '' : it } ?: '')
                 if (old && !order.orderDate) order.orderDate = old.order_date
                 if (old?.facts) order.financialEvidence = old.facts + order.financialEvidence
                 String memo = AmazonMemos.parent(order,event,userText)
                 if (!memo) { stats.preview << [transaction_id:tx.id,reason:'memo_too_long']; return }
                 Map plan = [eligible:false,reason:'memo_only']
+                String fundingProvider
                 if (financial) {
                     plan = AmazonAllocation.plan(order,event,events,[:])
                     if (plan.eligible) {
@@ -266,7 +267,8 @@ class AmazonEnrichment {
                                 gates.subMap(['probability','confidence','margin']),classifier?.metrics?.failure_stage ?: classifier?.metrics?.stage,classifier?.metrics?.last_http_status)
                         }
                         boolean unavailable = config.amazonCategorization.provider && !classifier && resolved.decisions.values().any { it.source == 'unresolved' }
-                        if (resolved.failed || unavailable) plan = [eligible:false,reason:dryRun ? 'inference_required' : 'inference_unavailable']
+                        fundingProvider = resolved.funding_provider
+                        if (resolved.failed || unavailable) plan = [eligible:false,reason:fundingProvider ? resolved.reason : dryRun ? 'inference_required' : 'inference_unavailable']
                         else plan = AmazonAllocation.plan(order,event,events,resolved.decisions)
                         if (plan.eligible && plan.lines.any { !it.category_id }) plan = [eligible:false,reason:'unresolved_categories']
                     }
@@ -277,6 +279,12 @@ class AmazonEnrichment {
                         old.status = 'fallback'; old.allocation_reason = plan.reason; save(state)
                     }
                     return
+                }
+                if (fundingProvider) {
+                    String base = AmazonMemos.parent(order,event,userText,500 - ClassificationFundingNotice.message(fundingProvider).length() - 3)
+                    String noticeMemo = base != null ? ClassificationFundingNotice.append(base,fundingProvider) : null
+                    if (noticeMemo) memo = noticeMemo
+                    else stats.preview << [transaction_id:tx.id,reason:'funding_notice_memo_too_long',provider:fundingProvider]
                 }
                 Map changes = financial ? AmazonAllocation.payload(event,memo,plan) : [memo:memo]
                 if (financial && current.approved == true) changes.approved = true

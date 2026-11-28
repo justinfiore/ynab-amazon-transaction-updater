@@ -1135,6 +1135,57 @@ Order #113-8849250-2919462
         false | true | 1
     }
 
+    def 'confirmed funding failures name #provider in guarded Amazon memos and disappear after mapping recovery'() {
+        given:
+        def order = AmazonFixture.order()
+        order.paymentEvents = [AmazonFixture.event()]
+        remote.tx = AmazonEnrichment.snapshot(AmazonFixture.transaction())
+        remote.tx.memo = 'Keep my note'
+        new ProtectedJournal(config.amazonJournalFile).locked(false) { state,save -> state.mappings.clear(); save(state) }
+        def key = ProviderKeys.stage(new File(directory,'config.yml').toPath(),provider,'fixture-key'.toCharArray(),'amazon')
+        config.amazonCategorization = RemoteItemClassifier.defaults(provider) + [policy_version:'amazon-choice-v1',
+            consent:true,categories:[[id:'e'],[id:'pets']],credentials_file:key.toString()]
+        int calls = 0
+        def classifier = new RemoteItemClassifier(config.amazonCategorization,{ a,b,c,d ->
+            calls++; [status:provider == 'jev' ? 402 : 429,body:'{"error":{"code":"credit_balance_exhausted"}}']
+        })
+
+        when:
+        def result = new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false,[] as Set,classifier)
+
+        then:
+        calls == 1 && writes.size() == 1
+        result.preview.last().reason == 'provider_funding_unavailable'
+        remote.tx.memo.contains('[ERROR: ' + name + ' classification unavailable; check funding/billing]')
+        remote.tx.memo.contains(url)
+        remote.tx.memo.contains('Keep my note') && remote.tx.memo.contains(AmazonFixture.URL)
+        remote.tx.memo.length() <= 500
+        !remote.tx.category_id && !remote.tx.subtransactions
+
+        when:
+        new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false,[] as Set,classifier)
+
+        then:
+        calls == 1 && writes.size() == 1
+
+        when:
+        new ProtectedJournal(config.amazonJournalFile).locked(false) { state,save ->
+            state.mappings = ['amazon/plan/cable':['e'],'amazon/plan/pet':['pets']]; save(state)
+        }
+        new AmazonEnrichment(config).process([transaction('tx')],[order],ynab,false,[] as Set,classifier)
+
+        then:
+        calls == 1 && writes.size() == 2
+        !remote.tx.memo.contains('[ERROR:') && !remote.tx.memo.contains(url)
+        remote.tx.memo.contains('Keep my note')
+        remote.tx.subtransactions*.category_id == ['e','pets']
+
+        where:
+        provider | name     | url
+        'jev'    | 'Jev'    | 'https://console.typesafe.ai/billing'
+        'openai' | 'OpenAI' | 'https://platform.openai.com/settings/organization/billing/overview'
+    }
+
     private static AmazonOrder orderBased() {
         def order = AmazonFixture.order()
         order.financialEvidence += [payment_identity:'python:visa:1234',purchase_eligible:true,payments_complete:false]

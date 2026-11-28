@@ -27,6 +27,43 @@ class WalmartProviders_UT extends Specification {
             usage:[input_tokens:100,output_tokens:0]]
     }
 
+    def 'only confirmed provider funding failures propagate a funding reason and stop retries'() {
+        given:
+        int calls = 0
+        def classifier = new WalmartRemoteClassifier(settings(provider), { a,b,c,d ->
+            calls++; [status:status, retry_after:'0', body:body]
+        })
+        def state = [mappings:[:], inferred:[:]]
+
+        when:
+        def result = ItemClassificationService.resolve([[itemId:'item',title:'Cat food']],categories,state,
+            'walmart','plan',classifier,false,{ ignored -> })
+        def later = ItemClassificationService.resolve([[itemId:'later',title:'Rice']],categories,state,
+            'walmart','plan',classifier,false,{ ignored -> })
+        def mapped = ItemClassificationService.resolve([[itemId:'mapped',productId:'known',title:'Rice']],categories,
+            [mappings:['plan/known':['g']],inferred:[:]],'walmart','plan',classifier,false,{ ignored -> })
+
+        then:
+        result.failed && later.failed
+        result.funding_provider == (funding ? provider : null)
+        later.funding_provider == result.funding_provider
+        calls == (funding || status != 429 ? 1 : 2)
+        !mapped.failed && !mapped.funding_provider && mapped.decisions.mapped.category_id == 'g'
+
+        where:
+        provider | status | body                                                                                 | funding
+        'jev'    | 402    | 'not enough credits'                                                                 | true
+        'jev'    | 429    | '{"error":{"code":"insufficient_quota"}}'                                            | false
+        'openai' | 429    | '{"error":{"code":"insufficient_quota","message":"private details"}}'                | true
+        'openai' | 429    | '{"error":{"code":"credit_balance_exhausted"}}'                                      | true
+        'openai' | 429    | '{"error":{"code":"organization_spend_limit_exceeded"}}'                             | true
+        'openai' | 429    | '{"error":{"code":"project_spend_limit_exceeded"}}'                                  | true
+        'openai' | 429    | '{"error":{"code":"organization_usage_limit_exceeded"}}'                             | false
+        'openai' | 429    | '{"error":{"code":"rate_limit_exceeded","type":"insufficient_quota"}}'               | false
+        'openai' | 429    | 'malformed'                                                                          | false
+        'openai' | 401    | '{"error":{"code":"insufficient_quota"}}'                                            | false
+    }
+
     @Unroll
     def '#provider uses its exact endpoint and key, meaningful choices and complete score validation without local identifiers'() {
         given:

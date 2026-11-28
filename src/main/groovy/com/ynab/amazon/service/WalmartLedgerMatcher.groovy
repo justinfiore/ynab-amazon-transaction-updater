@@ -114,7 +114,7 @@ class WalmartLedgerMatcher {
             "${order.orderDate} | Total \$${order.totalAmount.setScale(2, java.math.RoundingMode.UNNECESSARY)}"
         if (refund && charge.description) details += ' | ' + charge.description.take(200)
         String metadata = "${details} | #${order.orderId} | ${order.orderLink}"
-        String current = tx.memo == 'null' ? '' : tx.memo ?: ''
+        String current = ClassificationFundingNotice.withoutNotice(tx.memo == 'null' ? '' : tx.memo ?: '')
         String previousMetadata = "${details} | #${order.orderId} | https://www.walmart.com/orders/details?orderId=${order.orderId}"
         if (current == previousMetadata || current == '🤖 ' + previousMetadata || current.endsWith(' | ' + previousMetadata)) {
             current = current.substring(0, current.length() - previousMetadata.length()) + metadata
