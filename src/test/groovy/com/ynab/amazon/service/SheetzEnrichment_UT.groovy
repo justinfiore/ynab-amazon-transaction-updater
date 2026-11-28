@@ -268,6 +268,29 @@ class SheetzEnrichment_UT extends Specification {
         0 * ynab.putTransaction(_, _)
     }
 
+    def 'approved uncategorized fuel requires opt in and an unchanged approved snapshot'() {
+        given:
+        def transaction = tx(); transaction.approved = 'true'; transaction.category_id = category
+        def current = snapshot(transaction) + [approved:freshApproved, category_id:freshCategory]
+        def order = SheetzEnrichment.normalizeResponse([orders:[record('RETAIL_FUEL')]]).orders
+        def ynab = Mock(YNABService)
+        when:
+        def result = SheetzEnrichment.process([transaction], order, ynab, ['account'] as Set,
+            false, false, true, 'gas', null, true, null, [:], null, null, enabled)
+        then:
+        1 * ynab.getCategoryCatalog() >> [[id:'gas']]
+        reads * ynab.getTransaction('t') >>> (writes ? [current, current + [category_id:'gas']] : [current])
+        writes * ynab.putTransaction('t', [category_id:'gas'])
+        result.updated == writes
+        where:
+        enabled | category | freshApproved | freshCategory | reads | writes
+        false   | null     | true          | null          | 0     | 0
+        true    | 'human'  | true          | 'human'       | 0     | 0
+        true    | null     | false         | null          | 1     | 0
+        true    | null     | true          | 'human'       | 1     | 0
+        true    | null     | true          | null          | 2     | 1
+    }
+
     def 'missing or ineligible category never produces a fuel category write'() {
         given:
         def order = SheetzEnrichment.normalizeResponse([orders:[record('RETAIL_FUEL')]]).orders

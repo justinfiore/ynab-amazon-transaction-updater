@@ -60,6 +60,7 @@ class Configuration {
     boolean sheetzEnabled = false
     boolean sheetzMemoWrites = false
     boolean sheetzCategoryWrites = false
+    boolean sheetzAllowApprovedUncategorized = false
     String sheetzPythonExecutable
     String sheetzBridgeScript = 'scripts/sheetz_bridge.py'
     String sheetzCredentialsFile
@@ -151,13 +152,14 @@ class Configuration {
             this.walmartPaymentAccounts = config.walmart?.payment_accounts ?: [:]
             this.walmartCategorization = config.walmart?.categorization ?: this.walmartCategorization
 
-            ['enabled', 'memo_writes', 'category_writes'].each { key ->
+            ['enabled', 'memo_writes', 'category_writes', 'allow_approved_uncategorized'].each { key ->
                 def value = config.sheetz?.get(key)
                 if (value != null && !(value instanceof Boolean)) throw new IllegalArgumentException("sheetz.${key} must be boolean")
             }
             this.sheetzEnabled = config.sheetz?.enabled ?: false
             this.sheetzMemoWrites = config.sheetz?.memo_writes ?: false
             this.sheetzCategoryWrites = config.sheetz?.category_writes ?: false
+            this.sheetzAllowApprovedUncategorized = config.sheetz?.allow_approved_uncategorized ?: false
             this.sheetzPythonExecutable = resolvePath(config.sheetz?.python_executable)
             this.sheetzBridgeScript = resolvePath(config.sheetz?.bridge_script) ?: this.sheetzBridgeScript
             this.sheetzCredentialsFile = resolvePath(config.sheetz?.credentials_file)

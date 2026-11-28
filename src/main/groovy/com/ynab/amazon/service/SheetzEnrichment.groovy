@@ -106,7 +106,7 @@ class SheetzEnrichment {
     static Map process(List<YNABTransaction> transactions, List<Map> orders, YNABService ynab, Set accounts,
                        boolean dryRun, boolean memoWrites, boolean categoryWrites, String fuelCategory, String unmatchedCategory,
                        boolean allowUnmatched = true, Set targetIds = null, Map categorization = [:], String budgetId = null,
-                       RemoteItemClassifier classifier = null) {
+                       RemoteItemClassifier classifier = null, boolean allowApprovedUncategorized = false) {
         Map plans = plan(transactions, orders, accounts)
         def catalog = categoryWrites ? ynab.getCategoryCatalog() : []
         Set valid = catalog.findAll { !it.hidden && !it.deleted && !it.internal && !it.group_hidden && !it.group_deleted && !it.group_internal }.collect { it.id } as Set
@@ -126,7 +126,8 @@ class SheetzEnrichment {
             YNABTransaction tx = entry.transaction
             if (entry.reason == 'ambiguous') { result.preview << [transaction_id:id, reason:'ambiguous']; return }
             if (entry.reason == 'unmatched' && !allowUnmatched) { result.preview << [transaction_id:id, reason:'incomplete_history']; return }
-            if (tx.getApproved() != 'false' || tx.getDeleted() != 'false' || tx.subtransactions || !(tx.getCleared() in ['cleared', 'uncleared'])) return
+            if (!(tx.getApproved() == 'false' || (allowApprovedUncategorized && tx.getApproved() == 'true' && !tx.category_id)) ||
+                tx.getDeleted() != 'false' || tx.subtransactions || !(tx.getCleared() in ['cleared', 'uncleared'])) return
             Map changes = [:]
             if (memoWrites) {
                 String proposed = memo(tx.memo, entry.order as Map)
@@ -178,7 +179,7 @@ class SheetzEnrichment {
     }
 
     private static boolean sameSnapshot(YNABTransaction tx, Map current) {
-        if (!current || current.approved != false || current.deleted != false || current.subtransactions || current.transfer_account_id ||
+        if (!current || current.approved != (tx.getApproved() == 'true') || current.deleted != false || current.subtransactions || current.transfer_account_id ||
             !(current.cleared in ['cleared', 'uncleared'])) return false
         ['id','date','amount','account_id','payee_id','payee_name','memo','category_id','cleared','import_id','flag_color'].every { field ->
             def before = field == 'cleared' ? tx.getCleared() : tx."${field}"

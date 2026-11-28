@@ -198,7 +198,7 @@ class YNABAmazonTransactionUpdater {
                 def result = com.ynab.amazon.service.SheetzEnrichment.process(candidates, feed.orders, ynabService, accounts,
                     previewOnly, config.sheetzMemoWrites || previewOnly, config.sheetzCategoryWrites || previewOnly,
                     config.sheetzGasolineDefaultCategoryId, config.sheetzUnmatchedDefaultCategoryId, !feed.incomplete,
-                    ynabTransactions*.id as Set, config.sheetzCategorization, config.ynabBudgetId)
+                    ynabTransactions*.id as Set, config.sheetzCategorization, config.ynabBudgetId, null, config.sheetzAllowApprovedUncategorized)
                 result.preview.each { preview ->
                     logger.info('Sheetz preview: transaction={} reason={} fields={}',
                         preview.transaction_id, preview.reason, (preview.changes ?: [:]).keySet())

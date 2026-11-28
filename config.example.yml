@@ -74,6 +74,7 @@ sheetz:
   enabled: false
   memo_writes: false
   category_writes: false  # Unmatched charges may have a prefilled category explicitly cleared.
+  allow_approved_uncategorized: false  # Preserve approval; never modify approved categorized or split transactions.
   accounts: []  # Existing on-budget YNAB account IDs to consider
   # python_executable: ".venv-amazon-orders/bin/python"  # Install requirements-amazon-browser.txt
   # bridge_script: "scripts/sheetz_bridge.py"
