@@ -83,6 +83,22 @@ class SheetzEnrichment_UT extends Specification {
         SheetzEnrichment.memo(memo, order) == memo
         SheetzEnrichment.memo(memo, null) == notice
         SheetzEnrichment.memo('x' * 500, order) == null
+        SheetzEnrichment.memo(SheetzEnrichment.memo('  private note  ', null), order).startsWith('  private note   | 🤖 ')
+    }
+
+    def 'unconfirmed writes are reported without retrying or exposing memo contents'() {
+        given:
+        def transaction = tx()
+        def current = snapshot(transaction)
+        def ynab = Mock(YNABService)
+        when:
+        def result = SheetzEnrichment.process([transaction], [], ynab, ['account'] as Set, false, true, false, null, null)
+        then:
+        1 * ynab.getTransaction('t') >> current
+        1 * ynab.putTransaction('t', _) >> { throw new IOException('private detail') }
+        1 * ynab.getTransaction('t') >> current
+        result.updated == 0
+        result.failures == [[transaction_id:'t', reason:'write_not_confirmed']]
     }
 
     def 'older transaction competes for a receipt without becoming a write target'() {

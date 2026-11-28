@@ -68,7 +68,7 @@ class SheetzEnrichment {
     static String memo(String existing, Map order) {
         String user = existing ?: ''
         def generated = user =~ /(?:^| \| )(🤖❓ No matching Sheetz online or fuel purchase found|🤖 \d{4}-\d{2}-\d{2} \| Total \$.*(?:https:\/\/orders\.sheetz\.com\/order\/history| \| Fuel purchase [^|]+))$/
-        if (generated.find()) user = user.substring(0, generated.start()).trim()
+        if (generated.find()) user = user.substring(0, generated.start())
         String prefix = user ? user + ' | ' : ''
         if (!order) {
             String result = prefix + NOTICE
@@ -98,7 +98,7 @@ class SheetzEnrichment {
         Map plans = plan(transactions, orders, accounts)
         def catalog = categoryWrites ? ynab.getCategoryCatalog() : []
         Set valid = catalog.findAll { !it.hidden && !it.deleted && !it.internal && !it.group_hidden && !it.group_deleted && !it.group_internal }.collect { it.id } as Set
-        Map result = [preview: [], updated: 0]
+        Map result = [preview: [], updated: 0, failures: []]
         plans.each { id, entry ->
             if (targetIds != null && !targetIds.contains(id)) return
             YNABTransaction tx = entry.transaction
@@ -122,8 +122,10 @@ class SheetzEnrichment {
             Map current = ynab.getTransaction(id as String)
             if (!sameSnapshot(tx, current)) return
             try { ynab.putTransaction(id as String, changes) } catch (Exception ignored) { }
-            Map after = ynab.getTransaction(id as String)
+            Map after
+            try { after = ynab.getTransaction(id as String) } catch (Exception ignored) { }
             if (GuardedTransactions.same(after, current + changes)) result.updated++
+            else result.failures << [transaction_id:id, reason:'write_not_confirmed']
         }
         result
     }

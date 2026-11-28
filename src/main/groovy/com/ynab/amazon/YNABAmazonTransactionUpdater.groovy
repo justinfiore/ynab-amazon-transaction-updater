@@ -199,7 +199,13 @@ class YNABAmazonTransactionUpdater {
                     previewOnly, config.sheetzMemoWrites || previewOnly, config.sheetzCategoryWrites || previewOnly,
                     config.sheetzGasolineDefaultCategoryId, config.sheetzUnmatchedDefaultCategoryId, !feed.incomplete,
                     ynabTransactions*.id as Set)
-                result.preview.each { logger.info('Sheetz preview: {}', new ObjectMapper().writeValueAsString(it)) }
+                result.preview.each { preview ->
+                    logger.info('Sheetz preview: transaction={} reason={} fields={}',
+                        preview.transaction_id, preview.reason, (preview.changes ?: [:]).keySet())
+                }
+                result.failures.each { failure ->
+                    logger.warn('Sheetz write not confirmed: transaction={} reason={}', failure.transaction_id, failure.reason)
+                }
                 logger.info('Sheetz updated {} transactions', result.updated)
             } catch (Exception ignored) {
                 logger.warn('Sheetz processing stopped safely; check source, session and configuration. Other retailers continue.')
