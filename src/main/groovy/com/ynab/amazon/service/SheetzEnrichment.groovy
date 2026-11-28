@@ -147,8 +147,8 @@ class SheetzEnrichment {
                 } else {
                     Map resolved = ItemClassificationService.resolve(items as List<Map>, categories, classificationState,
                         'sheetz', budgetId ?: '', classifier, dryRun, { Map ignored -> })
-                    if (resolved.failed || items.any { !resolved.decisions[it.itemId]?.category_id }) {
-                        result.preview << [transaction_id:id, reason:resolved.failed ? resolved.reason : 'unresolved_categories']
+                    if (resolved.failed) {
+                        result.preview << [transaction_id:id, reason:resolved.reason]
                         if (resolved.failed && !dryRun) classifier = null
                     } else {
                         List lines = items.findAll { allocation.costs[it.itemId] > 0 }.collect { item ->
@@ -156,8 +156,8 @@ class SheetzEnrichment {
                              category_id:resolved.decisions[item.itemId].category_id,
                              memo:item.title.take(200)]
                         }
-                        if (lines.size() == 1) changes.category_id = lines[0].category_id
-                        else if (lines) { changes.category_id = null; changes.subtransactions = lines }
+                        if (lines.size() == 1 && lines[0].category_id) changes.category_id = lines[0].category_id
+                        else if (lines.size() > 1) { changes.category_id = null; changes.subtransactions = lines }
                     }
                 }
             }

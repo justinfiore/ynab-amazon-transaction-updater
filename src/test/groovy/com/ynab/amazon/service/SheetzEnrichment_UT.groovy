@@ -55,6 +55,33 @@ class SheetzEnrichment_UT extends Specification {
         result.updated == 1
     }
 
+    def 'online splits preserve accepted categories and leave abstentions uncategorized'() {
+        given:
+        def transaction = tx()
+        def current = snapshot(transaction)
+        def order = SheetzEnrichment.normalizeResponse([orders:[record() + [items:[
+            [description:'Meal', totalPrice:10.00], [description:'Sauce', totalPrice:5.00]]]]]).orders
+        def ynab = Mock(YNABService)
+        def classifier = Stub(RemoteItemClassifier) {
+            getPolicy() >> 'amazon-choice-v1'
+            getConfig() >> [batch_size:8]
+            scope(_) >> 'scope'
+            classify(_, _) >> { List batch, Map ignored -> batch.collectEntries { item ->
+                [(item.itemId):[category_id:item.title == 'Meal' ? 'food' : null, scope:'scope']]
+            } }
+        }
+        def lines = [[amount:-8230L, category_id:'food', memo:'Meal'], [amount:-4110L, category_id:null, memo:'Sauce']]
+        when:
+        def result = SheetzEnrichment.process([transaction], order, ynab, ['account'] as Set,
+            false, false, true, null, null, true, null, [categories:[[id:'food']], consent:true], 'budget', classifier)
+        then:
+        1 * ynab.getCategoryCatalog() >> [[id:'food', name:'Food']]
+        1 * ynab.getTransaction('t') >> current
+        1 * ynab.putTransaction('t', [category_id:null, subtransactions:lines])
+        1 * ynab.getTransaction('t') >> (current + [category_id:null, subtransactions:lines])
+        result.updated == 1
+    }
+
     def 'online categories do not request inference or write without consent, complete prices, or a live run'() {
         given:
         def transaction = tx()
