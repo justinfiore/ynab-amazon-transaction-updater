@@ -80,6 +80,7 @@ class WalmartEnrichment {
                 Map decisions = [:]
                 boolean inferenceFailed = false
                 String inferenceReason = 'inference_unavailable'
+                String fundingProvider
                 def order = group[0].walmartOrder
                 def refund = refunds ? group[0].walmartCharge : null
                 if (!refunds) {
@@ -96,6 +97,8 @@ class WalmartEnrichment {
                         categories,state,'walmart',config.ynabBudgetId,classifier,true,{ ignored -> })
                     decisions = resolved.decisions
                     inferenceFailed = resolved.failed || (config.walmartCategorization.provider && !classifier && decisions.values().any { it.source == 'unresolved' })
+                    fundingProvider = resolved.funding_provider
+                    if (fundingProvider) inferenceReason = resolved.reason
                     if (dryRun && resolved.failed) inferenceReason = 'inference_required'
                 }
                 Map plan = config.walmartEnrichment != 'exception_first' ? [eligible:false, reason:'link_only'] :
@@ -118,6 +121,12 @@ class WalmartEnrichment {
                 state.plans[key] = entry
                 def operations = plan.eligible ? plan.operations : group.findAll { it.proposedMemo }.collect {
                     [transaction_id: it.ynabTransaction.id, charge_key: it.walmartCharge?.key, memo: it.proposedMemo]
+                }
+                // Never alter an allocating frozen intent, including partially applied groups.
+                if (fundingProvider && !entry.frozen) operations.each { op ->
+                    String noticeMemo = ClassificationFundingNotice.append(op.memo as String,fundingProvider)
+                    if (noticeMemo != null) op.memo = noticeMemo
+                    else stats.preview << [transaction_id:op.transaction_id,reason:'funding_notice_memo_too_long',provider:fundingProvider]
                 }
                 stats.preview << [order_id: orderId, reason: plan.reason, operations: operations]
                 if (dryRun) return
@@ -146,7 +155,8 @@ class WalmartEnrichment {
                     Map current = ynab.getWalmartTransaction(id)
                     if (previous?.allocation || (!plan.eligible && previous?.link)) {
                         if (!same(current, previous.result ?: previous.intent)) break
-                        continue
+                        if (previous.allocation || current.memo == op.memo || previous.pending ||
+                            ClassificationFundingNotice.withoutNotice(current.memo as String) != ClassificationFundingNotice.withoutNotice(op.memo as String)) continue
                     }
                     if (previous?.pending) {
                         if (same(current, previous.intent)) {
@@ -159,7 +169,7 @@ class WalmartEnrichment {
                     }
                     def match = group.find { it.ynabTransaction.id == id }
                     if (plan.eligible ? (!accounts.contains(current.account_id) || !same(current, entry.baselines?.get(id))) :
-                        !initial(match.ynabTransaction, current, null)) break
+                        !(previous?.link ? same(current,previous.result ?: previous.intent) : initial(match.ynabTransaction, current, null))) break
                     Map changes = plan.eligible ? WalmartAllocation.payload(current, op) : [memo: op.memo]
                     if (current.memo == op.memo && !plan.eligible) continue
                     Map intent = current + changes

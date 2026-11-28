@@ -2,8 +2,11 @@ package com.ynab.amazon.service
 
 import com.ynab.amazon.model.YNABTransaction
 import spock.lang.Specification
+import spock.lang.TempDir
 
 class SheetzEnrichment_UT extends Specification {
+    @TempDir File directory
+
     static YNABTransaction tx(String id = 't', String date = '2026-11-20', long amount = -12340) {
         new YNABTransaction(id:id, date:date, amount:amount, payee_name:'SHEETZ', account_id:'account',
             approved:'false', deleted:'false', cleared:'uncleared')
@@ -132,6 +135,43 @@ class SheetzEnrichment_UT extends Specification {
         category | reads
         null     | 0
         'food'   | 1
+    }
+
+    def 'funding notices cover subsequent Sheetz orders and respect memo writes and dry runs'() {
+        given:
+        def transactions = [tx(), tx('other', '2026-11-20', -20000)]
+        transactions.each { it.memo = 'Keep my note' }
+        def orders = SheetzEnrichment.normalizeResponse([orders:[record(), record() + [orderNumber:456, orderTotal:20.00]]]).orders
+        def key = ProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture-key'.toCharArray(),'amazon')
+        def config = RemoteItemClassifier.defaults('jev') + [credentials_file:key.toString(),policy_version:'amazon-choice-v1',
+            consent:true,categories:[[id:'food']]]
+        int calls = 0
+        def classifier = new RemoteItemClassifier(config,{ a,b,c,d -> calls++; [status:402,body:'private error'] })
+        Map remote = transactions.collectEntries { [(it.id):snapshot(it)] }
+        def ynab = Stub(YNABService) {
+            getCategoryCatalog() >> [[id:'food', name:'Food']]
+            getTransaction(_) >> { String id -> remote[id] }
+            putTransaction(_,_) >> { String id, Map changes -> remote[id] = remote[id] + changes }
+        }
+
+        when:
+        def result = SheetzEnrichment.process(transactions,orders,ynab,['account'] as Set,dryRun,memoWrites,true,
+            null,null,true,null,config,'plan',classifier)
+
+        then:
+        calls == (dryRun ? 0 : 1)
+        result.updated == (!dryRun && memoWrites ? 2 : 0)
+        remote.values().every { row ->
+            row.memo.startsWith('Keep my note') && !row.category_id && !row.subtransactions &&
+                (row.memo.contains('[ERROR: Jev classification unavailable; check funding/billing]') == (!dryRun && memoWrites)) &&
+                (row.memo.contains('https://console.typesafe.ai/billing') == (!dryRun && memoWrites)) && row.memo.length() <= 500
+        }
+
+        where:
+        dryRun | memoWrites
+        false  | true
+        false  | false
+        true   | true
     }
 
     def 'a failed provider response stops further inference for this run'() {

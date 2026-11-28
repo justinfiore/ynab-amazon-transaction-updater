@@ -76,21 +76,21 @@ class SheetzEnrichment {
         }
     }
 
-    static String memo(String existing, Map order) {
-        String user = existing ?: ''
+    static String memo(String existing, Map order, int maximum = 500) {
+        String user = ClassificationFundingNotice.withoutNotice(existing) ?: ''
         def generated = user =~ /(?:^| \| )(🤖❓ No matching Sheetz online or fuel purchase found|🤖 \d{4}-\d{2}-\d{2} \| Total \$.*(?:https:\/\/orders\.sheetz\.com\/order\/history| \| Fuel purchase [^|]+))$/
         if (generated.find()) user = user.substring(0, generated.start())
         String prefix = user ? user + ' | ' : ''
         if (!order) {
             String result = prefix + NOTICE
-            return result.length() <= 500 ? result : null
+            return result.length() <= maximum ? result : null
         }
         String base = prefix + '🤖 ' + order.date + ' | Total $' + AmazonMemos.money(order.cents as long)
         String suffix = order.type == 'ANYWHERE' ? ' | Order ' + order.id + ' | ' + HISTORY : ' | Fuel purchase ' + order.id
-        if ((base + suffix).length() > 500) return null
+        if ((base + suffix).length() > maximum) return null
         String summary = order.titles.take(3).join(', ')
         if (summary) {
-            int room = 500 - (base + suffix).length() - 3
+            int room = maximum - (base + suffix).length() - 3
             if (room > 1) {
                 if (summary.length() > room) {
                     int end = room - 1
@@ -149,7 +149,14 @@ class SheetzEnrichment {
                         'sheetz', budgetId ?: '', classifier, dryRun, { Map ignored -> })
                     if (resolved.failed) {
                         result.preview << [transaction_id:id, reason:resolved.reason]
-                        if (resolved.failed && !dryRun) classifier = null
+                        if (resolved.funding_provider && memoWrites) {
+                            String provider = resolved.funding_provider
+                            String base = memo(tx.memo,entry.order as Map,500 - ClassificationFundingNotice.message(provider).length() - 3)
+                            String noticeMemo = base != null ? ClassificationFundingNotice.append(base,provider) : null
+                            if (noticeMemo != null) changes.memo = noticeMemo
+                            else result.preview << [transaction_id:id,reason:'funding_notice_memo_too_long',provider:provider]
+                        }
+                        if (!dryRun && !resolved.funding_provider) classifier = null
                     } else {
                         List lines = items.findAll { allocation.costs[it.itemId] > 0 }.collect { item ->
                             [amount:-(allocation.costs[item.itemId] as long) * 10L,

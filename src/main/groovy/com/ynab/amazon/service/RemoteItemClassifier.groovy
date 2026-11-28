@@ -33,6 +33,7 @@ class RemoteItemClassifier {
     final Map metrics = [requests:0, retries:0, input_tokens:0L, output_tokens:0L, usage_complete:true, failures:0, elapsed_ms:0L,
         cached_tokens:0L, cache_write_tokens:0L, cache_usage_complete:true, last_http_status:null, stage:'initialization', failure_stage:null]
     private boolean stopped
+    String fundingProvider
 
     RemoteItemClassifier(Map config, Closure transport = null) {
         this.config = config
@@ -179,6 +180,12 @@ class RemoteItemClassifier {
                     connect_ms:Math.min(remaining,config.connect_ms as long), read_ms:Math.min(remaining,config.read_ms as long)])
                 metrics.last_http_status = response.status
                 metrics.stage = 'http_status'
+                if (fundingFailure(response)) {
+                    fundingProvider = config.provider
+                    LOG.warn('{} classification unavailable: funding or billing limit reached; check {}',
+                        ClassificationFundingNotice.PROVIDERS[fundingProvider].name, ClassificationFundingNotice.PROVIDERS[fundingProvider].url)
+                    throw new IllegalStateException('Provider funding unavailable')
+                }
                 if (!(response.status in [429,500,502,503,504]) || attempt >= config.max_retries) break
                 metrics.failures++; metrics.usage_complete=false
                 metrics.cache_usage_complete=false; metrics.cached_tokens=null; metrics.cache_write_tokens=null
@@ -248,6 +255,18 @@ class RemoteItemClassifier {
         } as Callable<Map>)
         try { task.get(limits.total_ms as long, TimeUnit.MILLISECONDS) }
         finally { request.cancel(); task.cancel(true); executor.shutdownNow(); client.close() }
+    }
+
+    private boolean fundingFailure(Map response) {
+        // TypeSafe documents 402 as insufficient credits; 429 alone is never funding evidence.
+        if (config.provider == 'jev') return response.status == 402
+        if (response.status != 429 || !(response.body instanceof String) ||
+            response.body.getBytes('UTF-8').length > config.max_response_bytes) return false
+        try {
+            def error = JSON.readValue(response.body, Map).error
+            error instanceof Map && error.code in ['insufficient_quota', 'credit_balance_exhausted',
+                'organization_spend_limit_exceeded', 'project_spend_limit_exceeded']
+        } catch (Exception ignored) { false }
     }
 
     private static boolean score(Object value) { value instanceof Number && Double.isFinite(value.doubleValue()) && value >= 0 && value <= 1 }

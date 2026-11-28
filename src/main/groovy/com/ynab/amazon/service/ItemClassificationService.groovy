@@ -62,6 +62,8 @@ class ItemClassificationService {
                 }
             } catch (Exception ignored) { failed = true }
         }
-        [decisions:decisions, failed:failed, reason:dryRun ? 'inference_required' : 'inference_unavailable']
+        String fundingProvider = failed ? classifier?.fundingProvider : null
+        [decisions:decisions, failed:failed, funding_provider:fundingProvider,
+            reason:fundingProvider ? 'provider_funding_unavailable' : dryRun ? 'inference_required' : 'inference_unavailable']
     }
 }

@@ -450,6 +450,45 @@ class WalmartService_IT extends Specification {
         calls==1
     }
 
+    def 'Walmart funding notices survive retries and are removed after mappings recover'() {
+        given:
+        Path key = WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture-key'.toCharArray())
+        config.walmartCategorization = WalmartRemoteClassifier.defaults('jev') + [credentials_file:key.toString(),categories:[[id:'g'],[id:'h']]]
+        int calls = 0
+        def classifier = new WalmartRemoteClassifier(config.walmartCategorization,{ a,b,c,d -> calls++; [status:402,body:'private error'] })
+        def order = WalmartFixture.order()
+        def txs = WalmartFixture.transactions()
+        txs.each { remote[it.id] = WalmartFixture.remote(it) }
+        def matches = new TransactionMatcher().findWalmartMatches(txs,[order])
+
+        when:
+        new WalmartEnrichment(config).process(matches,ynab,false,classifier)
+
+        then:
+        calls == 1 && writes.size() == txs.size()
+        remote.values().every { it.memo.contains('[ERROR: Jev classification unavailable; check funding/billing]') &&
+            it.memo.contains('https://console.typesafe.ai/billing') && it.memo.length() <= 500 && !it.category_id && !it.subtransactions }
+
+        when:
+        new WalmartEnrichment(config).process(matches,ynab,false,classifier)
+
+        then:
+        calls == 1 && writes.size() == txs.size()
+
+        when:
+        new WalmartJournal(config.walmartJournalFile).locked(false) { state,save ->
+            order.items.each { state.mappings['plan/' + it.productId] = ['g'] }; save(state)
+        }
+        txs.each { it.memo = remote[it.id].memo }
+        matches = new TransactionMatcher().findWalmartMatches(txs,[order])
+        new WalmartEnrichment(config).process(matches,ynab,false,classifier)
+
+        then:
+        calls == 1 && writes.size() == txs.size() * 2
+        remote.values().every { !it.memo.contains('[ERROR:') && !it.memo.contains('https://console.typesafe.ai/billing') }
+        remote.values().any { it.category_id || it.subtransactions }
+    }
+
     @Unroll
     def 'Walmart #mode requires verified USD plan currency: #currency'() {
         given:

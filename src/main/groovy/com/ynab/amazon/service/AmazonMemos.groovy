@@ -9,7 +9,7 @@ class AmazonMemos {
         String text = (refund ? 'Refund: ' : '') + (item.quantity > 1 ? "${item.quantity} × " : '') + item.title
         bounded('🤖 ' + text,500)
     }
-    static String parent(AmazonOrder order, Map event, String userText = '') {
+    static String parent(AmazonOrder order, Map event, String userText = '', int maximum = 500) {
         boolean refund = event?.signed_cents > 0
         String id = order.orderId?.replaceFirst(/^RETURN-/, '')
         List required = [(event?.order_only == true ? '🤖❓' : '🤖') + (userText ? ' ' + userText : '')]
@@ -33,14 +33,14 @@ class AmazonMemos {
         String link = realId(id) ? 'https://www.amazon.com/your-orders/order-details?orderID=' + id : null
         String suffix = link ? ' | ' + link : ''
         String base = required.join(' | ')
-        if ((base + suffix).length() > 500) return null
+        if ((base + suffix).length() > maximum) return null
         List items = refund ? (event.refund_evidence?.items ?: []) :
             (evidence.items ?: order.items.collect { [title:it.title] })
         String summary = items.size() > 1 ? "${items.size()} items: " : ''
         summary += items.take(3).collect { it.title }.findAll { it }.join(', ')
         if (!items) summary = "❌ Amazon Order (Couldn't identify items)"
         if (items.size() > 3) summary += '…'
-        int room = 500 - (base + suffix).length() - 3
+        int room = maximum - (base + suffix).length() - 3
         if (summary && room > 12) base += ' | ' + bounded(summary,room)
         base + suffix
     }
