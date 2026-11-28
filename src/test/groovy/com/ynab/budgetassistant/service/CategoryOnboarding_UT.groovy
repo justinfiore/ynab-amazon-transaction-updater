@@ -9,7 +9,7 @@ class CategoryOnboarding_UT extends Specification {
 
     private static void asVersionTwo(File file) {
         Map old = new Yaml().load(file.text)
-        file.text = new Yaml().dump([schema_version:2, budget:[ynab:[api_key:'fixture',budget_id:'plan']], runtime:[:], retailers:old])
+        file.text = new Yaml().dump([schema_version:2, budget:[ynab:[api_key:'fixture',budget_id:'plan']], runtime:[:], retailers:[amazon:[:],walmart:[:],sheetz:[:]] + old])
     }
 
     def 'direct onboarding entrypoints reject legacy configuration before account calls or prompts'() {
@@ -40,6 +40,48 @@ class CategoryOnboarding_UT extends Specification {
         output.toString().empty
         file.text == original
         directory.list().toList() == ['legacy.yml']
+    }
+
+    def 'invalid v2 retailer mappings fail before account calls or prompts'() {
+        given:
+        File file = new File(directory, 'config.yml')
+        file.text = new Yaml().dump([schema_version:2, budget:[ynab:[api_key:'fixture',budget_id:'plan']],
+            runtime:[:], retailers:retailers])
+        def ynab = Mock(YNABService)
+        def output = new StringWriter()
+
+        when:
+        CategoryOnboarding.selectCategories(file.toPath(), ynab, new BufferedReader(new StringReader('yes\n')),
+            new PrintWriter(output, true), [:], 'amazon')
+
+        then:
+        thrown(IllegalArgumentException)
+        0 * ynab._
+        output.toString().empty
+        directory.list().toList() == ['config.yml']
+
+        where:
+        retailers << [[amazon:null,walmart:[:],sheetz:[:]], [amazon:[:],walmart:[:]]]
+    }
+
+    def 'missing migrated state blocks direct setup before account calls or prompts'() {
+        given:
+        File file = new File(directory, 'config.yml')
+        file.text = new Yaml().dump([schema_version:2, budget:[ynab:[api_key:'fixture',budget_id:'plan']],
+            runtime:[processed_transactions_file:new File(directory,'missing.json').path,
+                require_existing_processed_transactions_file:true], retailers:[amazon:[:],walmart:[:],sheetz:[:]]])
+        def ynab = Mock(YNABService)
+        def output = new StringWriter()
+
+        when:
+        CategoryOnboarding.selectCategories(file.toPath(), ynab, new BufferedReader(new StringReader('yes\n')),
+            new PrintWriter(output, true), [:], 'amazon')
+
+        then:
+        thrown(IllegalStateException)
+        0 * ynab._
+        output.toString().empty
+        directory.list().toList() == ['config.yml']
     }
 
     def 'Amazon saves only its shortlist and explicit consent without default or enablement'() {

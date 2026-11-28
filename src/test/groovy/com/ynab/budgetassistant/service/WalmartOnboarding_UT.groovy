@@ -12,7 +12,7 @@ class WalmartOnboarding_UT extends Specification {
     private static void asVersionTwo(File file) {
         Map old = new Yaml().load(file.text)
         file.text = new Yaml().dump([schema_version:2, budget:[ynab:old.remove('ynab') ?: [api_key:'fixture',budget_id:'plan']],
-            runtime:[:], retailers:old])
+            runtime:[:], retailers:[amazon:[:],walmart:[:],sheetz:[:]] + old])
     }
     @Unroll
     def '#provider activation preserves duplicate category names through inference without leaking IDs'() {

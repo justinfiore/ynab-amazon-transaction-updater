@@ -240,6 +240,9 @@ class TransactionProcessor {
      * Load list of previously processed transaction IDs
      */
     private Set<String> loadProcessedTransactions() {
+        if (config?.requireExistingProcessedTransactionsFile) {
+            return Configuration.readRequiredProcessedTransactions(config.processedTransactionsFile)
+        }
         try {
             String path = config?.processedTransactionsFile
             if (path == null || path.trim().isEmpty()) {

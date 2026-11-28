@@ -54,6 +54,7 @@ class ConfigMigration {
             result.retailers.walmart.helper_executable = options['--legacy-walmart-helper']
         } else if (options['--legacy-walmart-helper']) throw new IllegalArgumentException('--legacy-walmart-helper is only valid for an enabled Walmart source using the bundled helper')
         if (!result.runtime.containsKey('dry_run')) result.runtime.dry_run = false
+        if (result.runtime.processed_transactions_file?.trim()) result.runtime.require_existing_processed_transactions_file = true
         if (!result.retailers.amazon.journal_file?.trim()) result.retailers.amazon.journal_file = 'amazon-journal.json'
         if (!result.retailers.walmart.journal_file?.trim()) result.retailers.walmart.journal_file = 'walmart-journal.json'
         if (!result.retailers.sheetz.bridge_script?.trim()) result.retailers.sheetz.bridge_script = 'scripts/sheetz_bridge.py'

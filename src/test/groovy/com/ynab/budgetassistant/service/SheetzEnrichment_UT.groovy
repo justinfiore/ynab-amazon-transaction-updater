@@ -1,8 +1,14 @@
 package com.ynab.budgetassistant.service
 
+import com.ynab.budgetassistant.config.ConfigMigration
+import com.ynab.budgetassistant.config.Configuration
 import com.ynab.budgetassistant.model.YNABTransaction
+import org.yaml.snakeyaml.Yaml
 import spock.lang.Specification
 import spock.lang.TempDir
+
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 
 class SheetzEnrichment_UT extends Specification {
     @TempDir File directory
@@ -18,6 +24,39 @@ class SheetzEnrichment_UT extends Specification {
         [id:tx.id, date:tx.date, amount:tx.amount, payee_name:tx.payee_name, payee_id:null, account_id:tx.account_id,
          approved:false, deleted:false, cleared:'uncleared', memo:tx.memo, category_id:tx.category_id, import_id:null,
          flag_color:null, transfer_account_id:null, subtransactions:[]]
+    }
+
+    def 'migration preserves Sheetz dry-run proposals including explicit category clearing'() {
+        given:
+        Files.setPosixFilePermissions(directory.toPath(), PosixFilePermissions.fromString('rwx------'))
+        File legacy = new File(directory, 'legacy.yml')
+        Map settings = [accounts:['account'], memo_writes:true, category_writes:true,
+            unmatched_default_category_id:null, categorization:[consent:false]]
+        legacy.text = new Yaml().dump([ynab:[api_key:'fixture', budget_id:'plan'], app:[dry_run:true], sheetz:settings])
+        Files.setPosixFilePermissions(legacy.toPath(), PosixFilePermissions.fromString('rw-------'))
+        File output = new File(directory, 'migrated.yml')
+        ConfigMigration.run(['--input', legacy.path, '--output', output.path,
+            '--legacy-working-directory', directory.path, '--apply'] as String[])
+        def migrated = new Configuration()
+        migrated.loadConfiguration(output)
+        def transactions = [tx(), tx('unmatched', '2026-11-20', -20000)]
+        transactions[1].category_id = 'old-category'
+        def orders = SheetzEnrichment.normalizeResponse([orders:[record()]]).orders
+        def ynab = Stub(YNABService) { getCategoryCatalog() >> [[id:'old-category', name:'Old']] }
+
+        when:
+        def baseline = SheetzEnrichment.process(transactions, orders, ynab, settings.accounts as Set, true,
+            settings.memo_writes, settings.category_writes, null, settings.unmatched_default_category_id,
+            true, null, settings.categorization, 'plan')
+        def converted = SheetzEnrichment.process(transactions, orders, ynab, migrated.sheetzAccounts as Set, true,
+            migrated.sheetzMemoWrites, migrated.sheetzCategoryWrites, migrated.sheetzGasolineDefaultCategoryId,
+            migrated.sheetzUnmatchedDefaultCategoryId, true, null, migrated.sheetzCategorization, migrated.ynabBudgetId)
+
+        then:
+        converted.preview == baseline.preview
+        converted.preview.find { it.transaction_id == 'unmatched' }.changes.containsKey('category_id')
+        converted.preview.find { it.transaction_id == 'unmatched' }.changes.category_id == null
+        converted.updated == 0
     }
 
     def 'the order total including tax and discounts is apportioned in exact cents'() {

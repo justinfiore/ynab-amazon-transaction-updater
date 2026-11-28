@@ -3,12 +3,16 @@ package com.ynab.budgetassistant.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpServer
 import com.ynab.budgetassistant.BudgetAssistant
+import com.ynab.budgetassistant.config.ConfigMigration
 import com.ynab.budgetassistant.config.Configuration
 import com.ynab.budgetassistant.model.*
+import org.yaml.snakeyaml.Yaml
 import spock.lang.Specification
 import spock.lang.TempDir
 import spock.lang.Unroll
 import java.nio.file.Path
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 
 /** Actual YNAB HTTP contract tests with account-free provider transports. */
 class WalmartService_IT extends Specification {
@@ -601,7 +605,7 @@ class WalmartService_IT extends Specification {
             [name:'Renamed system group',internal:true,categories:[[id:'internal-group',name:'Payment',internal:false]]],
             [name:'Credit Card Payments',internal:false,categories:[[id:'ordinary',name:'User category',internal:false]]]
         ]
-        File file = new File(directory,'setup.yml'); file.text='schema_version: 2\nbudget: {ynab: {api_key: fixture, budget_id: plan}}\nruntime: {}\nretailers: {walmart: {enabled: false}}\n'
+        File file = new File(directory,'setup.yml'); file.text='schema_version: 2\nbudget: {ynab: {api_key: fixture, budget_id: plan}}\nruntime: {}\nretailers: {amazon: {}, walmart: {enabled: false}, sheetz: {}}\n'
         def output = new StringWriter()
 
         when:
@@ -760,6 +764,33 @@ class WalmartService_IT extends Specification {
         !writes[0].change.containsKey('subtransactions')
         remote.only.category_id=='g'
         !remote.only.subtransactions
+    }
+
+    def 'migration preserves a Walmart dry-run proposal'() {
+        given:
+        Files.setPosixFilePermissions(directory.toPath(), PosixFilePermissions.fromString('rwx------'))
+        File legacy = new File(directory, 'legacy.yml')
+        legacy.text = new Yaml().dump([ynab:[api_key:'fixture', budget_id:'plan', base_url:config.ynabBaseUrl],
+            app:[dry_run:true], walmart:[enrichment:config.walmartEnrichment,
+                default_category_id:config.walmartDefaultCategoryId, categorization:config.walmartCategorization,
+                journal_file:config.walmartJournalFile]])
+        Files.setPosixFilePermissions(legacy.toPath(), PosixFilePermissions.fromString('rw-------'))
+        File output = new File(directory, 'migrated.yml')
+        ConfigMigration.run(['--input', legacy.path, '--output', output.path,
+            '--legacy-working-directory', directory.path, '--apply'] as String[])
+        def migrated = new Configuration()
+        migrated.loadConfiguration(output)
+        def matches = new AmazonTransactionMatcher().findWalmartMatches(WalmartFixture.transactions(), [WalmartFixture.order()])
+
+        when:
+        def baseline = new TransactionProcessor(config).processWalmartMatches(matches, ynab, true)
+        def converted = new TransactionProcessor(migrated).processWalmartMatches(matches, ynab, true)
+
+        then:
+        baseline.preview[0].operations.size() == 2
+        converted.preview == baseline.preview
+        writes.empty
+        !new File(config.walmartJournalFile).exists()
     }
 
     def 'preview performs no writes and leaves journal unchanged'() {

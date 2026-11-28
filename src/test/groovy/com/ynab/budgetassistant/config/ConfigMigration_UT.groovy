@@ -23,6 +23,9 @@ sheetz: {unmatched_default_category_id: null}
         File output = new File(directory, 'new.yml')
         String[] args = ['--input',input.path,'--output',output.path,'--legacy-working-directory',directory.path]
         String before = input.text
+        File state = new File(directory, 'state.json')
+        state.text = '{"processed_transaction_ids":["already-processed"]}'
+        Files.setPosixFilePermissions(state.toPath(), PosixFilePermissions.fromString('rw-------'))
 
         when:
         ConfigMigration.run(args + ['--check'])
@@ -42,6 +45,7 @@ sheetz: {unmatched_default_category_id: null}
         config.schema_version == 2
         config.runtime.dry_run == false
         config.runtime.processed_transactions_file == new File(directory,'state.json').absolutePath
+        config.runtime.require_existing_processed_transactions_file == true
         config.retailers.amazon.python.executable == new File(directory,'bin/python').absolutePath
         config.retailers.amazon.categorization.consent == false
         config.retailers.amazon.categorization.credentials_file == new File(directory,'keys/provider.json').absolutePath
@@ -73,6 +77,19 @@ sheetz: {unmatched_default_category_id: null}
             'schema_version: 2\nschema_version: 2\nbudget: {ynab: {}}\nruntime: {}\nretailers: {}',
             'schema_version: 2\nbudget: {ynab: {}}\nruntime: {dry_runn: true}\nretailers: {}',
             'schema_version: 2\nbudget: [invalid\nruntime: {}']
+    }
+
+    def 'missing and null retailer sections are rejected'() {
+        when:
+        ConfigSchema.validate([schema_version:2, budget:[ynab:[api_key:'fixture', budget_id:'plan']],
+            runtime:[:], retailers:retailers], 'fixture.yml')
+
+        then:
+        thrown(IllegalArgumentException)
+
+        where:
+        retailers << [[amazon:[:], walmart:[:]], [amazon:null, walmart:[:], sheetz:[:]],
+            [amazon:[:], walmart:[:], sheetz:null]]
     }
 
     def 'schema rejects non-string payment mappings and account IDs without exposing values'() {
@@ -120,6 +137,61 @@ sheetz: {unmatched_default_category_id: null}
         result.retailers.walmart.categorization.credentials_file == result.retailers.amazon.categorization.credentials_file
         result.retailers.walmart.session_file == new File(sibling,'session').path
         state.text == '{"pending":"unchanged"}'
+    }
+
+    def 'migrated processed state must be staged, protected and readable before use'() {
+        given:
+        Files.setPosixFilePermissions(directory.toPath(), PosixFilePermissions.fromString('rwx------'))
+        File input = new File(directory, 'old.yml')
+        input.text = 'ynab: {api_key: fixture, budget_id: plan}\napp: {processed_transactions_file: state.json}\n'
+        Files.setPosixFilePermissions(input.toPath(), PosixFilePermissions.fromString('rw-------'))
+        File output = new File(directory, 'new.yml')
+        File oldRoot = new File(directory, 'old-checkout'); oldRoot.mkdir()
+        File newRoot = new File(directory, 'new-checkout'); newRoot.mkdir()
+        ConfigMigration.run(['--input', input.path, '--output', output.path,
+            '--legacy-working-directory', oldRoot.path, '--old-checkout', oldRoot.path,
+            '--new-checkout', newRoot.path, '--apply'] as String[])
+        File state = new File(newRoot, 'state.json')
+
+        when:
+        new Configuration().loadConfiguration(output)
+
+        then:
+        thrown(IllegalStateException)
+        !state.exists()
+
+        when:
+        state.text = '{"processed_transaction_ids":["already"]}'
+        Files.setPosixFilePermissions(state.toPath(), PosixFilePermissions.fromString('rw-r--r--'))
+        new Configuration().loadConfiguration(output)
+
+        then:
+        thrown(IllegalStateException)
+
+        when:
+        Files.setPosixFilePermissions(state.toPath(), PosixFilePermissions.fromString('rw-------'))
+        state.text = '{invalid json}'
+        new Configuration().loadConfiguration(output)
+
+        then:
+        thrown(IllegalStateException)
+
+        when:
+        state.text = '{"processed_transaction_ids":["already"]}'
+        def config = new Configuration()
+        config.loadConfiguration(output)
+        def processor = new com.ynab.budgetassistant.service.TransactionProcessor(config)
+
+        then:
+        config.requireExistingProcessedTransactionsFile
+        processor != null
+
+        when:
+        state.delete()
+        new com.ynab.budgetassistant.service.TransactionProcessor(config)
+
+        then:
+        thrown(IllegalStateException)
     }
 
     def 'unsafe input permissions and existing output fail without modifying either file'() {

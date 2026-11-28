@@ -43,6 +43,7 @@ class CategoryOnboarding {
         byte[] original=Files.readAllBytes(file)
         Map config = ConfigSchema.parse(new String(original,'UTF-8'), file.toString())
         ConfigSchema.validate(config, file.toString())
+        ConfigSchema.validateResources(config)
         Map walmart = config.retailers[retailer] ?: [:]
         List<Map> catalog = (retailer == 'walmart' ? ynab.getWalmartCategories() : ynab.getCategoryCatalog()).findAll { !it.hidden && !it.deleted && !it.internal && !it.group_internal && !it.group_hidden && !it.group_deleted }
             .sort { a,b -> (a.group_name <=> b.group_name) ?: (a.name <=> b.name) ?: (a.id <=> b.id) }
@@ -117,6 +118,7 @@ class CategoryOnboarding {
         byte[] before=Files.readAllBytes(file)
         Map config=ConfigSchema.parse(new String(before,'UTF-8'), file.toString())
         ConfigSchema.validate(config, file.toString())
+        ConfigSchema.validateResources(config)
         Map selected=config.retailers[retailer]?.categorization ?: [:]
         if (!selected.credentials_file || !selected.provider) { println 'No selected provider connection.'; return }
         ProviderKeys.read(selected.credentials_file.toString(),selected.provider.toString())
@@ -142,6 +144,7 @@ class CategoryOnboarding {
         byte[] original = Files.readAllBytes(file)
         Map config = ConfigSchema.parse(new String(original,'UTF-8'), file.toString())
         ConfigSchema.validate(config, file.toString())
+        ConfigSchema.validateResources(config)
         List accounts = ynab.getBudgetAccounts().sort()
         accounts.eachWithIndex { id,i -> output.println("${i+1}. ${id}") }
         output.println('Enter the confirmed Amazon payment identity, e.g. python:visa:1234; q cancels. Do not infer identity from an account name:')

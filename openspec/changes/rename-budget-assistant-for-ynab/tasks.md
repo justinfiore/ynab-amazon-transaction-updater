@@ -16,11 +16,12 @@
 
 ## 3. Required branding and release qualification
 
-- [ ] 3.1 Update active text to Budget Assistant for YNAB and document current Amazon/Walmart/Sheetz scope and planned Costco/Sam's Club. Pin `ynab-budget-assistant` distribution/launcher identity independent of checkout basename; align active links/metadata and setup profile markers without rewriting history.
+- [x] 3.1 Update active text to Budget Assistant for YNAB and document current Amazon/Walmart/Sheetz scope and planned Costco/Sam's Club. Pin `ynab-budget-assistant` distribution/launcher identity independent of checkout basename; align active links/metadata and setup profile markers without rewriting history.
+  - The current DeepWiki URL remains on the existing repository until the separately approved GitHub rename in 4.2.
 - [x] 3.2 Update shell/Windows packaging instructions and provide the deprecated old executable alias for at least one transition release. Both executable names run the new schema-only runtime; neither accepts legacy config.
 - [x] 3.3 Emit new auth notice and recognize both old/new strings in all detection/removal/matching paths, preserving user text, memo limits and write guards without bulk migration.
-- [ ] 3.4 Run full unit/integration/Python bridge contracts and clean base/`-Pwalmart` packaging checks, including installed migration scripts, arguments/exit status, arbitrary checkout names, notice reruns and unchanged proposals after property migration. Report Windows execution limitations.
-  - Full suites, both packages, launcher checks and the Amazon migrated dry-run and pending-intent replay passed in a loopback-only network namespace. Comparative migrated Walmart and Sheetz proposals remain unverified; Windows execution remains best effort.
+- [x] 3.4 Run full unit/integration/Python bridge contracts and clean base/`-Pwalmart` packaging checks, including installed migration scripts, arguments/exit status, arbitrary checkout names, notice reruns and unchanged proposals after property migration. Report Windows execution limitations.
+  - Full suites, both packages, launcher checks, synthetic dry-run comparisons for all three retailers and the Amazon pending-intent replay passed in a loopback-only network namespace. Windows execution remains best effort and untested.
 - [ ] 3.5 Qualify rollback artifact notice handling and saved legacy config; verify state/connection/fingerprint continuity and restoration. Do not use dual-schema runtime parsing as a rollback strategy.
 
 ## 4. External migration (separately approved; not executed by proposal work)

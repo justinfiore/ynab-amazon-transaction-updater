@@ -154,6 +154,8 @@ retailers:
     csv_file_path: "amazon_orders.csv"
   walmart:
     enabled: false
+  sheetz:
+    enabled: false
 runtime:
   processed_transactions_file: "processed_transactions.json"
   log_level: "INFO"

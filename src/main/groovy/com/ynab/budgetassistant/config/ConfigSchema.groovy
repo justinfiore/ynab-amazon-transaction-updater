@@ -26,7 +26,7 @@ class ConfigSchema {
     static final Map LEGACY = [ynab:[api_key:String, budget_id:String, account_id:String, base_url:String],
         app:[processed_transactions_file:String, log_level:String, dry_run:Boolean, look_back_days:Number]] + RETAILERS
     static final Map VERSION_TWO = [schema_version:Number, budget:[ynab:LEGACY.ynab],
-        runtime:LEGACY.app + [amazon_fingerprint_credentials_file:String], retailers:RETAILERS]
+        runtime:LEGACY.app + [amazon_fingerprint_credentials_file:String, require_existing_processed_transactions_file:Boolean], retailers:RETAILERS]
 
     static Map parse(String text, String path) {
         try {
@@ -44,7 +44,14 @@ class ConfigSchema {
         if (!file.isFile()) throw new IllegalArgumentException("Configuration file not found: ${file.path}")
         Map config = parse(file.getText('UTF-8'), file.path)
         validate(config, file.path)
+        validateResources(config)
         config
+    }
+
+    static void validateResources(Map config) {
+        if (config.runtime.require_existing_processed_transactions_file == true) {
+            Configuration.readRequiredProcessedTransactions(config.runtime.processed_transactions_file)
+        }
     }
 
     static void validate(Map config, String path) {
@@ -61,6 +68,12 @@ class ConfigSchema {
         if (!(config.budget instanceof Map) || !(config.budget.ynab instanceof Map) ||
             !(config.runtime instanceof Map) || !(config.retailers instanceof Map)) {
             throw new IllegalArgumentException('Configuration requires budget.ynab, runtime and retailers mappings')
+        }
+        if (RETAILERS.keySet().any { !(config.retailers[it] instanceof Map) }) {
+            throw new IllegalArgumentException('Configuration requires amazon, walmart and sheetz retailer mappings')
+        }
+        if (config.runtime.require_existing_processed_transactions_file == true && !config.runtime.processed_transactions_file?.trim()) {
+            throw new IllegalArgumentException('Migrated processed state path is required')
         }
         if (!config.budget.ynab.api_key || !config.budget.ynab.budget_id) throw new IllegalArgumentException('Configuration requires budget.ynab.api_key and budget.ynab.budget_id')
     }

@@ -1,8 +1,12 @@
 package com.ynab.budgetassistant.config
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Paths
+import java.nio.file.attribute.PosixFilePermissions
 
 /**
  * Configuration class for loading and validating application settings
@@ -38,6 +42,7 @@ class Configuration {
     String imapHost = "imap.gmail.com"
     int imapPort = 993
     String processedTransactionsFile
+    boolean requireExistingProcessedTransactionsFile = false
     String logLevel = "INFO"
     boolean dryRun = false
     int lookBackDays = 30
@@ -123,6 +128,7 @@ class Configuration {
             
             // Application Configuration
             this.processedTransactionsFile = config.runtime.processed_transactions_file
+            this.requireExistingProcessedTransactionsFile = config.runtime.require_existing_processed_transactions_file == true
             this.amazonFingerprintCredentialsFile = config.runtime.amazon_fingerprint_credentials_file
             this.logLevel = config.runtime.log_level ? config.runtime.log_level.toUpperCase() : this.logLevel
             this.dryRun = (config.runtime.dry_run != null) ? config.runtime.dry_run : this.dryRun
@@ -243,6 +249,25 @@ class Configuration {
     
     boolean isDryRun() {
         return dryRun
+    }
+
+    static Set<String> readRequiredProcessedTransactions(String filename) {
+        try {
+            def path = Paths.get(filename).toAbsolutePath().normalize()
+            if (Files.isSymbolicLink(path) || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) ||
+                path.toRealPath() != path || !Files.isReadable(path) ||
+                Files.getOwner(path, LinkOption.NOFOLLOW_LINKS) != Files.getOwner(Paths.get(System.getProperty('user.home'))) ||
+                Files.getPosixFilePermissions(path, LinkOption.NOFOLLOW_LINKS) != PosixFilePermissions.fromString('rw-------')) {
+                throw new IllegalStateException('Unsafe processed state')
+            }
+            def data = new ObjectMapper().readValue(Files.readAllBytes(path), Map)
+            if (!(data.processed_transaction_ids instanceof List) || data.processed_transaction_ids.any { !(it instanceof String) }) {
+                throw new IllegalStateException('Invalid processed state')
+            }
+            return new HashSet<String>(data.processed_transaction_ids as List<String>)
+        } catch (Exception ignored) {
+            throw new IllegalStateException('Migrated processed state is missing, unreadable, unsafe or invalid; stage and verify the original state before startup')
+        }
     }
 
     Map getAmazonCategorizationFingerprint() {
