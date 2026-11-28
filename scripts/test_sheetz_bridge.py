@@ -43,12 +43,30 @@ class BridgeTest(unittest.TestCase):
     def test_reuse_valid_token_and_filter_fields(self):
         self.session.write_text(self.good)
         self.session.chmod(0o600)
+        self.data['orders'][0]['items'][0]['totalPrice'] = Decimal('1.25')
         with patch.object(bridge, 'sign_in') as sign_in, patch.object(bridge, 'fetch', return_value=(200, self.data)) as fetch:
             result = self.run_bridge()
         sign_in.assert_not_called()
         fetch.assert_called_once_with(self.good)
         self.assertNotIn('paymentDetails', result['orders'][0])
         self.assertNotIn('extra', result['orders'][0]['items'][0])
+        self.assertEqual(result['orders'][0]['items'][0]['totalPrice'], '1.25')
+
+    def test_receipts_use_one_bounded_request_for_both_verified_types(self):
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = b'{"orders":[]}'
+        opener = MagicMock()
+        opener.open.return_value.__enter__.return_value = response
+        with patch.object(bridge.urllib.request, 'build_opener', return_value=opener):
+            self.assertEqual(bridge.fetch('synthetic'), (200, {'orders': []}))
+        opener.open.assert_called_once()
+        request = opener.open.call_args.args[0]
+        self.assertEqual(opener.open.call_args.kwargs['timeout'], 30)
+        self.assertEqual(request.get_method(), 'GET')
+        self.assertEqual(request.full_url, bridge.URL)
+        self.assertEqual(request.full_url.split('?')[1], 'orderType=ANYWHERE&orderType=RETAIL_FUEL')
+        self.assertEqual(request.get_header('Authorization'), 'Bearer synthetic')
 
     def test_expired_token_signs_in_once_and_saves_protected_token(self):
         self.session.write_text(token(time.time() - 10))

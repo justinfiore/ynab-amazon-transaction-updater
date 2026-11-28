@@ -53,12 +53,17 @@ When explicitly enabled, memo enrichment SHALL preserve user memo text, transact
 
 ### Requirement: Guarded category and split enrichment
 
-The updater SHALL use the matched online order for category and split enrichment when explicitly enabled. It SHALL reuse shared classification with independently configured existing Sheetz categories, preserve abstentions, and reuse guarded writes, read-back and review safeguards without overwriting user-owned categories, approved transactions or existing splits. It SHALL create splits only when item quantities, prices and known adjustments reconcile exactly to the transaction amount.
+When enabled, the updater SHALL classify matched online items using the shared classifier and an independent Sheetz category shortlist. It SHALL preserve abstentions, use guarded writes and read-back, and leave user-owned categories, approved transactions and existing splits unchanged. It SHALL proportionally distribute the matched total over item prices, including tax and discounts, rounding deterministically so splits sum exactly to the transaction amount.
 
-#### Scenario: Item amounts do not explain the matched total
+#### Scenario: The order total differs from the item subtotal
 
-- **WHEN** an order matches by amount and date but its item amounts and adjustments do not reconcile
-- **THEN** the updater does not create splits or invent a balancing line
+- **WHEN** an order matches by amount and date and all item prices and categories are available
+- **THEN** the updater distributes the order total across the items proportionally, without a separate payment source or balancing line
+
+#### Scenario: Item prices or categories are unavailable
+
+- **WHEN** an item price is invalid or an item classification is unresolved
+- **THEN** the updater does not write item categories or splits for that order
 
 ### Requirement: Categorize verified fuel without a classifier
 

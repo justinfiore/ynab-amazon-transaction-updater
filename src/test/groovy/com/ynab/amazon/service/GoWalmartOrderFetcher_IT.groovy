@@ -124,7 +124,7 @@ sys.exit(1)
         new GoWalmartOrderFetcher(config).fetchOrders().empty
 
         when:
-        executable.text='#!/usr/bin/env python3\nprint(\'{"version":1,"status":"ok"}\')\n'
+        executable.text='#!/usr/bin/env python3\nimport sys\nsys.stdin.read()\nprint(\'{"version":1,"status":"ok"}\')\n'
         new GoWalmartOrderFetcher(config).fetchOrders()
 
         then:
@@ -132,7 +132,7 @@ sys.exit(1)
         missing.message.endsWith('INVALID_SCHEMA')
 
         when:
-        executable.text='#!/usr/bin/env python3\nprint(\'{"version":1,"status":"ok","orders":null}\')\n'
+        executable.text='#!/usr/bin/env python3\nimport sys\nsys.stdin.read()\nprint(\'{"version":1,"status":"ok","orders":null}\')\n'
         new GoWalmartOrderFetcher(config).fetchOrders()
 
         then:

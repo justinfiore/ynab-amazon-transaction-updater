@@ -67,6 +67,7 @@ class Configuration {
     String sheetzGasolineDefaultCategoryId
     String sheetzUnmatchedDefaultCategoryId
     List<String> sheetzAccounts = []
+    Map sheetzCategorization = [categories: []]
     
     Configuration() {
         // Do not auto-load from file by default to keep tests deterministic.
@@ -165,6 +166,7 @@ class Configuration {
             this.sheetzUnmatchedDefaultCategoryId = config.sheetz?.unmatched_default_category_id
             if (config.sheetz?.accounts != null && !(config.sheetz.accounts instanceof List)) throw new IllegalArgumentException('sheetz.accounts must be a list')
             this.sheetzAccounts = config.sheetz?.accounts ?: []
+            this.sheetzCategorization = config.sheetz?.categorization ?: this.sheetzCategorization
             
             // Configure SimpleLogger - must be set before any logger instances are created
             System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", this.logLevel)

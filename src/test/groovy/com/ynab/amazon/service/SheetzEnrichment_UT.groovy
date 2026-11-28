@@ -9,12 +9,121 @@ class SheetzEnrichment_UT extends Specification {
             approved:'false', deleted:'false', cleared:'uncleared')
     }
     static Map record(String type = 'ANYWHERE', String date = '2026-11-23T12:00:00-05:00') {
-        [orderType:type, orderNumber:123, orderTime:date, pickupTime:date, orderTotal:12.34, items:[[description:'Sandwich']]]
+        [orderType:type, orderNumber:123, orderTime:date, pickupTime:date, orderTotal:12.34, items:[[description:'Sandwich', totalPrice:12.34]]]
     }
     static Map snapshot(YNABTransaction tx) {
         [id:tx.id, date:tx.date, amount:tx.amount, payee_name:tx.payee_name, payee_id:null, account_id:tx.account_id,
          approved:false, deleted:false, cleared:'uncleared', memo:tx.memo, category_id:tx.category_id, import_id:null,
          flag_color:null, transfer_account_id:null, subtransactions:[]]
+    }
+
+    def 'the order total including tax and discounts is apportioned in exact cents'() {
+        given:
+        def items = [[itemId:'a', title:'Meal', cents:1000L], [itemId:'b', title:'Drink', cents:500L]]
+        expect:
+        SheetzAllocation.costs(items, 1290L).costs == [a:860L, b:430L]
+        SheetzAllocation.costs(items, 1590L).costs == [a:1060L, b:530L]
+        SheetzAllocation.costs(items, 1501L).costs == [a:1001L, b:500L]
+        !SheetzAllocation.costs([[itemId:'a', title:'Free', cents:0L]], 1L).eligible
+    }
+
+    def 'online categories write proportional splits only after an unchanged fresh read'() {
+        given:
+        def transaction = tx()
+        def current = snapshot(transaction)
+        def order = SheetzEnrichment.normalizeResponse([orders:[record() + [items:[
+            [description:'Meal', totalPrice:10.00], [description:'Drink', totalPrice:5.00]]]]]).orders
+        def ynab = Mock(YNABService)
+        def classifier = Stub(RemoteItemClassifier) {
+            getPolicy() >> 'amazon-choice-v1'
+            getConfig() >> [batch_size:8]
+            scope(_) >> 'scope'
+            classify(_, _) >> { List batch, Map ignored -> batch.collectEntries { item ->
+                [(item.itemId):[category_id:item.title == 'Meal' ? 'food' : 'drink', scope:'scope']]
+            } }
+        }
+        def categorization = [categories:[[id:'food'], [id:'drink']], consent:true]
+        def lines = [[amount:-8230L, category_id:'food', memo:'Meal'], [amount:-4110L, category_id:'drink', memo:'Drink']]
+        when:
+        def result = SheetzEnrichment.process([transaction], order, ynab, ['account'] as Set,
+            false, false, true, null, null, true, null, categorization, 'budget', classifier)
+        then:
+        1 * ynab.getCategoryCatalog() >> [[id:'food', name:'Food'], [id:'drink', name:'Drinks']]
+        1 * ynab.getTransaction('t') >> current
+        1 * ynab.putTransaction('t', [category_id:null, subtransactions:lines])
+        1 * ynab.getTransaction('t') >> (current + [category_id:null, subtransactions:lines])
+        result.updated == 1
+    }
+
+    def 'online categories do not request inference or write without consent, complete prices, or a live run'() {
+        given:
+        def transaction = tx()
+        def data = record() + [items:[[description:'Meal', totalPrice:price]]]
+        def order = SheetzEnrichment.normalizeResponse([orders:[data]]).orders
+        def ynab = Mock(YNABService)
+        def classifier = Mock(RemoteItemClassifier)
+        def config = [categories:[[id:'food']], consent:consent]
+        when:
+        def result = SheetzEnrichment.process([transaction], order, ynab, ['account'] as Set,
+            dryRun, false, true, null, null, true, null, config, 'budget', classifier)
+        then:
+        1 * ynab.getCategoryCatalog() >> [[id:'food', name:'Food']]
+        classifier.getPolicy() >> 'amazon-choice-v1'
+        classifier.getConfig() >> [batch_size:8]
+        classifier.scope(_) >> 'scope'
+        0 * classifier.classify(_, _)
+        0 * ynab.putTransaction(_, _)
+        result.updated == 0
+        where:
+        price | consent | dryRun
+        1.00  | false   | false
+        null  | true    | false
+        1.00  | true    | true
+    }
+
+    def 'online classifications cannot overwrite an abstention or a changed transaction'() {
+        given:
+        def transaction = tx()
+        def order = SheetzEnrichment.normalizeResponse([orders:[record()]]).orders
+        def ynab = Mock(YNABService)
+        def classifier = Stub(RemoteItemClassifier) {
+            getPolicy() >> 'amazon-choice-v1'
+            getConfig() >> [batch_size:8]
+            scope(_) >> 'scope'
+            classify(_, _) >> { List batch, Map ignored -> batch.collectEntries { item ->
+                [(item.itemId):[category_id:category, scope:'scope']]
+            } }
+        }
+        when:
+        SheetzEnrichment.process([transaction], order, ynab, ['account'] as Set, false, false, true,
+            null, null, true, null, [categories:[[id:'food']], consent:true], 'budget', classifier)
+        then:
+        1 * ynab.getCategoryCatalog() >> [[id:'food', name:'Food']]
+        reads * ynab.getTransaction('t') >> (snapshot(transaction) + [category_id:'human'])
+        0 * ynab.putTransaction(_, _)
+        where:
+        category | reads
+        null     | 0
+        'food'   | 1
+    }
+
+    def 'a failed provider response stops further inference for this run'() {
+        given:
+        def transactions = [tx(), tx('other', '2026-11-20', -20000)]
+        def orders = SheetzEnrichment.normalizeResponse([orders:[record(), record() + [orderNumber:456, orderTotal:20.00]]]).orders
+        def ynab = Mock(YNABService)
+        def classifier = Mock(RemoteItemClassifier)
+        when:
+        def result = SheetzEnrichment.process(transactions, orders, ynab, ['account'] as Set, false, false, true,
+            null, null, true, null, [categories:[[id:'food']], consent:true], 'budget', classifier)
+        then:
+        1 * ynab.getCategoryCatalog() >> [[id:'food', name:'Food']]
+        classifier.getPolicy() >> 'amazon-choice-v1'
+        classifier.getConfig() >> [batch_size:8]
+        classifier.scope(_) >> 'scope'
+        1 * classifier.classify(_, _) >> { throw new IllegalStateException('invalid response') }
+        0 * ynab.putTransaction(_, _)
+        result.preview*.reason.contains('inference_unavailable')
     }
 
     def 'source permits only fixed safe timeout diagnostics'() {
@@ -42,7 +151,7 @@ class SheetzEnrichment_UT extends Specification {
     def 'malformed records retain good records and diagnostics without exposing values'() {
         when:
         def result = SheetzEnrichment.normalizeResponse([orders:[record(), record('RETAIL_FUEL') + [orderTotal:'private-invalid-value'],
-            record() + [orderNumber:456, items:[[description:'Good item'], null]]]])
+            record() + [orderNumber:456, items:[[description:'Good item', totalPrice:1.00], null]]]])
         then:
         result.orders*.id == ['123', '456']
         result.orders[1].titles == ['Good item']
@@ -55,7 +164,7 @@ class SheetzEnrichment_UT extends Specification {
 
     def 'invalid item does not invalidate usable receipt matching'() {
         when:
-        def result = SheetzEnrichment.normalizeResponse([orders:[record() + [items:[[description:'Good'], null]]]])
+        def result = SheetzEnrichment.normalizeResponse([orders:[record() + [items:[[description:'Good', totalPrice:1.00], null]]]])
         then:
         !result.incomplete
         result.orders[0].titles == ['Good']

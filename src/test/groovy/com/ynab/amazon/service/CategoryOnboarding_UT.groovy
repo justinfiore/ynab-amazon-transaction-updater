@@ -34,12 +34,12 @@ class CategoryOnboarding_UT extends Specification {
         ProviderKeys.read(result.amazon.categorization.credentials_file,'jev').consent
     }
 
-    def 'disconnect removes only the Amazon reference when Walmart shares the protected record'() {
+    def 'disconnect retains a protected record shared with another retailer'() {
         given:
         File file = new File(directory,'config.yml')
         def key = ProviderKeys.stage(file.toPath(),'jev','fixture-key'.toCharArray(),'amazon')
         file.text = new Yaml().dump([amazon:[categorization:[provider:'jev',credentials_file:key.toString(),categories:[[id:'e']]]],
-            walmart:[categorization:[provider:'jev',credentials_file:key.toString()]]])
+            (retailer):[categorization:[provider:'jev',credentials_file:key.toString()]]])
         def previousIn = System.in
         System.setIn(new ByteArrayInputStream('yes\n'.bytes))
 
@@ -50,11 +50,14 @@ class CategoryOnboarding_UT extends Specification {
         then:
         !result.amazon.categorization.credentials_file
         result.amazon.categorization.categories == [[id:'e']]
-        result.walmart.categorization.credentials_file == key.toString()
+        result[retailer].categorization.credentials_file == key.toString()
         ProviderKeys.read(key.toString(),'jev').consent
 
         cleanup:
         System.setIn(previousIn)
+
+        where:
+        retailer << ['walmart', 'sheetz']
     }
 
     def 'payment identity requires confirmation and cannot choose a closed or stale account'() {

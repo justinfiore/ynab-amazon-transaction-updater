@@ -237,9 +237,10 @@ def run(settings):
             continue
         items = order.get('items')
         result.append({key: order.get(key) for key in ('orderType', 'orderNumber', 'orderTime', 'pickupTime', 'orderTotal')} | {
-            'items': [{key: item.get(key) if isinstance(item.get(key), str) else None
-                       for key in ('description', 'receiptText')} if isinstance(item, dict) else None
-                      for item in items] if isinstance(items, list) else None
+            'items': [({key: item.get(key) if isinstance(item.get(key), str) else None
+                        for key in ('description', 'receiptText')} | {
+                            'totalPrice': str(item['totalPrice']) if isinstance(item.get('totalPrice'), (int, float, Decimal)) and not isinstance(item['totalPrice'], bool) else None
+                        }) if isinstance(item, dict) else None for item in items] if isinstance(items, list) else None
         })
         if isinstance(result[-1]['orderTotal'], Decimal):
             result[-1]['orderTotal'] = str(result[-1]['orderTotal'])

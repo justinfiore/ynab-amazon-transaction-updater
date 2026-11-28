@@ -81,7 +81,11 @@ sheetz:
   # token_file: "~/.config/ynab-updater/sheetz-token"  # Mode 0600, created after successful sign-in
   # gasoline_default_category_id: "existing-gasoline-category-id"
   # unmatched_default_category_id: "existing-category-id"  # Omit to explicitly clear unmatched categories
-  # Online item classification and splits are disabled until receipt arithmetic is qualified.
+  categorization:
+    categories: []  # Independent existing category IDs, e.g. [{id: "existing-id"}]
+    consent: false  # Opt in before sending Sheetz item titles to a configured classifier.
+    # Copy provider, model, policy_version: amazon-choice-v1, limits, acceptance, and credentials_file
+    # from an existing Amazon classifier configuration. Provider keys must remain in protected files.
 
 # Application Configuration
 app:

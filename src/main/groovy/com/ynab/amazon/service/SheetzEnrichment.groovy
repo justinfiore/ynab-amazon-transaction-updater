@@ -32,7 +32,7 @@ class SheetzEnrichment {
             } catch (Exception ignored) { fail('orderTotal','missing_invalid_or_fractional_cent'); return }
             if (cents <= 0 || cents > Long.MAX_VALUE / 10) { fail('orderTotal','out_of_range'); return }
             if (!ids.add("${type}/${record.orderNumber}")) { fail('orderNumber','duplicate'); return }
-            List titles = []
+            List titles = [], items = []
             if (!(record.items instanceof List)) errors << [record:index + 1, type:type, field:'items', reason:'expected_list', affects_matching:false]
             else record.items.eachWithIndex { item, itemIndex ->
                 if (!(item instanceof Map)) errors << [record:index + 1, type:type, field:'items', item:itemIndex + 1, reason:'expected_object', affects_matching:false]
@@ -40,9 +40,20 @@ class SheetzEnrichment {
                     def title = item.description ?: item.receiptText
                     if (title instanceof String && title.trim()) titles << title.trim()
                     else errors << [record:index + 1, type:type, field:'description/receiptText', item:itemIndex + 1, reason:'missing_or_invalid', affects_matching:false]
+                    if (type == 'ANYWHERE') {
+                        try {
+                            long price = new BigDecimal(item.totalPrice.toString()).movePointRight(2).longValueExact()
+                            if (!(title instanceof String) || !title.trim() || price < 0 || price > 1000000000000L) throw new IllegalArgumentException()
+                            items << [itemId:itemIndex.toString(), title:title.trim(), cents:price]
+                        } catch (Exception ignored) {
+                            errors << [record:index + 1, type:type, field:'totalPrice', item:itemIndex + 1, reason:'invalid_item_allocation', affects_matching:false]
+                        }
+                    }
                 }
             }
-            orders << [id: record.orderNumber.toString(), type: type, date: date, cents: cents, titles: titles]
+            boolean completeItems = record.items instanceof List && !record.items.isEmpty() && items.size() == record.items.size()
+            orders << [id: record.orderNumber.toString(), type: type, date: date, cents: cents, titles: titles,
+                       allocationItems: completeItems ? items : []]
         }
         [orders:orders, errors:errors, incomplete:errors.any { it.affects_matching }]
     }
@@ -94,11 +105,22 @@ class SheetzEnrichment {
 
     static Map process(List<YNABTransaction> transactions, List<Map> orders, YNABService ynab, Set accounts,
                        boolean dryRun, boolean memoWrites, boolean categoryWrites, String fuelCategory, String unmatchedCategory,
-                       boolean allowUnmatched = true, Set targetIds = null) {
+                       boolean allowUnmatched = true, Set targetIds = null, Map categorization = [:], String budgetId = null,
+                       RemoteItemClassifier classifier = null) {
         Map plans = plan(transactions, orders, accounts)
         def catalog = categoryWrites ? ynab.getCategoryCatalog() : []
         Set valid = catalog.findAll { !it.hidden && !it.deleted && !it.internal && !it.group_hidden && !it.group_deleted && !it.group_internal }.collect { it.id } as Set
         Map result = [preview: [], updated: 0, failures: []]
+        Map categories = [:]
+        if (categoryWrites && categorization?.categories) {
+            try { categories = ItemClassificationService.categories(catalog as List, categorization.categories as List) }
+            catch (Exception ignored) { result.preview << [reason:'invalid_sheetz_category_shortlist'] }
+        }
+        if (categories && categorization.consent == true && categorization.provider && !classifier) {
+            try { classifier = new RemoteItemClassifier(categorization) } catch (Exception ignored) { }
+        }
+        if (categorization?.consent != true || classifier?.policy != 'amazon-choice-v1') classifier = null
+        Map classificationState = [mappings:[:], inferred:[:]]
         plans.each { id, entry ->
             if (targetIds != null && !targetIds.contains(id)) return
             YNABTransaction tx = entry.transaction
@@ -116,6 +138,27 @@ class SheetzEnrichment {
             } else if (categoryWrites && entry.order?.type == 'RETAIL_FUEL' && !tx.category_id) {
                 if (!fuelCategory || !valid.contains(fuelCategory)) result.preview << [transaction_id:id, reason:'invalid_gasoline_category']
                 else changes.category_id = fuelCategory
+            } else if (categoryWrites && entry.order?.type == 'ANYWHERE' && !tx.category_id) {
+                List items = entry.order.allocationItems ?: []
+                Map allocation = SheetzAllocation.costs(items as List<Map>, entry.order.cents as long)
+                if (!allocation.eligible || !categories || !classifier) {
+                    result.preview << [transaction_id:id, reason:!allocation.eligible ? allocation.reason : 'classification_unavailable']
+                } else {
+                    Map resolved = ItemClassificationService.resolve(items as List<Map>, categories, classificationState,
+                        'sheetz', budgetId ?: '', classifier, dryRun, { Map ignored -> })
+                    if (resolved.failed || items.any { !resolved.decisions[it.itemId]?.category_id }) {
+                        result.preview << [transaction_id:id, reason:resolved.failed ? resolved.reason : 'unresolved_categories']
+                        if (resolved.failed && !dryRun) classifier = null
+                    } else {
+                        List lines = items.findAll { allocation.costs[it.itemId] > 0 }.collect { item ->
+                            [amount:-(allocation.costs[item.itemId] as long) * 10L,
+                             category_id:resolved.decisions[item.itemId].category_id,
+                             memo:item.title.take(200)]
+                        }
+                        if (lines.size() == 1) changes.category_id = lines[0].category_id
+                        else if (lines) { changes.category_id = null; changes.subtransactions = lines }
+                    }
+                }
             }
             result.preview << [transaction_id:id, reason:entry.reason, changes:changes]
             if (!changes || dryRun) return
