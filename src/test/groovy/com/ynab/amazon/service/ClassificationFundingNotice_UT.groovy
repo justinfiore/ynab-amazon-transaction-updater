@@ -3,6 +3,16 @@ package com.ynab.amazon.service
 import spock.lang.Specification
 
 class ClassificationFundingNotice_UT extends Specification {
+    def 'quoted errors inside human notes survive notice insertion and cleanup'() {
+        given:
+        String user = 'Please preserve the literal [ERROR: Jev classification unavailable; check funding/billing] in this support note'
+
+        expect:
+        ClassificationFundingNotice.withoutNotice(user) == user
+        ClassificationFundingNotice.withoutNotice(ClassificationFundingNotice.append(user,'jev')) == user
+        ClassificationFundingNotice.withoutNotice(ClassificationFundingNotice.append(user,'openai')) == user
+    }
+
     def 'notices retain user text, name the provider, and include billing links only when they fit'() {
         given:
         String text = ClassificationFundingNotice.message(provider)

@@ -243,6 +243,71 @@ class WalmartService_IT extends Specification {
         'failed'                        | 'g'
     }
 
+    def 'recovered refund funding clears only the notice and reconciles lost allocation or cleanup readbacks'() {
+        given:
+        def source = json.readValue(new File('walmart-helper/testdata/source-evidence.json'),Map)
+        source.detail.data.order.groups_2101[0].items[1].returnId = 'returned-soap'
+        def order = WalmartEvidenceNormalizer.normalize(source)
+        def tx = new YNABTransaction(id:'refund',date:'2026-11-23',amount:5000L,payee_name:'WALMART',payee_id:'payee',
+            account_id:'account',memo:'User note',approved:'false',cleared:'cleared',deleted:'false')
+        remote.refund = WalmartFixture.remote(tx)
+        Path key = WalmartProviderKeys.stage(new File(directory,'config.yml').toPath(),'jev','fixture'.toCharArray())
+        config.walmartCategorization = WalmartRemoteClassifier.defaults('jev') + [credentials_file:key.toString(),categories:[[id:'g'],[id:'h']]]
+        def failed = new WalmartRemoteClassifier(config.walmartCategorization,{ a,b,c,d -> [status:402,body:'insufficient credits'] })
+        def matcher = new TransactionMatcher()
+        failReadback = originalLostReadback
+        boolean originalInterrupted = false
+        try { new WalmartEnrichment(config).process(matcher.findWalmartMatches([tx],[order]),ynab,false,failed) }
+        catch (IllegalStateException failure) { originalInterrupted = true }
+        assert originalInterrupted == originalLostReadback
+        Map fundedBaseline = new LinkedHashMap(remote.refund)
+        assert fundedBaseline.category_id == 'g' && fundedBaseline.memo.contains('[ERROR: Jev')
+        int calls = 0
+        def recovered = new WalmartRemoteClassifier(config.walmartCategorization,{ a,b,c,d ->
+            calls++
+            [status:200,body:json.writeValueAsString([model:WalmartRemoteClassifier.ROUTES.jev.model,
+                answers:[item_0:[type:'choice',choice:'Household',confidence:0.95,
+                    probabilities:['Groceries':0.02,'Household':0.96,(WalmartRemoteClassifier.ABSTAIN):0.02]]],
+                usage:[input_tokens:100,output_tokens:0]])]
+        })
+        tx.memo = remote.refund.memo
+        tx.category_id = remote.refund.category_id
+        if (humanEdit) remote.refund.memo = 'Human correction'
+        failReadback = lostReadback
+        boolean interrupted = false
+
+        when:
+        try { new WalmartEnrichment(config).process(matcher.findWalmartMatches([tx],[order]),ynab,false,recovered) }
+        catch (IllegalStateException failure) { interrupted = true }
+
+        then:
+        interrupted == lostReadback
+        calls == 1
+        writes.size() == (humanEdit ? 1 : 2)
+        if (humanEdit) assert remote.refund.memo == 'Human correction'
+        else {
+            assert writes.last().change.keySet() == ['memo'] as Set
+            assert remote.refund == fundedBaseline + [memo:ClassificationFundingNotice.withoutNotice(fundedBaseline.memo)]
+        }
+
+        when: 'restart reconciles a successful cleanup without replaying its PUT or changing the allocation'
+        tx.memo = remote.refund.memo
+        new WalmartEnrichment(config).process(matcher.findWalmartMatches([tx],[order]),ynab,false,recovered)
+
+        then:
+        calls == 1
+        writes.size() == (humanEdit ? 1 : 2)
+        remote.refund.category_id == 'g'
+
+        where:
+        humanEdit | lostReadback | originalLostReadback
+        false     | false        | false
+        false     | true         | false
+        true      | false        | false
+        false     | false        | true
+        false     | true         | true
+    }
+
     @Unroll
     def '#provider decisions allocate exact amounts, persist isolated cache and block frozen policy drift'() {
         given:

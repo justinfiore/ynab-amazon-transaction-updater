@@ -231,7 +231,7 @@ class AmazonEnrichment {
                 if (financial && !ownedIncompleteSplit && current.category_id != null && (current.approved == true || !(old?.result && old.status == 'memo_only' && old.owned_category))) {
                     stats.preview << [transaction_id:tx.id,reason:'non_owned_category']; return
                 }
-                String userText = ClassificationFundingNotice.withoutNotice(old?.user_text != null ? old.user_text : AmazonAuthNotice.withoutNotice(current.memo)?.with { it == 'null' ? '' : it } ?: '')
+                String userText = old?.user_text != null ? old.user_text : ClassificationFundingNotice.withoutNotice(AmazonAuthNotice.withoutNotice(current.memo)?.with { it == 'null' ? '' : it } ?: '')
                 if (old && !order.orderDate) order.orderDate = old.order_date
                 if (old?.facts) order.financialEvidence = old.facts + order.financialEvidence
                 String memo = AmazonMemos.parent(order,event,userText)

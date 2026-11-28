@@ -38,11 +38,30 @@ class WalmartEnrichment {
             }
             // A later refund must not reopen or be blocked by a frozen purchase allocation.
             def groups = matches.groupBy { it.walmartOrder.orderId + (it.ynabTransaction.amount > 0 ? '/refunds/' + it.walmartCharge.key : '') }
+            if (!dryRun) groups.each { groupId, group ->
+                Map entry = state.plans[config.ynabBudgetId + '/' + groupId]
+                entry?.operations?.each { id, saved ->
+                    if (!saved.pending || !saved.allocating ||
+                        ClassificationFundingNotice.withoutNotice(saved.intent.memo as String) == saved.intent.memo) return
+                    Map current = ynab.getWalmartTransaction(id as String)
+                    // Recognize a previously applied intent before recovered decisions change the fingerprint.
+                    // A baseline match is not permission to replay an allocation under a different policy.
+                    if (same(current,saved.intent as Map)) {
+                        saved.result = current; saved.pending = false
+                        saved.allocation = true; saved.link = true; entry.allocated = true
+                        save(state)
+                    }
+                }
+            }
             Closure<List<WalmartOrderItem>> itemsFor = { List<TransactionMatch> group ->
                 if (config.walmartEnrichment != 'exception_first') return []
                 if (group[0].ynabTransaction.amount > 0) {
                     def refund = group[0].walmartCharge
-                    return refund.description && WalmartAllocation.eligible(group[0].ynabTransaction, accounts, true, config.walmartAllowApprovedUncategorized) ?
+                    Map saved = state.plans[config.ynabBudgetId + '/' + group[0].walmartOrder.orderId + '/refunds/' + refund.key]?.operations?.get(group[0].ynabTransaction.id)
+                    boolean fundingRecovery = saved?.allocation && saved.result && !saved.pending &&
+                        ClassificationFundingNotice.withoutNotice(saved.result.memo as String) != saved.result.memo &&
+                        initial(group[0].ynabTransaction,saved.result as Map,null)
+                    return refund.description && (fundingRecovery || WalmartAllocation.eligible(group[0].ynabTransaction, accounts, true, config.walmartAllowApprovedUncategorized)) ?
                         [new WalmartOrderItem(itemId:refund.key, title:refund.description)] : []
                 }
                 group[0].walmartOrder.complete ? group[0].walmartOrder.items : []
@@ -112,6 +131,11 @@ class WalmartEnrichment {
                     default: config.walmartDefaultCategoryId, categories: categories,
                     model: config.walmartCategorization.findAll { k,v -> k in ['provider','model','policy_version','acceptance'] },
                     connection: classifier?.connection?.connection_id, decisions: decisions])
+                if (old?.frozen && old.operations && old.operations.values().every { it.allocation && it.result && !it.pending }) {
+                    boolean recovered = classificationItems && !inferenceFailed && decisions && decisions.values().every { it.source != 'unresolved' }
+                    clearFundingNotices(old,recovered,ynab,dryRun,save,state,stats)
+                    if (old.operations.values().any { it.notice_cleanup }) return
+                }
                 if (old?.frozen && old.fingerprint != fingerprint) {
                     stats.preview << [order_id: orderId, reason: 'applied_plan_drift']; return
                 }
@@ -194,6 +218,39 @@ class WalmartEnrichment {
         LOG.info('Walmart processing: {} matched, {} updated', matches.size(), stats.updated)
         LOG.info('Walmart refunds: {} matched, {} memos updated', stats.refund_matches, stats.refund_memos_updated)
         stats
+    }
+
+    /** Separate memo-only journal: a recovered provider cannot replan a completed allocation. */
+    private static void clearFundingNotices(Map entry, boolean recovered, YNABService ynab, boolean dryRun,
+                                           Closure save, Map state, Map stats) {
+        entry.operations.each { id, saved ->
+            String clean = ClassificationFundingNotice.withoutNotice(saved.result.memo as String)
+            if (!saved.notice_cleanup && (!recovered || clean == saved.result.memo)) return
+            Map current = ynab.getWalmartTransaction(id as String)
+            Map cleanup = saved.notice_cleanup
+            if (!cleanup) {
+                if (!same(current,saved.result as Map)) return
+                cleanup = [baseline:current,intent:current + [memo:clean]]
+                stats.preview << [transaction_id:id,reason:'funding_notice_recovered',changes:[memo:clean]]
+                if (dryRun) return
+                saved.notice_cleanup = cleanup
+                save(state)
+            }
+            if (!same(current,cleanup.intent as Map)) {
+                if (!same(current,cleanup.baseline as Map)) return
+                if (dryRun) return
+                try { ynab.putWalmartTransaction(id as String,[memo:cleanup.intent.memo]) } catch (Exception ignored) { }
+                current = ynab.getWalmartTransaction(id as String)
+                if (!same(current,cleanup.intent as Map)) return
+                stats.updated++
+                stats.refund_memos_updated++
+            }
+            if (!dryRun) {
+                saved.result = current
+                saved.remove('notice_cleanup')
+                save(state)
+            }
+        }
     }
 
     private static boolean initial(YNABTransaction tx, Map current, Set accounts, boolean refund = false, boolean allowApprovedUncategorized = false) {

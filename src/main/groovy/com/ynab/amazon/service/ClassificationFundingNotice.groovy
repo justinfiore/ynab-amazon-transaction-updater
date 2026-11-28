@@ -10,12 +10,14 @@ class ClassificationFundingNotice {
     }
 
     static String withoutNotice(String memo) {
-        String result = memo
-        PROVIDERS.each { provider, details ->
+        for (def provider : PROVIDERS.keySet()) {
             String text = message(provider)
-            result = result?.replace(text + ' ' + details.url, text)?.replace(' | ' + text, '')?.replace(text, '')
+            for (String suffix : [text + ' ' + PROVIDERS[provider].url, text]) {
+                if (memo == suffix) return ''
+                if (memo?.endsWith(' | ' + suffix)) return memo.substring(0,memo.length() - suffix.length() - 3)
+            }
         }
-        result
+        memo
     }
 
     static String append(String memo, String provider) {
