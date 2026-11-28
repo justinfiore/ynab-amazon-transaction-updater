@@ -2,14 +2,13 @@
 
 /**
  * Simple test script to verify the setup and configuration
- * Run with: groovy test_setup.groovy
+ * Run after ./gradlew installDist with:
+ * java -cp 'build/install/ynab-budget-assistant/lib/*' groovy.ui.GroovyMain test_setup.groovy
  */
 
-@Grab('org.yaml:snakeyaml:2.6')
+import com.ynab.budgetassistant.config.ConfigSchema
 
-import org.yaml.snakeyaml.Yaml
-
-println "=== YNAB Amazon Transaction Updater - Setup Test ==="
+println "=== Budget Assistant for YNAB - Setup Test ==="
 println ""
 
 // Test 1: Check if config.yml exists
@@ -26,30 +25,29 @@ if (configFile.exists()) {
 // Test 2: Parse configuration
 println "2. Parsing configuration..."
 try {
-    def yaml = new Yaml()
-    def config = yaml.load(configFile.text)
+    def config = ConfigSchema.load(configFile)
     println "   ✓ Configuration parsed successfully"
     
     // Check YNAB settings
-    if (config.ynab?.api_key && config.ynab.api_key != "YOUR_YNAB_API_KEY_HERE") {
+    if (config.budget.ynab?.api_key && config.budget.ynab.api_key != "YOUR_YNAB_API_KEY_HERE") {
         println "   ✓ YNAB API key configured"
     } else {
         println "   ⚠ YNAB API key not configured (using placeholder)"
     }
     
-    if (config.ynab?.account_id && config.ynab.account_id != "YOUR_YNAB_ACCOUNT_ID_HERE") {
-        println "   ✓ YNAB Account ID configured"
+    if (config.budget.ynab?.budget_id && config.budget.ynab.budget_id != "YOUR_YNAB_BUDGET_ID_HERE") {
+        println "   ✓ YNAB Budget ID configured"
     } else {
-        println "   ⚠ YNAB Account ID not configured (using placeholder)"
+        println "   ⚠ YNAB Budget ID not configured (using placeholder)"
     }
     
     // Check Amazon settings
-    if (config.amazon?.csv_file_path) {
-        def csvFile = new File(config.amazon.csv_file_path)
+    if (config.retailers.amazon?.csv_file_path) {
+        def csvFile = new File(config.retailers.amazon.csv_file_path)
         if (csvFile.exists()) {
-            println "   ✓ Amazon CSV file found: ${config.amazon.csv_file_path}"
+            println "   ✓ Amazon CSV file found: ${config.retailers.amazon.csv_file_path}"
         } else {
-            println "   ⚠ Amazon CSV file not found: ${config.amazon.csv_file_path}"
+            println "   ⚠ Amazon CSV file not found: ${config.retailers.amazon.csv_file_path}"
         }
     } else {
         println "   ⚠ Amazon CSV file path not configured"
@@ -63,12 +61,12 @@ try {
 // Test 3: Check source files
 println "3. Checking source files..."
 def sourceFiles = [
-    "src/main/groovy/com/ynab/amazon/YNABAmazonTransactionUpdater.groovy",
-    "src/main/groovy/com/ynab/amazon/config/Configuration.groovy",
-    "src/main/groovy/com/ynab/amazon/service/YNABService.groovy",
-    "src/main/groovy/com/ynab/amazon/service/AmazonService.groovy",
-    "src/main/groovy/com/ynab/amazon/service/TransactionMatcher.groovy",
-    "src/main/groovy/com/ynab/amazon/service/TransactionProcessor.groovy"
+    "src/main/groovy/com/ynab/budgetassistant/BudgetAssistant.groovy",
+    "src/main/groovy/com/ynab/budgetassistant/config/Configuration.groovy",
+    "src/main/groovy/com/ynab/budgetassistant/service/YNABService.groovy",
+    "src/main/groovy/com/ynab/budgetassistant/service/AmazonService.groovy",
+    "src/main/groovy/com/ynab/budgetassistant/service/AmazonTransactionMatcher.groovy",
+    "src/main/groovy/com/ynab/budgetassistant/service/TransactionProcessor.groovy"
 ]
 
 def missingFiles = []
@@ -126,9 +124,9 @@ println ""
 println "=== Setup Test Complete ==="
 println ""
 println "Next steps:"
-println "1. Update config.yml with your actual YNAB API key and account ID"
+println "1. Update config.yml with your actual YNAB API key and budget ID"
 println "2. Place your Amazon orders CSV file in the project directory"
 println "3. Run: .\\gradlew.bat build (Windows) or ./gradlew build (Unix)"
 println "4. Run: .\\gradlew.bat run (Windows) or ./gradlew run (Unix)"
 println ""
-println "For detailed setup instructions, see SETUP.md" 
+println "For detailed setup instructions, see SETUP.md"

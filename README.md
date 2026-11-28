@@ -1,8 +1,10 @@
-# YNAB Transaction Updater
+# Budget Assistant for YNAB
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/justinfiore/ynab-amazon-transaction-updater)
 
-A Groovy application that updates YNAB (You Need A Budget) transactions with retailer order details. Supports Amazon orders and an optional native Go-backed Walmart ledger source. Both retailers use shared classification services with independent category lists, consent and accounting policies. Optional paid OpenAI Decisions/TypeSafe Jev inference runs in Groovy. Amazon defaults to memo-only updates and Walmart remains disabled by default; live provider quality and the native platform matrix are not qualified.
+A YNAB-specific purchase categorization assistant for Amazon, Walmart and Sheetz. Costco, Sam's Club and other retailers are planned, not implemented. Retailers use independent categories, consent and accounting policies; categorization and paid inference remain opt-in. Amazon defaults to memo-only updates and Walmart remains disabled by default. This project is not affiliated with YNAB; live provider quality and the native platform matrix are not qualified.
+
+**Breaking configuration change:** existing unversioned configuration must be migrated offline before using this release. See [configuration migration](CONFIG_MIGRATION.md); do not add a version number to an old config by hand.
 
 ## Features
 
@@ -39,7 +41,7 @@ A Groovy application that updates YNAB (You Need A Budget) transactions with ret
 
 1. Go to [YNAB Developer Settings](https://app.youneedabudget.com/settings/developer)
 2. Click "New Token"
-3. Give it a name (e.g., "Amazon Transaction Updater")
+3. Give it a name (e.g., "Budget Assistant for YNAB")
 4. Copy the generated API key
 
 ### 2. Get Your YNAB Budget ID
@@ -94,7 +96,7 @@ A maintained, patched CPython >=3.11.5 can fetch account history through the uno
 website-parsing package. It supports English pages across Amazon regions and can
 break when Amazon changes its site. By default, the bridge includes all Amazon
 Household orders visible to the signed-in account. Set
-`amazon.python.include_household_orders: false` to fetch only that account's own
+`retailers.amazon.python.include_household_orders: false` to fetch only that account's own
 orders. This option affects Python fetching only, not email or CSV. It is deliberately opt-in: email remains
 the default and retains its refund and Subscribe & Save notification semantics.
 
@@ -122,7 +124,7 @@ solving remain disabled. Do not install unconstrained browser extras over this l
 For cookie/config locations, session lifetime, Amp credential secrets, and the
 interactive recovery command, see [Amazon authentication](SETUP.md#amazon-authentication-storage-lifetime-and-recovery).
 When Python authentication requires login, eligible unaugmented Amazon expenses
-receive `[ERROR: Amazon Login Required on ynab-amazon-transaction-updater]` in the
+receive `[ERROR: Amazon Login Required on ynab-budget-assistant]` in the
 memo (appended once, preserving existing text). This is retryable, not a processed
 marker: successful augmentation removes it. Dry runs never write it, and generic
 fetch failures do not trigger a login notice.
@@ -138,39 +140,23 @@ See [Walmart setup and safety](WALMART.md) for protected provider-key/category o
 Copy `config.example.yml` to `config.yml` and update the following values:
 
 ```yaml
-ynab:
-  api_key: "YOUR_ACTUAL_YNAB_API_KEY"
-  budget_id: "YOUR_ACTUAL_YNAB_BUDGET_ID"
-  base_url: "https://api.ynab.com/v1"
-
-amazon:
-  enrichment: "memo_only" # item_categories is a separate financial opt-in; see AMAZON.md
-  order_fetcher: "email" # use "python" for the optional bridge
-  # Email parsing (recommended - automatically includes Subscribe & Save)
-  email: "your_amazon_email@example.com"
-  email_password: "your_app_password"  # Use app-specific password, not main password
-  
-  # Optional: If Subscribe & Save emails are forwarded from another account
-  # forward_from_address: "some.email@example.com"  # Email address that forwards S&S emails to your inbox
-  
-  # IMAP Configuration (optional, defaults shown)
-  # imap_host: "imap.gmail.com"
-  # imap_port: 993
-  
-  # Additive CSV orders (optional)
-  csv_file_path: "amazon_orders.csv"
-  # python:
-  #   executable: ".venv-amazon-orders/bin/python"
-  #   bridge_script: "scripts/amazon_orders_bridge.py"
-  #   config_path: "~/.config/amazonorders/config.yml"
-  #   include_household_orders: true # false for only the signed-in account's orders
-  #   timeout_seconds: 300
-  #   max_output_bytes: 10485760
-
-walmart:
-  enabled: false  # Optional native helper and protected session; see WALMART.md
-
-app:
+schema_version: 2
+budget:
+  ynab:
+    api_key: "YOUR_ACTUAL_YNAB_API_KEY"
+    budget_id: "YOUR_ACTUAL_YNAB_BUDGET_ID"
+retailers:
+  amazon:
+    enrichment: "memo_only"
+    order_fetcher: "email"
+    email: "your_amazon_email@example.com"
+    email_password: "your_app_password"
+    csv_file_path: "amazon_orders.csv"
+  walmart:
+    enabled: false
+  sheetz:
+    enabled: false
+runtime:
   processed_transactions_file: "processed_transactions.json"
   log_level: "INFO"
   dry_run: true
@@ -218,11 +204,14 @@ default test suite.
 ./gradlew run
 ```
 
-Or run the JAR directly:
+Or build and run the installed launcher:
 
 ```bash
-java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
+./gradlew installDist
+build/install/ynab-budget-assistant/bin/ynab-budget-assistant
 ```
+
+The installed `ynab-amazon-transaction-updater` executable (and its `.bat` counterpart) is a deprecated alias for this transition release. It forwards arguments and exit status to the same application and uses the same configuration and state. Both names require schema version 2; the alias does not accept legacy configuration. Removal will be announced as a breaking release.
 
 ## How It Works
 
@@ -329,44 +318,19 @@ onboarding, evidence gates and protected credential settings.
 - `enabled`: `false` by default. Requires a native helper and protected session when enabled. `enrichment` defaults to `link_only`; `exception_first` requires a valid existing shortlist/default. See [all settings and qualification blockers](WALMART.md). Removed browser settings have no compatibility path.
 
 ### Application Settings
-- `processed_transactions_file`: File to track processed transactions (default: "processed_transactions.json")
+- `processed_transactions_file`: Optional file to track processed transactions; omission disables file tracking.
 - `log_level`: Logging level - INFO, DEBUG, WARN, ERROR (default: "INFO")
-- `dry_run`: Set to `true` to preview changes without updating YNAB (default: true)
+- `dry_run`: Set to `true` to preview changes without updating YNAB (default: false)
 - `look_back_days`: Number of days to look back for transactions (default: 30)
 
 ---
 
 ### Example `config.yml`
 
-```yaml
-ynab:
-  api_key: "YOUR_ACTUAL_YNAB_API_KEY"
-  budget_id: "YOUR_ACTUAL_YNAB_BUDGET_ID"
-  base_url: "https://api.ynab.com/v1"
-
-amazon:
-  # Email parsing (automatically includes Subscribe & Save)
-  email: "your_amazon_email@example.com"
-  email_password: "your_app_password"
-  
-  # Optional: If Subscribe & Save emails are forwarded from another account
-  # forward_from_address: "some.email@example.com"  # Email address that forwards S&S emails to your inbox
-  
-  # Additive CSV orders (optional)
-  csv_file_path: "amazon_orders.csv"
-
-walmart:
-  enabled: false  # Optional native helper and protected session; see WALMART.md
-
-app:
-  processed_transactions_file: "processed_transactions.json"
-  log_level: "INFO"
-  dry_run: true
-  look_back_days: 30
-```
+See `config.example.yml` for a complete version 2 example.
 
 > **Important Notes:**
-> - Email is the default automatic source; explicitly select `amazon.order_fetcher: python` for Python history.
+> - Email is the default automatic source; explicitly select `retailers.amazon.order_fetcher: python` for Python history.
 > - Configured CSV orders are appended after the selected source, even when that source succeeds; a failed Python fetch does not silently switch to email.
 > - For Gmail, you must use an [App Password](https://support.google.com/accounts/answer/185833) (not your main password) and enable IMAP access.
 > - Subscribe & Save orders are only available via email parsing, not CSV export.
@@ -453,7 +417,7 @@ Confidence thresholds:
 10. **Python bridge preflight or fetch failure**
     - Verify the isolated interpreter and tested dependencies: `.venv-amazon-orders/bin/python -I scripts/amazon_orders_bridge.py --config-path ~/.config/amazonorders/config.yml --preflight`
     - Re-run the same bridge with `--login` instead of `--preflight` if the persisted session is stale. Custom classes/parsers and browser/CAPTCHA flows are intentionally refused; use email/CSV when required.
-    - Check that `amazon.python.executable`, `bridge_script`, and `config_path` are absolute/resolved paths and that timeout/output bounds are positive.
+    - Check that `retailers.amazon.python.executable`, `bridge_script`, and `config_path` are absolute/resolved paths and that timeout/output bounds are positive.
     - Do not paste cookies, passwords, OTP values, stderr payloads, or order JSON into logs or issue reports. Select `email` or CSV if an upstream Amazon challenge cannot run unattended.
 
 ### Debug Mode
@@ -461,7 +425,7 @@ Confidence thresholds:
 To see more detailed logging, set the log level to DEBUG in `config.yml`:
 
 ```yaml
-app:
+runtime:
   log_level: "DEBUG"
 ```
 
@@ -475,7 +439,7 @@ app:
 ## File Structure
 
 ```
-YNABAmazonTransactionUpdater/
+ynab-budget-assistant/
 ├── build.gradle                          # Gradle build configuration
 ├── requirements-amazon-orders.txt         # Optional pinned Python bridge dependency
 ├── scripts/amazon_orders_bridge.py        # Schema-v1 Python bridge (run with configured interpreter)
@@ -485,8 +449,8 @@ YNABAmazonTransactionUpdater/
 ├── SUBSCRIBE_AND_SAVE.md                 # Subscribe & Save documentation
 ├── src/
 │   ├── main/
-│   │   ├── groovy/com/ynab/amazon/
-│   │   │   ├── YNABAmazonTransactionUpdater.groovy  # Main application
+│   │   ├── groovy/com/ynab/budgetassistant/
+│   │   │   ├── BudgetAssistant.groovy  # Main application
 │   │   │   ├── config/
 │   │   │   │   └── Configuration.groovy             # Configuration loader
 │   │   │   ├── service/                            # Email/Python fetchers and bounded runner
@@ -500,12 +464,12 @@ YNABAmazonTransactionUpdater/
 │   │   │       ├── AmazonService.groovy            # Amazon data orchestration
 │   │   │       ├── AmazonOrderFetcher.groovy       # Email parsing service
 │   │   │       ├── WalmartService.groovy           # Walmart data orchestration
-│   │   │       ├── TransactionMatcher.groovy       # Matching logic
+│   │   │       ├── AmazonTransactionMatcher.groovy       # Matching logic
 │   │   │       └── TransactionProcessor.groovy     # Processing logic
 │   │   └── resources/
 │   │       └── logback.xml                         # Logging configuration
 │   └── test/
-│       ├── groovy/com/ynab/amazon/                 # Unit and integration tests
+│       ├── groovy/com/ynab/budgetassistant/                 # Unit and integration tests
 │       └── resources/                              # Test email samples
 └── .agents/scripts/                                # Build and test scripts
 ```

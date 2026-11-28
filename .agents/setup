@@ -4,7 +4,8 @@ set -euo pipefail
 readonly script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 readonly repo_root=$(cd -- "$script_dir/.." && pwd)
 readonly java_home="$HOME/.local/share/jdks/temurin-25"
-readonly profile_marker="# ynab-amazon-transaction-updater Java 25"
+readonly profile_marker="# ynab-budget-assistant Java 25"
+readonly old_profile_marker="# ynab-amazon-transaction-updater Java 25"
 readonly temurin_release="25.0.4.1+1"
 readonly temurin_release_tag="jdk-25.0.4.1%2B1"
 readonly checksum_file="$script_dir/checksums/temurin-${temurin_release}.sha256"
@@ -55,10 +56,10 @@ fi
 export JAVA_HOME="$java_home"
 export PATH="$JAVA_HOME/bin:$PATH"
 
-if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null && ! grep -Fqx "$old_profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
   cat >> "$HOME/.bash_profile" <<'EOF'
 
-# ynab-amazon-transaction-updater Java 25
+# ynab-budget-assistant Java 25
 export JAVA_HOME="$HOME/.local/share/jdks/temurin-25"
 case ":$PATH:" in
   *":$JAVA_HOME/bin:"*) ;;
@@ -71,7 +72,8 @@ echo "Temurin release: $(installed_temurin_release "$JAVA_HOME")"
 
 readonly go_version="1.27.4"
 readonly go_root="$HOME/.local/share/go/${go_version}"
-readonly go_marker="# ynab-amazon-transaction-updater Go ${go_version}"
+readonly go_marker="# ynab-budget-assistant Go ${go_version}"
+readonly old_go_marker="# ynab-amazon-transaction-updater Go ${go_version}"
 readonly go_hashes="$repo_root/gradle/go-sdk-sha256.json"
 case "$(uname -m)" in
   x86_64) go_host="linux-amd64" ;;
@@ -105,7 +107,7 @@ if [[ ! -x "$go_root/bin/go" ]] || [[ "$("$go_root/bin/go" env GOVERSION 2>/dev/
 else
   echo "Go ${go_version} already installed; skipping download."
 fi
-if ! grep -Fqx "$go_marker" "$HOME/.bash_profile" 2>/dev/null; then
+if ! grep -Fqx "$go_marker" "$HOME/.bash_profile" 2>/dev/null && ! grep -Fqx "$old_go_marker" "$HOME/.bash_profile" 2>/dev/null; then
   cat >> "$HOME/.bash_profile" <<EOF
 
 $go_marker

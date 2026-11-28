@@ -3,7 +3,7 @@ plugins {
     id 'application'
 }
 
-group = 'com.ynab.amazon'
+group = 'com.ynab.budgetassistant'
 version = '1.0.0'
 
 repositories {
@@ -36,15 +36,18 @@ dependencies {
 }
 
 application {
-    mainClass = 'com.ynab.amazon.YNABAmazonTransactionUpdater'
+    mainClass = 'com.ynab.budgetassistant.BudgetAssistant'
 }
 
 distributions {
     main {
         contents {
-            from('scripts') { into 'scripts' }
+            from('scripts') { into 'scripts'; exclude 'ynab-amazon-transaction-updater', 'ynab-amazon-transaction-updater.bat', '**/__pycache__/**', '**/*.pyc' }
+            from('scripts/ynab-amazon-transaction-updater') { into 'bin'; filePermissions { unix('rwxr-xr-x') } }
+            from('scripts/ynab-amazon-transaction-updater.bat') { into 'bin' }
             from('requirements-amazon-orders.txt')
             from('requirements-amazon-browser.txt')
+            from('CONFIG_MIGRATION.md')
         }
     }
 }

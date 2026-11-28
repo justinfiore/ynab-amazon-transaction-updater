@@ -1,7 +1,7 @@
 #!/bin/bash
 
-echo "Building YNAB Amazon Transaction Updater..."
-./gradlew install
+echo "Building Budget Assistant for YNAB..."
+./gradlew installDist
 
 if [ $? -ne 0 ]; then
     echo "Build failed!"
@@ -9,18 +9,7 @@ if [ $? -ne 0 ]; then
 fi
 
 echo ""
-echo "Running YNAB Amazon Transaction Updater..."
+echo "Running Budget Assistant for YNAB..."
 echo ""
 
-# Find the script in any subdirectory of build/install
-SCRIPT=$(find build/install -type f -path "*/bin/*" ! -name "*.bat" | head -n 1)
-
-if [ -z "$SCRIPT" ]; then
-    echo "Error: Could not find executable script in build/install/*/bin/"
-    exit 1
-fi
-
-"$SCRIPT" $*
-
-echo ""
-echo "Application finished." 
+exec "$(dirname "$0")/build/install/ynab-budget-assistant/bin/ynab-budget-assistant" "$@"

@@ -49,7 +49,7 @@ helper runs with your OS user's privileges.
 See `config.example.yml`. `helper_executable` may be omitted in an installed
 Walmart distribution. `session_file` is required. Time/output/page limits must
 be positive; `max_pages` is at most 20. Removed browser configuration has no
-aliases. Start with `app.dry_run: true`. The helper returns version-1 allowlisted
+aliases. Start with `runtime.dry_run: true`. The helper returns version-1 allowlisted
 source evidence (no addresses, cookies or raw HTTP payloads), not upstream diagnostics.
 It preserves decimal amounts and repeated ledger entries; Groovy owns currency,
 final-charge filtering, stable occurrence keys, item deduplication, adjustments,
@@ -59,7 +59,7 @@ key is passed to Go. Successful empty history is an explicit `orders: []`.
 Walmart requires a verified USD YNAB plan before fetching/matching and rechecks
 that currency before enrichment. Non-USD, missing or unavailable plan currency
 skips all Walmart links and allocation writes without affecting Amazon. Set
-`walmart.currency` to the source's uppercase ISO 4217 currency code; it defaults
+`retailers.walmart.currency` to the source's uppercase ISO 4217 currency code; it defaults
 to `USD` and supplies the currency when Walmart omits it (including null fields).
 Explicit source currencies must agree with that setting; conflicting evidence
 still blocks matching. Only USD processing is supported; there is no currency
@@ -115,7 +115,7 @@ exceptions, never implicitly become default spending.
 
 The entire order must have supported USD final payments matched to unapproved,
 unsplit, non-transfer, non-reconciled transactions in open on-budget accounts.
-The optional `walmart.allow_approved_uncategorized` setting defaults to `false`.
+The optional `retailers.walmart.allow_approved_uncategorized` setting defaults to `false`.
 When explicitly enabled, approved transactions are also eligible if they have
 no category and no split lines. Newly allocated transactions return to review
 (`approved: false`), just like ordinary allocation. Approved categorized parents

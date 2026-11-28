@@ -1,6 +1,6 @@
 @echo off
-echo Building YNAB Amazon Transaction Updater...
-call gradlew build
+echo Building Budget Assistant for YNAB...
+call gradlew installDist
 
 if %ERRORLEVEL% NEQ 0 (
     echo Build failed!
@@ -9,10 +9,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo.
-echo Running YNAB Amazon Transaction Updater...
+echo Running Budget Assistant for YNAB...
 echo.
-java -jar build/libs/YNABAmazonTransactionUpdater-1.0.0.jar
-
-echo.
-echo Application finished.
-pause 
+call "%~dp0build\install\ynab-budget-assistant\bin\ynab-budget-assistant.bat" %*
+exit /b %ERRORLEVEL%
